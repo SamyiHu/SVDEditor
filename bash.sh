@@ -1,0 +1,19 @@
+mkdir -p svd_tool/core svd_tool/ui svd_tool/utils
+touch svd_tool/__init__.py
+touch svd_tool/main.py
+touch svd_tool/core/__init__.py
+touch svd_tool/core/data_model.py
+touch svd_tool/core/constants.py
+touch svd_tool/core/validators.py
+touch svd_tool/core/command_history.py
+touch svd_tool/core/svd_parser.py
+touch svd_tool/core/svd_generator.py
+touch svd_tool/ui/__init__.py
+touch svd_tool/ui/main_window.py
+touch svd_tool/ui/dialogs.py
+touch svd_tool/ui/form_builder.py
+touch svd_tool/ui/tree_manager.py
+touch svd_tool/ui/dialog_factories.py
+touch svd_tool/utils/__init__.py
+touch svd_tool/utils/logger.py
+touch svd_tool/utils/helpers.py
