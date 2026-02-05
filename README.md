@@ -1,52 +1,71 @@
-# SVD Editor
+<!-- README.md - English Version -->
+<div align="center">
 
-一个基于组件化架构的 CMSIS SVD解析/编辑/可视化工具，支持外设添加、寄存器编辑、中断管理，基于Python/Qt开发，提供更佳的可维护性和扩展性。
+# 🚀 SVD Editor
 
-## 主要改进
+[![English](https://img.shields.io/badge/English-🇺🇸-blue?style=for-the-badge)](README.md)
+[![中文](https://img.shields.io/badge/中文-🇨🇳-red?style=for-the-badge)](README_zh.md)
 
-- **组件化架构**：将主窗口逻辑拆分为独立组件（StateManager, LayoutManager, PeripheralManager）
-- **更好的代码组织**：减少耦合，提高可测试性
-- **增强的状态管理**：集中化状态处理，支持快照和恢复
-- **现代化 UI 组件**：使用专用 widgets 实现可视化功能
-- **完整的测试套件**：包含单元测试、集成测试和 GUI 测试
+**A CMSIS SVD parsing/editing/visualization tool based on componentized architecture, supporting peripheral addition, register editing, interrupt management, developed with Python/Qt, providing better maintainability and extensibility.**
 
-## 功能特性
+[View in Chinese](README_zh.md) | [查看中文版](README_zh.md)
 
-### 核心功能
-- **SVD/XML 文件解析**：导入标准 SVD 文件，解析设备、外设、寄存器、位域等层次结构
-- **可视化编辑**：树形视图展示三级结构（外设 → 寄存器 → 位域），支持增删改查操作
-- **继承外设支持**：自动合并基类外设的寄存器定义，可视化显示继承关系
-- **地址映射可视化**：图形化显示外设地址空间布局和寄存器偏移
-- **位域可视化**：寄存器位域图形化展示，支持位域高亮和编辑
-- **中断管理**：配置和管理外设中断向量
+</div>
 
-### 用户体验
-- **撤销/重做**：完整的操作历史记录，支持无限级撤销重做
-- **搜索与过滤**：快速定位外设、寄存器、位域
-- **拖放排序**：直观调整外设、寄存器顺序
-- **多标签界面**：分页管理不同功能模块
-- **实时预览**：编辑时实时更新可视化效果
+---
 
-### 输出与导出
-- **美化 SVD 生成**：生成格式规范、缩进整齐的 SVD/XML 文件
-- **自定义配置**：支持输出格式定制（缩进、属性顺序等）
-- **批量处理**：支持批量导入导出
+## 🌐 Quick Navigation
+- [English Version](#english-version) 🇺🇸
+- [中文版本](README_zh.md) 🇨🇳
 
-## 安装与运行
+---
 
-### 环境要求
-- Python 3.10 或更高版本
+## 📖 English Version
+
+### Major Improvements
+- **Componentized Architecture**: Split main window logic into independent components (StateManager, LayoutManager, PeripheralManager)
+- **Better Code Organization**: Reduced coupling, improved testability
+- **Enhanced State Management**: Centralized state handling, supports snapshots and recovery
+- **Modern UI Components**: Implement visualization functions using dedicated widgets
+- **Complete Test Suite**: Includes unit tests, integration tests, and GUI tests
+
+### Features
+
+#### Core Functions
+- **SVD/XML File Parsing**: Import standard SVD files, parse device, peripheral, register, bitfield hierarchy
+- **Visual Editing**: Tree view displays three-level structure (Peripheral → Register → Bitfield), supports CRUD operations
+- **Inherited Peripheral Support**: Automatically merges register definitions from base class peripherals, visually displays inheritance relationships
+- **Address Mapping Visualization**: Graphical display of peripheral address space layout and register offsets
+- **Bitfield Visualization**: Graphical display of register bitfields, supports highlighting and editing
+- **Interrupt Management**: Configure and manage peripheral interrupt vectors
+
+#### User Experience
+- **Undo/Redo**: Complete operation history, supports unlimited undo/redo
+- **Search & Filter**: Quickly locate peripherals, registers, bitfields
+- **Drag-and-Drop Sorting**: Intuitive adjustment of peripheral and register order
+- **Multi-tab Interface**: Page management for different functional modules
+- **Real-time Preview**: Real-time updates to visual effects during editing
+
+#### Output & Export
+- **Formatted SVD Generation**: Generate well-formatted, neatly indented SVD/XML files
+- **Custom Configuration**: Supports output format customization (indentation, attribute order, etc.)
+- **Batch Processing**: Supports batch import/export
+
+## Installation & Running
+
+### Environment Requirements
+- Python 3.10 or higher
 - PyQt6 6.5.0+
 
-### 快速开始
+### Quick Start
 
-1. **克隆仓库**
+1. **Clone Repository**
    ```bash
    git clone https://github.com/SamyiHu/SVDEditor.git
    cd SVDEditor
    ```
 
-2. **创建虚拟环境（推荐）**
+2. **Create Virtual Environment (Recommended)**
    ```bash
    python -m venv .venv
    # Windows
@@ -55,144 +74,156 @@
    source .venv/bin/activate
    ```
 
-3. **安装依赖**
+3. **Install Dependencies**
    ```bash
    pip install PyQt6
-   # 或使用 requirements.txt（如果存在）
+   # Or use requirements.txt (if exists)
    pip install -r requirements.txt
    ```
 
-4. **运行应用**
+4. **Run Application**
    ```bash
    python run.py
    ```
 
-## 使用指南
+## User Guide
 
-### 基本工作流程
-1. **导入 SVD 文件**：点击"文件" → "打开"，选择 SVD/XML 文件
-2. **浏览结构**：左侧树形视图展示设备→外设→寄存器→位域层次
-3. **编辑项目**：
-   - 双击树节点编辑属性
-   - 右键菜单添加/删除项目
-   - 拖放调整顺序
-4. **可视化查看**：
-   - 选择外设查看地址映射图
-   - 选择寄存器查看位域分布图
-   - 选择位域查看详细属性
-5. **保存结果**：点击"生成"按钮保存美化后的 SVD 文件
+### Basic Workflow
+1. **Import SVD File**: Click "File" → "Open", select SVD/XML file
+2. **Browse Structure**: Left tree view displays device→peripheral→register→bitfield hierarchy
+3. **Edit Items**:
+   - Double-click tree nodes to edit properties
+   - Right-click menu to add/delete items
+   - Drag and drop to adjust order
+4. **Visual View**:
+   - Select peripheral to view address map
+   - Select register to view bitfield distribution
+   - Select bitfield to view detailed properties
+5. **Save Results**: Click "Generate" button to save formatted SVD file
 
-### 继承外设处理
-当外设使用 `derivedFrom` 属性时，工具会自动：
-- 合并基类外设的寄存器定义
-- 在地址映射图中用不同颜色区分继承寄存器
-- 保持寄存器定义的完整性
+### Inherited Peripheral Handling
+When peripherals use the `derivedFrom` attribute, the tool automatically:
+- Merges register definitions from base class peripherals
+- Differentiates inherited registers with different colors in address maps
+- Maintains completeness of register definitions
 
-### 快捷键
-- `Ctrl+O`：打开文件
-- `Ctrl+S`：保存文件
-- `Ctrl+Z`：撤销
-- `Ctrl+Y`：重做
-- `Ctrl+F`：搜索
-- `F5`：刷新视图
+### Shortcuts
+- `Ctrl+O`: Open file
+- `Ctrl+S`: Save file
+- `Ctrl+Z`: Undo
+- `Ctrl+Y`: Redo
+- `Ctrl+F`: Search
+- `F5`: Refresh view
 
-## 项目结构（重构版）
+## Project Structure (Refactored Version)
 
 ```
 SVDEditor/
-├── run.py                    # 应用启动脚本
-├── config.py                 # 配置文件
-├── README.md                 # 本文档
-├── svd_tool/                 # 主包目录
-│   ├── main.py              # 应用入口（使用 MainWindowRefactored）
-│   ├── core/                # 核心逻辑
-│   │   ├── data_model.py    # 数据模型（Device, Peripheral, Register, Field）
-│   │   ├── svd_parser.py    # SVD 解析器
-│   │   ├── svd_generator.py # SVD 生成器
-│   │   ├── validators.py    # 数据验证
-│   │   └── command_history.py # 命令历史（撤销/重做）
-│   ├── ui/                  # 用户界面（组件化）
-│   │   ├── main_window_refactored.py   # 重构主窗口（组件化架构）
-│   │   ├── dialog_factories.py # 对话框工厂
-│   │   ├── dialogs.py       # 各种对话框
-│   │   ├── form_builder.py  # 表单构建器
-│   │   ├── tree_manager.py  # 树形视图管理
-│   │   ├── components/      # 组件目录
-│   │   │   ├── state_manager.py     # 状态管理组件
-│   │   │   ├── layout_manager.py    # UI布局管理组件
-│   │   │   ├── peripheral_manager.py # 外设管理组件
-│   │   │   ├── menu_bar.py          # 菜单栏组件
-│   │   │   └── toolbar.py           # 工具栏组件
-│   │   └── widgets/         # 专用小部件
-│   │       ├── address_map_widget.py   # 地址映射小部件
-│   │       ├── bit_field_widget.py     # 位域小部件
-│   │       └── visualization_widget.py # 可视化小部件
-│   └── utils/               # 工具函数
-│       ├── helpers.py       # 辅助函数
-│       └── logger.py        # 日志配置
-├── tests/                   # 测试套件
-│   ├── unit_tests/         # 单元测试
-│   ├── integration_tests/  # 集成测试
-│   └── gui_tests/          # GUI测试
-├── GITHUB_SETUP.md         # GitHub仓库设置指南
-├── MIGRATION_PROGRESS.md   # 迁移进度文档
-├── PR_DESCRIPTION.md       # PR描述模板
-├── LICENSE                 # MIT许可证
-└── .venv/                  # 虚拟环境（可选）
+├── run.py                    # Application startup script
+├── config.py                 # Configuration file
+├── README.md                 # This document (English)
+├── README_zh.md             # Chinese documentation
+├── svd_tool/                 # Main package directory
+│   ├── main.py              # Application entry (using MainWindowRefactored)
+│   ├── core/                # Core logic
+│   │   ├── data_model.py    # Data models (Device, Peripheral, Register, Field)
+│   │   ├── svd_parser.py    # SVD parser
+│   │   ├── svd_generator.py # SVD generator
+│   │   ├── validators.py    # Data validation
+│   │   └── command_history.py # Command history (undo/redo)
+│   ├── ui/                  # User interface (componentized)
+│   │   ├── main_window_refactored.py   # Refactored main window (componentized architecture)
+│   │   ├── dialog_factories.py # Dialog factories
+│   │   ├── dialogs.py       # Various dialogs
+│   │   ├── form_builder.py  # Form builder
+│   │   ├── tree_manager.py  # Tree view management
+│   │   ├── components/      # Component directory
+│   │   │   ├── state_manager.py     # State management component
+│   │   │   ├── layout_manager.py    # UI layout management component
+│   │   │   ├── peripheral_manager.py # Peripheral management component
+│   │   │   ├── menu_bar.py          # Menu bar component
+│   │   │   └── toolbar.py           # Toolbar component
+│   │   └── widgets/         # Dedicated widgets
+│   │       ├── address_map_widget.py   # Address mapping widget
+│   │       ├── bit_field_widget.py     # Bitfield widget
+│   │       └── visualization_widget.py # Visualization widget
+│   └── utils/               # Utility functions
+│       ├── helpers.py       # Helper functions
+│       └── logger.py        # Log configuration
+├── tests/                   # Test suite
+│   ├── unit_tests/         # Unit tests
+│   ├── integration_tests/  # Integration tests
+│   └── gui_tests/          # GUI tests
+├── GITHUB_SETUP.md         # GitHub repository setup guide
+├── MIGRATION_PROGRESS.md   # Migration progress document
+├── PR_DESCRIPTION.md       # PR description template
+├── LICENSE                 # MIT license
+└── .venv/                  # Virtual environment (optional)
 ```
 
-## 开发与贡献
+## Development & Contribution
 
-### 代码规范
-- 遵循 PEP 8 Python 代码规范
-- 使用类型注解（Type Hints）
-- 模块化设计，关注点分离
+### Code Standards
+- Follow PEP 8 Python coding standards
+- Use type annotations (Type Hints)
+- Modular design, separation of concerns
 
-### 测试
-项目包含多个测试脚本，验证核心功能：
-- `test_all_improvements.py`：综合测试所有改进功能
-- `test_inheritance_fix.py`：测试继承外设功能
-- `test_graphics.py`：测试图形化组件
-- `test_rectangle_fix.py`：测试矩形绘制
-- `test_final_verification.py`：最终验证测试
+### Testing
+The project includes multiple test scripts to verify core functionality:
+- `test_all_improvements.py`: Comprehensive test of all improved features
+- `test_inheritance_fix.py`: Test inherited peripheral functionality
+- `test_graphics.py`: Test graphical components
+- `test_rectangle_fix.py`: Test rectangle drawing
+- `test_final_verification.py`: Final verification test
 
-运行测试：
+Run tests:
 ```bash
 python test_all_improvements.py
 ```
 
-### 提交贡献
-1. Fork 本仓库
-2. 创建功能分支 (`git checkout -b feature/your-feature`)
-3. 提交更改 (`git commit -m 'Add some feature'`)
-4. 推送到分支 (`git push origin feature/your-feature`)
-5. 创建 Pull Request
+### Submitting Contributions
+1. Fork this repository
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Commit your changes (`git commit -m 'Add some feature'`)
+4. Push to the branch (`git push origin feature/your-feature`)
+5. Create a Pull Request
 
-### 开源许可证说明
+### Open Source License Information
 
-本项目采用 MIT 许可证，这是一种宽松的开源许可证，允许：
+This project uses the MIT License, a permissive open source license that allows:
 
-- 商业使用
-- 修改和分发
-- 私人使用
-- 子许可证
-- 专利授权
+- Commercial use
+- Modification and distribution
+- Private use
+- Sublicensing
+- Patent grant
 
-唯一的要求是保留原始的版权声明和许可证声明。
+The only requirement is to preserve the original copyright notice and license statement.
 
-### 贡献者协议
+### Contributor Agreement
 
-通过向本项目提交代码，您同意您的贡献将在 MIT 许可证下发布。
+By submitting code to this project, you agree that your contributions will be released under the MIT License.
 
-## 维护者
+## Maintainers
 
-- SamyiHu (@SamyiHu) - 项目创建者和主要维护者
+- SamyiHu (@SamyiHu) - Project creator and main maintainer
 
-## 更新日志
+## Changelog
 
-### 最新版本 (v2.1)
-- **可视化改进**：添加地址映射图和位域可视化组件
-- **继承外设支持**：完善 derivedFrom 外设的寄存器合并显示
-- **UI 优化**：重构工具栏，移除冗余按钮，优化布局
-- **测试套件**：添加多个功能测试脚本
-- **Bug 修复**：修复树形视图选择、撤销重做等已知问题
+### Latest Version (v2.1)
+- **Visualization Improvements**: Added address mapping and bitfield visualization components
+- **Inherited Peripheral Support**: Enhanced register merging display for derivedFrom peripherals
+- **UI Optimization**: Refactored toolbar, removed redundant buttons, optimized layout
+- **Test Suite**: Added multiple functional test scripts
+- **Bug Fixes**: Fixed known issues with tree view selection, undo/redo, etc.
+
+---
+
+<div align="center">
+
+**Enjoy using SVD Editor!** ✨
+
+[![English](https://img.shields.io/badge/English-🇺🇸-blue?style=for-the-badge)](README.md)
+[![中文](https://img.shields.io/badge/中文-🇨🇳-red?style=for-the-badge)](README_zh.md)
+
+</div>
