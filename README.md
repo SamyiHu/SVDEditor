@@ -1,4 +1,4 @@
-# SVD Editor (重构版)
+# SVD Editor
 
 一个基于组件化架构的 ARM SVD 文件编辑工具，提供更佳的可维护性和扩展性。
 
