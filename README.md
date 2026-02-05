@@ -86,6 +86,56 @@
    python run.py
    ```
 
+## Building & Distribution
+
+The project includes professional build tools for creating standalone executables for Windows platforms.
+
+### Build Tools
+
+Build scripts are located in the `build_tools/` directory:
+
+- **`build_professional_fixed.py`** (Recommended) - Professional build script with anti-virus false positive reduction
+- **`build_windows.py`** - Basic Windows build script with 32/64-bit architecture selection
+
+### Quick Build Instructions
+
+1. **Install Build Dependencies**
+   ```bash
+   pip install -r requirements.txt
+   pip install pyinstaller
+   ```
+
+2. **Use Convenience Scripts (Optional)**
+   - **Windows**: Run `build.bat` from the project root
+   - **Linux/Mac**: Run `./build.sh` from the project root
+   
+   Or manually navigate to the build tools directory:
+   ```bash
+   cd build_tools
+   ```
+
+3. **Run Professional Build Script**
+   ```bash
+   python build_professional_fixed.py
+   ```
+
+4. **Find Output Files**
+   - Executable: `../_dist/SVDEditor_64bit.exe`
+   - Release files: `../release/64bit/`
+
+### Build Features
+
+- **Anti-virus False Positive Reduction**: Includes version information and uses standard build techniques
+- **Clean Directory Structure**: Build artifacts are organized in `_build/` and `_dist/` directories
+- **Icon Support**: Automatically includes `icon.ico` from project root
+- **Version Information**: Reads from `version_info.txt`
+
+### Important Notes
+
+- The build scripts must be run from the `build_tools/` directory
+- If you encounter "file not found" errors, ensure you're in the correct directory
+- For 32-bit builds, use `python build_windows.py` and select the 32-bit option
+
 ## User Guide
 
 ### Basic Workflow
@@ -123,6 +173,10 @@ SVDEditor/
 ├── config.py                 # Configuration file
 ├── README.md                 # This document (English)
 ├── README_zh.md             # Chinese documentation
+├── requirements.txt          # Python dependencies
+├── setup.py                  # Python package configuration
+├── icon.ico                  # Application icon
+├── version_info.txt          # Version information for builds
 ├── svd_tool/                 # Main package directory
 │   ├── main.py              # Application entry (using MainWindowRefactored)
 │   ├── core/                # Core logic
@@ -150,13 +204,24 @@ SVDEditor/
 │   └── utils/               # Utility functions
 │       ├── helpers.py       # Helper functions
 │       └── logger.py        # Log configuration
+├── build_tools/             # Build and packaging tools
+│   ├── build_professional_fixed.py  # Professional build script (recommended)
+│   ├── build_windows.py             # Basic Windows build script
+│   └── README.md                    # Build tools documentation
+├── docs/                    # Project documentation
+│   ├── BUILD_INSTRUCTIONS.md       # Detailed build instructions
+│   ├── FINAL_SOLUTION.md           # Final solution documentation
+│   ├── ICON_GUIDE.md               # Icon usage guide
+│   ├── MIGRATION_PROGRESS.md       # Migration progress
+│   ├── PROJECT_STRUCTURE.md        # Project structure documentation
+│   └── README.md                   # Documentation index
 ├── tests/                   # Test suite
 │   ├── unit_tests/         # Unit tests
 │   ├── integration_tests/  # Integration tests
 │   └── gui_tests/          # GUI tests
-├── GITHUB_SETUP.md         # GitHub repository setup guide
-├── MIGRATION_PROGRESS.md   # Migration progress document
-├── PR_DESCRIPTION.md       # PR description template
+├── _build/                  # PyInstaller build artifacts (auto-generated)
+├── _dist/                   # PyInstaller output executables (auto-generated)
+├── release/                 # Release files (auto-generated)
 ├── LICENSE                 # MIT license
 └── .venv/                  # Virtual environment (optional)
 ```
