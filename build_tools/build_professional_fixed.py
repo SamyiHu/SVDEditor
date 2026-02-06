@@ -484,31 +484,57 @@ def main():
     # 获取当前架构
     current_arch = builder.arch
     
-    # 构建选项
+    # 架构选择
     print(f"\n当前系统架构: {current_arch}")
+    print("\n请选择目标架构:")
+    print("1. 使用当前系统架构 (自动检测)")
+    print("2. 构建32位版本")
+    print("3. 构建64位版本")
+    
+    arch_choice = input("\n请选择架构 (1-3): ").strip()
+    
+    target_arch = current_arch
+    if arch_choice == '2':
+        target_arch = '32bit'
+        if current_arch != '32bit':
+            print("警告: 当前Python不是32位，构建可能失败")
+            confirm = input("继续构建? (y/n): ").lower()
+            if confirm != 'y':
+                return
+    elif arch_choice == '3':
+        target_arch = '64bit'
+        if current_arch != '64bit':
+            print("警告: 当前Python不是64位，构建可能失败")
+            confirm = input("继续构建? (y/n): ").lower()
+            if confirm != 'y':
+                return
+    elif arch_choice != '1':
+        print("无效选择，使用当前系统架构")
+    
+    # 构建选项
+    print(f"\n目标架构: {target_arch}")
     print("\n构建选项:")
     print("1. 构建单文件版本 (推荐)")
     print("2. 构建便携目录版本")
     print("3. 构建调试版本 (显示控制台)")
     print("4. 构建所有版本")
     
-    # 非交互式环境使用默认选项
-    choice = "1"
+    choice = input("\n请选择构建模式 (1-4): ").strip()
     
     if choice == '1':
         # 单文件版本
-        builder.build(arch=current_arch, console=False, onefile=True)
+        builder.build(arch=target_arch, console=False, onefile=True)
     elif choice == '2':
         # 便携目录版本
-        builder.build(arch=current_arch, console=False, onefile=False)
+        builder.build(arch=target_arch, console=False, onefile=False)
     elif choice == '3':
         # 调试版本
-        builder.build(arch=current_arch, console=True, onefile=True)
+        builder.build(arch=target_arch, console=True, onefile=True)
     elif choice == '4':
         # 所有版本
         print("\n构建所有版本...")
-        builder.build(arch=current_arch, console=False, onefile=True)
-        builder.build(arch=current_arch, console=False, onefile=False)
+        builder.build(arch=target_arch, console=False, onefile=True)
+        builder.build(arch=target_arch, console=False, onefile=False)
     else:
         print("无效选择")
         return

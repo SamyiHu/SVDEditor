@@ -182,7 +182,8 @@ def main():
     
     # 获取当前架构
     current_arch = get_architecture()
-    print(f"当前系统架构: {current_arch}")
+    print(f"当前Python架构: {current_arch}")
+    print(f"注意: 使用32位Python构建32位可执行文件，64位Python构建64位可执行文件")
     
     # 询问构建选项
     print("\n构建选项:")
@@ -204,12 +205,15 @@ def main():
     
     if choice == '1':
         # 构建当前架构
+        print(f"\n构建 {current_arch} 版本...")
         success = build_for_architecture(current_arch)
         
     elif choice == '2':
         # 构建32位版本
+        print(f"\n构建 32位 版本...")
         if current_arch != '32bit':
             print("警告: 当前Python不是32位，构建可能失败")
+            print("建议: 请使用32位Python运行此脚本以构建32位可执行文件")
             confirm = input("继续构建? (y/n): ").lower()
             if confirm != 'y':
                 return
@@ -217,8 +221,10 @@ def main():
         
     elif choice == '3':
         # 构建64位版本
+        print(f"\n构建 64位 版本...")
         if current_arch != '64bit':
             print("警告: 当前Python不是64位，构建可能失败")
+            print("建议: 请使用64位Python运行此脚本以构建64位可执行文件")
             confirm = input("继续构建? (y/n): ").lower()
             if confirm != 'y':
                 return
@@ -226,18 +232,53 @@ def main():
         
     elif choice == '4':
         # 构建所有版本
+        print(f"\n构建所有可用版本...")
         successes = []
-        if current_arch == '32bit' or input("构建32位版本? (y/n): ").lower() == 'y':
+        
+        # 询问是否构建32位版本
+        build_32bit = False
+        if current_arch == '32bit':
+            build_32bit = True
+            print("当前是32位Python，将构建32位版本")
+        else:
+            answer = input("构建32位版本? (当前Python不是32位，构建可能失败) (y/n): ").lower()
+            build_32bit = (answer == 'y')
+        
+        if build_32bit:
             successes.append(build_for_architecture('32bit'))
         
-        if current_arch == '64bit' or input("构建64位版本? (y/n): ").lower() == 'y':
+        # 询问是否构建64位版本
+        build_64bit = False
+        if current_arch == '64bit':
+            build_64bit = True
+            print("当前是64位Python，将构建64位版本")
+        else:
+            answer = input("构建64位版本? (当前Python不是64位，构建可能失败) (y/n): ").lower()
+            build_64bit = (answer == 'y')
+        
+        if build_64bit:
             successes.append(build_for_architecture('64bit'))
         
-        success = all(successes)
+        success = all(successes) if successes else False
         
     elif choice == '5':
         # 构建调试版本
-        debug_arch = input(f"构建架构 ({current_arch}): ").strip() or current_arch
+        print(f"\n构建调试版本 (显示控制台)...")
+        print(f"当前架构: {current_arch}")
+        debug_arch = input(f"请输入目标架构 (32bit/64bit, 默认 {current_arch}): ").strip()
+        if not debug_arch:
+            debug_arch = current_arch
+        
+        if debug_arch not in ['32bit', '64bit']:
+            print(f"无效架构 '{debug_arch}'，使用默认 {current_arch}")
+            debug_arch = current_arch
+        
+        if debug_arch != current_arch:
+            print(f"警告: 目标架构 ({debug_arch}) 与当前Python架构 ({current_arch}) 不匹配，构建可能失败")
+            confirm = input("继续构建? (y/n): ").lower()
+            if confirm != 'y':
+                return
+        
         success = build_for_architecture(debug_arch, console=True)
         
     else:
@@ -257,12 +298,19 @@ def main():
         print("构建完成！")
         print(f"{'='*60}")
         print("\n输出文件:")
-        for item in os.listdir('.'):
-            if item.endswith('.zip'):
-                print(f"  - {item}")
         
+        # 显示ZIP文件
+        zip_files = [f for f in os.listdir('.') if f.endswith('.zip')]
+        if zip_files:
+            for zip_file in zip_files:
+                print(f"  - {zip_file}")
+        else:
+            print("  (未找到ZIP文件)")
+        
+        # 显示dist目录
         dist_dir = Path('dist')
         if dist_dir.exists():
+            print("\n可执行文件目录:")
             for item in dist_dir.iterdir():
                 if item.is_dir():
                     print(f"  - dist/{item.name}/")
