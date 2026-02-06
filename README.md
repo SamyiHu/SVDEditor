@@ -17,6 +17,7 @@
 ## 🌐 Quick Navigation
 - [English Version](#english-version) 🇺🇸
 - [中文版本](README_zh.md) 🇨🇳
+- [Build Guide](docs/BUILD_INSTRUCTIONS_EN.md) 🔧
 
 ---
 
@@ -89,6 +90,9 @@
 ## Building & Distribution
 
 The project includes professional build tools for creating standalone executables for Windows platforms.
+
+### 📚 Detailed Build Guide
+For comprehensive build instructions, see [BUILD_INSTRUCTIONS_EN.md](docs/BUILD_INSTRUCTIONS_EN.md) (English) or [BUILD_INSTRUCTIONS.md](docs/BUILD_INSTRUCTIONS.md) (Chinese).
 
 ### Build Tools
 

@@ -17,7 +17,8 @@ class ProfessionalBuilder:
         self.project_root = Path(__file__).parent
         self.build_dir = self.project_root / "_build"
         self.dist_dir = self.project_root / "_dist"
-        self.release_dir = self.project_root / "release"
+        # 发布目录改为项目根目录的release/文件夹
+        self.release_dir = self.project_root.parent / "release"
         
         # 创建目录
         self.build_dir.mkdir(exist_ok=True)
@@ -50,11 +51,20 @@ class ProfessionalBuilder:
     def create_optimized_spec(self, arch, console=False, onefile=True):
         """创建优化的spec文件，减少误报"""
         
-        # 确定输出目录
+        # 确定输出目录 - 直接输出到项目根目录的release/文件夹
+        release_dir = str(self.project_root.parent / "release")
         if onefile:
-            output_dir = str(self.dist_dir)
+            # 单文件模式：release/64bit/SVDEditor_64bit.exe
+            output_dir = str(Path(release_dir) / arch)
         else:
-            output_dir = str(self.dist_dir / f"SVDEditor_{arch}")
+            # 目录模式：release/64bit/SVDEditor_64bit/
+            output_dir = str(Path(release_dir) / arch / f"SVDEditor_{arch}")
+        
+        # 项目根目录（父目录，因为run.py在build_tools的上一级）
+        project_root_parent = str(self.project_root.parent)
+        
+        # run.py的绝对路径
+        run_py_path = str(self.project_root.parent / 'run.py')
         
         spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
 import sys
@@ -63,10 +73,10 @@ import os
 # 设置递归深度限制
 sys.setrecursionlimit(5000)
 
-# 项目根目录
-project_root = r'{self.project_root}'
+# 项目根目录（父目录）
+project_root = r'{project_root_parent}'
 
-# 输出目录设置
+# 输出目录设置 - 直接输出到release文件夹
 if '{onefile}' == 'True':
     dist_dir = r'{output_dir}'
 else:
@@ -74,17 +84,17 @@ else:
 
 block_cipher = None
 
-# 分析配置
+# 分析配置 - 使用run.py的绝对路径
 a = Analysis(
-    ['run.py'],
+    [r'{run_py_path}'],
     pathex=[project_root],
     binaries=[],
     datas=[
-        # 配置文件
-        ('config.py', '.'),
-        ('README.md', '.'),
-        ('README_zh.md', '.'),
-        ('LICENSE', '.'),
+        # 配置文件 - 使用绝对路径
+        (r'{project_root_parent}/config.py', '.'),
+        (r'{project_root_parent}/README.md', '.'),
+        (r'{project_root_parent}/README_zh.md', '.'),
+        (r'{project_root_parent}/LICENSE', '.'),
     ],
     hiddenimports=[
         # PyQt6模块
@@ -279,13 +289,14 @@ VSVersionInfo(
         spec_file = self.create_optimized_spec(arch, console, onefile)
         print(f"创建spec文件: {spec_file}")
         
-        # 构建命令
+        # 构建命令 - 当提供.spec文件时，不能使用--specpath
+        # 注意：spec文件中已经设置了输出目录，但为了保险，我们也在这里设置
+        release_output_dir = str(self.project_root.parent / "release" / arch)
         cmd = [
             sys.executable, '-m', 'PyInstaller',
             '--clean',
-            '--distpath', str(self.dist_dir),
+            '--distpath', release_output_dir,
             '--workpath', str(self.build_dir),
-            '--specpath', str(self.build_dir),
             str(spec_file)
         ]
         
@@ -294,9 +305,9 @@ VSVersionInfo(
         try:
             # 执行构建
             result = subprocess.run(
-                cmd, 
-                check=True, 
-                capture_output=True, 
+                cmd,
+                check=True,
+                capture_output=True,
                 text=True,
                 cwd=self.project_root,
                 encoding='utf-8',
@@ -308,30 +319,40 @@ VSVersionInfo(
                 if any(keyword in line for keyword in ['INFO:', 'WARNING:', 'ERROR:']):
                     print(f"  {line}")
             
-            # 检查构建结果
+            # 检查构建结果 - 现在在release/arch目录中
+            release_arch_dir = Path(release_output_dir)
             if onefile:
                 exe_name = f'SVDEditor_{arch}.exe'
-                exe_path = self.dist_dir / exe_name
+                exe_path = release_arch_dir / exe_name
             else:
                 exe_name = f'SVDEditor_{arch}'
-                exe_path = self.dist_dir / exe_name / f'SVDEditor_{arch}.exe'
+                exe_path = release_arch_dir / exe_name / f'SVDEditor_{arch}.exe'
             
             if exe_path.exists():
                 print(f"\n[成功] 构建成功!")
                 print(f"   可执行文件: {exe_path}")
                 print(f"   文件大小: {exe_path.stat().st_size / 1024 / 1024:.2f} MB")
                 
-                # 复制到release目录
-                self.prepare_release(arch, onefile)
+                # 由于已经直接输出到release目录，不需要再复制
+                # 但可以创建ZIP包等
+                self.create_release_package(arch, onefile, exe_path)
                 
                 return True
             else:
                 print(f"\n[失败] 构建失败: 可执行文件未找到")
+                print(f"   预期路径: {exe_path}")
                 return False
                 
         except subprocess.CalledProcessError as e:
             print(f"\n[失败] 构建失败，退出码: {e.returncode}")
-            print(f"错误输出:\n{e.stderr}")
+            # 安全地处理编码问题
+            try:
+                print(f"错误输出:\n{e.stderr}")
+            except UnicodeEncodeError:
+                # 如果无法打印，则显示简化版本
+                print(f"错误输出 (编码问题，显示前500字符):")
+                safe_text = e.stderr.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+                print(safe_text[:500])
             return False
         except Exception as e:
             print(f"\n[失败] 构建过程中发生异常: {e}")
@@ -339,72 +360,57 @@ VSVersionInfo(
             traceback.print_exc()
             return False
     
-    def prepare_release(self, arch, onefile):
-        """准备发布文件"""
-        print(f"\n准备发布文件...")
+    def create_release_package(self, arch, onefile, exe_path):
+        """创建发布包（ZIP和说明文件）"""
+        print(f"\n创建发布包...")
         
-        # 创建arch-specific目录
-        arch_dir = self.release_dir / arch
-        arch_dir.mkdir(exist_ok=True)
+        # arch-specific目录
+        arch_dir = exe_path.parent
         
         if onefile:
-            # 单文件模式
-            source_exe = self.dist_dir / f'SVDEditor_{arch}.exe'
-            if source_exe.exists():
+            # 单文件模式 - 创建包含可执行文件和文档的ZIP包
+            zip_name = f'SVDEditor_{arch}_standalone.zip'
+            zip_path = self.release_dir / zip_name
+            
+            # 创建临时目录并复制文件
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_dir_path = Path(temp_dir)
+                
                 # 复制可执行文件
-                dest_exe = arch_dir / f'SVDEditor_{arch}.exe'
-                shutil.copy2(source_exe, dest_exe)
+                shutil.copy2(exe_path, temp_dir_path / f'SVDEditor_{arch}.exe')
                 
-                # 创建ZIP包
-                zip_name = f'SVDEditor_{arch}_standalone.zip'
-                zip_path = self.release_dir / zip_name
+                # 复制文档文件（从项目根目录）
+                project_root = self.project_root.parent
+                for doc_file in ['README.md', 'README_zh.md', 'LICENSE', 'config.py']:
+                    source_doc = project_root / doc_file
+                    if source_doc.exists():
+                        shutil.copy2(source_doc, temp_dir_path / doc_file)
                 
-                # 创建临时目录并复制文件
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    temp_dir_path = Path(temp_dir)
-                    
-                    # 复制可执行文件
-                    shutil.copy2(source_exe, temp_dir_path / f'SVDEditor_{arch}.exe')
-                    
-                    # 复制文档文件
-                    for doc_file in ['README.md', 'README_zh.md', 'LICENSE', 'config.py']:
-                        source_doc = self.project_root / doc_file
-                        if source_doc.exists():
-                            shutil.copy2(source_doc, temp_dir_path / doc_file)
-                    
-                    # 创建ZIP
-                    shutil.make_archive(
-                        str(zip_path).replace('.zip', ''),
-                        'zip',
-                        temp_dir
-                    )
-                
-                print(f"   发布文件: {dest_exe}")
-                print(f"   ZIP包: {zip_path}")
+                # 创建ZIP
+                shutil.make_archive(
+                    str(zip_path).replace('.zip', ''),
+                    'zip',
+                    temp_dir
+                )
+            
+            print(f"   ZIP包: {zip_path}")
         else:
-            # 目录模式
-            source_dir = self.dist_dir / f'SVDEditor_{arch}'
+            # 目录模式 - 创建整个目录的ZIP包
+            source_dir = arch_dir / f'SVDEditor_{arch}'
             if source_dir.exists():
-                # 复制整个目录
-                dest_dir = arch_dir / f'SVDEditor_{arch}'
-                if dest_dir.exists():
-                    shutil.rmtree(dest_dir)
-                shutil.copytree(source_dir, dest_dir)
-                
-                # 创建ZIP包
                 zip_name = f'SVDEditor_{arch}_portable.zip'
                 zip_path = self.release_dir / zip_name
                 shutil.make_archive(
                     str(zip_path).replace('.zip', ''),
                     'zip',
-                    'dist',
+                    str(arch_dir),
                     f'SVDEditor_{arch}'
                 )
                 
-                print(f"   发布目录: {dest_dir}")
                 print(f"   ZIP包: {zip_path}")
         
         # 创建说明文件
+        import platform
         readme_content = f'''SVD Editor {arch} 版本
 
 构建时间: {platform.node()} @ {platform.platform()}
