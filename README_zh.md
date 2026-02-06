@@ -67,6 +67,59 @@
    python run.py
    ```
 
+## 构建与分发
+
+本项目包含专业的构建工具，用于为Windows平台创建独立可执行文件。
+
+### 📚 详细构建指南
+完整构建说明请参阅[BUILD_INSTRUCTIONS_EN.md](docs/BUILD_INSTRUCTIONS_EN.md)（英文）或[BUILD_INSTRUCTIONS.md](docs/BUILD_INSTRUCTIONS.md)（中文）。
+
+### 构建工具
+
+构建脚本位于 `build_tools/` 目录下：
+
+- **`build_professional_fixed.py`**（推荐）- 专业的构建脚本，减少杀毒软件误报
+- **`build_windows.py`** - 基础Windows构建脚本，支持32/64位架构选择
+
+### 快速构建指南
+
+1. **安装构建依赖项**
+   ```bash
+   pip install -r requirements.txt
+   pip install pyinstaller
+   ```
+
+2. **使用便捷脚本（可选）**
+   - **Windows**：在项目根目录运行 `build.bat`
+   - **Linux/Mac**：在项目根目录运行 `./build.sh`
+   
+   或手动进入构建工具目录：
+   ```bash
+   cd build_tools
+   ```
+
+3. **运行专业构建脚本**
+   ```bash
+   python build_professional_fixed.py
+   ```
+
+4. **查找输出文件**
+   - 可执行文件：`../_dist/SVDEditor_64bit.exe`
+   - 发布文件：`../release/64bit/`
+
+### 构建特点
+
+- **减少杀毒软件误报**：包含版本信息并使用标准构建技术
+- **清晰的目录结构**：构建产物组织在 `_build/` 和 `_dist/` 目录中
+- **图标支持**：自动包含项目根目录的 `icon.ico`
+- **版本信息**：从 `version_info.txt` 读取
+
+### 重要说明
+
+- 构建脚本必须在 `build_tools/` 目录下运行
+- 如果遇到“文件未找到”错误，请确保您位于正确的目录
+- 如需32位构建，请使用 `python build_windows.py` 并选择32位选项
+
 ## 使用指南
 
 ### 基本工作流程
