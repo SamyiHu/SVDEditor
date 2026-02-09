@@ -38,6 +38,8 @@ from .components.layout_manager import LayoutManager
 from .components.peripheral_manager import PeripheralManager
 from .components.menu_bar import MenuBarBuilder
 from .components.toolbar import ToolBarBuilder
+from .managers.file_operations import FileOperations
+from .managers.device_info_manager import DeviceInfoManager
 
 from ..utils.helpers import pretty_xml, format_hex
 from ..utils.logger import Logger
@@ -63,6 +65,10 @@ class MainWindowRefactored(QMainWindow):
         self.tree_manager = TreeManager()
         self.dialog_factory = DialogFactory(self)
         self.logger = Logger("svd_tool")
+        
+        # 初始化文件操作管理器
+        self.file_operations = FileOperations(self.state_manager, self.layout_manager)
+        self.device_info_manager = DeviceInfoManager(self.state_manager, self.layout_manager)
         
         # GUI 日志处理器
         self._gui_log_handler = None
@@ -777,18 +783,35 @@ class MainWindowRefactored(QMainWindow):
     # ===================== 文件操作 =====================
     def new_file(self):
         """新建文件"""
-        # 检查未保存的更改
-        if self.check_unsaved_changes():
-            # 重置状态
-            self.state_manager.reset()
-            self.command_history.clear()
-            
-            # 更新UI
-            self.peripheral_manager.update_peripheral_tree()
-            self.update_data_stats()
-            
-            # 更新状态
-            self.layout_manager.update_status("已创建新文件")
+        self.file_operations.new_file()
+
+    def open_svd_file(self):
+        """打开SVD文件"""
+        self.file_operations.open_svd_file()
+
+    def save_svd_file(self):
+        """保存SVD文件"""
+        self.file_operations.save_svd_file()
+
+    def save_svd_file_as(self):
+        """另存为SVD文件"""
+        self.file_operations.save_svd_file_as()
+
+    def check_unsaved_changes(self) -> bool:
+        """检查未保存的更改"""
+        return self.file_operations.check_unsaved_changes()
+
+    def generate_svd(self):
+        """生成SVD文件"""
+        self.file_operations.generate_svd()
+
+    def preview_xml(self):
+        """预览XML"""
+        self.file_operations.preview_xml()
+
+    def export_file(self):
+        """导出文件"""
+        self.file_operations.export_file()
     
     def open_svd_file(self):
         """打开SVD文件"""
@@ -1779,7 +1802,7 @@ class MainWindowRefactored(QMainWindow):
     
     def _update_interrupt_table(self):
         """更新中断表格"""
-        irq_table = self.layout_manager.widgets.get('irq_table')
+        irq_table = self.layout_manager.get_widget('irq_table')
         if not irq_table:
             return
         
@@ -1802,7 +1825,7 @@ class MainWindowRefactored(QMainWindow):
     
     def on_irq_context_menu(self, pos):
         """中断表格右键菜单"""
-        irq_table = self.layout_manager.widgets.get('irq_table')
+        irq_table = self.layout_manager.get_widget('irq_table')
         if not irq_table:
             return
         
@@ -2094,93 +2117,7 @@ class MainWindowRefactored(QMainWindow):
 
     def update_device_info_from_ui(self):
         """从UI更新设备信息"""
-        try:
-            # 获取设备信息对象
-            device_info = self.state_manager.device_info
-            
-            # 获取布局管理器中的控件
-            layout = self.layout_manager
-            
-            # 更新基本信息
-            ic_name_edit = layout.get_widget('ic_name_edit')
-            if ic_name_edit:
-                device_info.name = ic_name_edit.text().strip()
-            
-            ic_desc_edit = layout.get_widget('ic_desc_edit')
-            if ic_desc_edit:
-                device_info.description = ic_desc_edit.text().strip()
-            
-            version_edit = layout.get_widget('version_edit')
-            if version_edit:
-                device_info.version = version_edit.text().strip()
-            
-            svd_version_combo = layout.get_widget('svd_version_combo')
-            if svd_version_combo:
-                device_info.svd_version = svd_version_combo.currentText()
-            
-            # 更新CPU信息
-            cpu_name_edit = layout.get_widget('cpu_name_edit')
-            if cpu_name_edit:
-                device_info.cpu.name = cpu_name_edit.text().strip()
-            
-            cpu_rev_edit = layout.get_widget('cpu_rev_edit')
-            if cpu_rev_edit:
-                device_info.cpu.revision = cpu_rev_edit.text().strip()
-            
-            endian_combo = layout.get_widget('endian_combo')
-            if endian_combo:
-                device_info.cpu.endian = endian_combo.currentText()
-            
-            mpu_combo = layout.get_widget('mpu_combo')
-            if mpu_combo:
-                mpu_text = mpu_combo.currentText()
-                device_info.cpu.mpu_present = (mpu_text == "是")
-            
-            fpu_combo = layout.get_widget('fpu_combo')
-            if fpu_combo:
-                fpu_text = fpu_combo.currentText()
-                device_info.cpu.fpu_present = (fpu_text == "是")
-            
-            nvic_prio_spin = layout.get_widget('nvic_prio_spin')
-            if nvic_prio_spin:
-                device_info.cpu.nvic_prio_bits = nvic_prio_spin.value()
-            
-            # 更新公司版权信息
-            company_name_edit = layout.get_widget('company_name_edit')
-            if company_name_edit:
-                device_info.vendor = company_name_edit.text().strip()
-            
-            copyright_edit = layout.get_widget('copyright_edit')
-            if copyright_edit:
-                device_info.copyright = copyright_edit.text().strip()
-            
-            # 处理作者字段（考虑"不显示"复选框）
-            author_edit = layout.get_widget('author_edit')
-            author_checkbox = layout.get_widget('author_checkbox')
-            if author_edit and author_checkbox:
-                if author_checkbox.isChecked():
-                    # 如果勾选了"不显示"，则清空作者字段
-                    device_info.author = ""
-                else:
-                    device_info.author = author_edit.text().strip()
-            elif author_edit:
-                # 如果没有复选框，则直接获取文本
-                device_info.author = author_edit.text().strip()
-            
-            # 处理许可证字段（考虑"不显示"选项）
-            license_combo = layout.get_widget('license_combo')
-            if license_combo:
-                license_text = license_combo.currentText()
-                if license_text == "不显示":
-                    # 如果选择了"不显示"，则清空许可证字段
-                    device_info.license = ""
-                else:
-                    device_info.license = license_text
-            
-            self.logger.debug("设备信息已从UI更新")
-            
-        except Exception as e:
-            self.logger.error(f"更新设备信息时出错: {str(e)}")
+        self.device_info_manager.update_device_info_from_ui()
 
     def update_data_model_from_tree(self):
         """从树控件更新数据模型"""
