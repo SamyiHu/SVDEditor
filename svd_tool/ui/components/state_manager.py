@@ -9,6 +9,7 @@ from dataclasses import asdict
 from svd_tool.core.data_model import DeviceInfo, Peripheral, Register, Field, Interrupt, CPUInfo
 from svd_tool.core.command_history import CommandHistory, Command
 from svd_tool.core.validators import Validator
+from svd_tool.i18n.i18n import t
 
 
 class StateManager:
@@ -196,7 +197,7 @@ class StateManager:
         command = Command(
             execute=execute,
             undo=undo,
-            description=f"添加外设: {peripheral.name}"
+            description=t("cmd.add_peripheral", name=peripheral.name)
         )
         self.execute_command(command)
     
@@ -241,7 +242,7 @@ class StateManager:
         command = Command(
             execute=execute,
             undo=undo,
-            description=f"删除外设: {name}"
+            description=t("cmd.delete_peripheral", name=name)
         )
         self.execute_command(command)
     
@@ -363,64 +364,64 @@ class StateManager:
         try:
             # 检查基本字段
             if not self.device_info.name:
-                errors.append("设备名称不能为空")
-            
+                errors.append(t("error.device_name_empty"))
+             
             if not self.device_info.version:
-                errors.append("设备版本不能为空")
+                errors.append(t("error.device_version_empty"))
             
             # 使用Validator验证外设
             for periph_name, peripheral in self.device_info.peripherals.items():
                 try:
                     # 验证外设名称
-                    Validator.validate_name(periph_name, "外设名称")
-                    
+                    Validator.validate_name(periph_name, t("error.peripheral_name_validation"))
+                     
                     # 验证基地址
                     if peripheral.base_address:
-                        Validator.validate_hex(str(peripheral.base_address), "基地址")
+                        Validator.validate_hex(str(peripheral.base_address), t("error.base_address_validation"))
                     
                     # 验证寄存器
                     for reg_name, register in peripheral.registers.items():
                         try:
-                            Validator.validate_name(reg_name, "寄存器名称")
-                            
+                            Validator.validate_name(reg_name, t("error.register_name_validation"))
+                             
                             if register.offset is not None:
-                                Validator.validate_hex(str(register.offset), "偏移地址")
+                                Validator.validate_hex(str(register.offset), t("error.offset_address_validation"))
                             
                             # 验证位域
                             for field_name, field in register.fields.items():
                                 try:
-                                    Validator.validate_name(field_name, "位域名称")
-                                    
+                                    Validator.validate_name(field_name, t("error.field_name_validation"))
+                                     
                                     # 验证位偏移和位宽
                                     if field.bit_offset is not None:
-                                        Validator.validate_decimal(str(field.bit_offset), "位偏移")
-                                    
+                                        Validator.validate_decimal(str(field.bit_offset), t("error.bit_offset_validation"))
+                                     
                                     if field.bit_width is not None:
-                                        Validator.validate_decimal(str(field.bit_width), "位宽")
+                                        Validator.validate_decimal(str(field.bit_width), t("error.bit_width_validation"))
                                         
                                 except Exception as e:
-                                    errors.append(f"外设 '{periph_name}' -> 寄存器 '{reg_name}' -> 位域 '{field_name}' 验证失败: {str(e)}")
+                                    errors.append(t("error.field_validation_failed", periph=periph_name, reg=reg_name, field=field_name, error=str(e)))
                                     
                         except Exception as e:
-                            errors.append(f"外设 '{periph_name}' -> 寄存器 '{reg_name}' 验证失败: {str(e)}")
+                            errors.append(t("error.register_validation_failed", periph=periph_name, reg=reg_name, error=str(e)))
                             
                 except Exception as e:
-                    errors.append(f"外设 '{periph_name}' 验证失败: {str(e)}")
+                    errors.append(t("error.peripheral_validation_failed", name=periph_name, error=str(e)))
             # 验证中断
             for interrupt_name, interrupt in self.device_info.interrupts.items():
                 try:
                     if interrupt.name:
-                        Validator.validate_name(interrupt.name, "中断名称")
-                    
+                        Validator.validate_name(interrupt.name, t("error.interrupt_name_validation"))
+                     
                     if interrupt.value is not None:
-                        Validator.validate_decimal(str(interrupt.value), "中断号")
-                        
+                        Validator.validate_decimal(str(interrupt.value), t("error.interrupt_number_validation"))
+                         
                 except Exception as e:
-                    errors.append(f"中断 '{interrupt.name if interrupt.name else '未命名'}' 验证失败: {str(e)}")
-                    
-                    
+                    errors.append(t("error.interrupt_validation_failed", name=interrupt.name if interrupt.name else t("error.unnamed_interrupt"), error=str(e)))
+                     
+                     
         except Exception as e:
-            errors.append(f"验证过程中发生错误: {str(e)}")
+            errors.append(t("error.validation_process_error", error=str(e)))
         
         return errors
     
@@ -465,7 +466,7 @@ class StateManager:
             return True
             
         except Exception as e:
-            print(f"按字母排序外设失败: {e}")
+            print(t("error.sort_peripherals_alphabetically_failed", error=e))
             return False
     
     def sort_peripherals_by_address(self) -> bool:
@@ -509,7 +510,7 @@ class StateManager:
             return True
             
         except Exception as e:
-            print(f"按地址排序外设失败: {e}")
+            print(t("error.sort_peripherals_by_address_failed", error=e))
             return False
     
     def sort_registers_by_address(self, peripheral_name: str) -> bool:
@@ -557,7 +558,7 @@ class StateManager:
             return True
             
         except Exception as e:
-            print(f"按地址排序寄存器失败: {e}")
+            print(t("error.sort_registers_by_address_failed", error=e))
             return False
     
     def sort_fields_by_bit_offset(self, register_name: str) -> bool:
@@ -610,7 +611,7 @@ class StateManager:
             return True
             
         except Exception as e:
-            print(f"按位偏移排序位域失败: {e}")
+            print(t("error.sort_fields_by_bit_offset_failed", error=e))
             return False
     
     # ===================== 移动功能 =====================
@@ -645,7 +646,7 @@ class StateManager:
             return True
             
         except Exception as e:
-            print(f"上移外设失败: {e}")
+            print(t("error.move_peripheral_up_failed", error=e))
             return False
     
     def move_peripheral_down(self, periph_name: str) -> bool:
@@ -679,5 +680,5 @@ class StateManager:
             return True
             
         except Exception as e:
-            print(f"下移外设失败: {e}")
+            print(t("error.move_peripheral_down_failed", error=e))
             return False

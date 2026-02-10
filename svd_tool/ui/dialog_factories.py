@@ -3,7 +3,7 @@
 from typing import Optional, Dict, Any, List
 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QDialogButtonBox,
     QComboBox, QSpinBox, QTextEdit, QMessageBox
 )
@@ -13,6 +13,7 @@ from .dialogs import BaseEditDialog
 from ..core.data_model import Peripheral, Register, Field, Interrupt
 from ..core.validators import Validator, ValidationError
 from ..core.constants import ACCESS_OPTIONS
+from ..i18n.i18n import t
 
 
 class DialogFactory:
@@ -70,7 +71,7 @@ class PeripheralEditDialog(BaseEditDialog):
         self.original_name = peripheral.name if peripheral else ""
         
         # 设置标题
-        title = "编辑外设" if is_edit and peripheral else "添加外设"
+        title = t("label.dialog_title_edit_peripheral") if is_edit and peripheral else t("label.dialog_title_add_peripheral")
         
         # 调用父类初始化
         super().__init__(parent, title)
@@ -82,48 +83,48 @@ class PeripheralEditDialog(BaseEditDialog):
         """设置表单内容"""
         # 外设名
         self.name_edit = QLineEdit()
-        self.add_form_row("外设名:", self.name_edit)
+        self.add_form_row(t("label.peripheral_name") + ":", self.name_edit)
         
         # 基地址
         self.base_addr_edit = QLineEdit()
-        self.base_addr_edit.setPlaceholderText("例如: 0x40000000")
-        self.add_form_row("基地址:", self.base_addr_edit)
+        self.base_addr_edit.setPlaceholderText(t("placeholder.base_address"))
+        self.add_form_row(t("label.base_address") + ":", self.base_addr_edit)
         
         # 显示名称
         self.display_name_edit = QLineEdit()
-        self.display_name_edit.setPlaceholderText("可选的显示名称")
-        self.add_form_row("显示名称:", self.display_name_edit)
+        self.display_name_edit.setPlaceholderText(t("placeholder.display_name"))
+        self.add_form_row(t("label.display_name") + ":", self.display_name_edit)
         
         # 描述
         self.desc_edit = QLineEdit()
-        self.desc_edit.setPlaceholderText("外设描述")
-        self.add_form_row("描述:", self.desc_edit)
+        self.desc_edit.setPlaceholderText(t("placeholder.description"))
+        self.add_form_row(t("label.description") + ":", self.desc_edit)
         
         # 组名
         self.group_edit = QLineEdit()
-        self.group_edit.setPlaceholderText("分组名称")
-        self.add_form_row("组名:", self.group_edit)
+        self.group_edit.setPlaceholderText(t("placeholder.group_name"))
+        self.add_form_row(t("label.group_name") + ":", self.group_edit)
         
         # 地址块偏移
         self.offset_edit = QLineEdit()
         self.offset_edit.setText("0x0")
-        self.add_form_row("地址块偏移:", self.offset_edit)
+        self.add_form_row(t("label.address_block_offset") + ":", self.offset_edit)
         
         # 地址块大小
         self.size_edit = QLineEdit()
         self.size_edit.setText("0x14")
-        self.add_form_row("地址块大小:", self.size_edit)
+        self.add_form_row(t("label.address_block_size") + ":", self.size_edit)
         
         # 继承自
         self.derived_combo = QComboBox()
-        self.derived_combo.addItem("无")
+        self.derived_combo.addItem(t("value.none"))
         
         # 添加已存在的外设（排除当前编辑的外设）
         for periph in self.existing_peripherals:
             if not self.is_edit or periph != self.original_name:
                 self.derived_combo.addItem(periph)
         
-        self.add_form_row("继承自:", self.derived_combo)
+        self.add_form_row(t("label.derived_from") + ":", self.derived_combo)
     
     def load_data(self, peripheral: Peripheral):
         """加载数据"""
@@ -147,25 +148,25 @@ class PeripheralEditDialog(BaseEditDialog):
     def validate_input(self):
         """验证输入"""
         name = self.name_edit.text().strip()
-        Validator.validate_name(name, "外设名")
+        Validator.validate_name(name, t("error.peripheral_name_validation"))
         
         # 检查名称是否已存在（如果是添加模式或名称已更改）
         if (not self.is_edit or name != self.original_name) and name in self.existing_peripherals:
-            raise ValidationError(f"外设名 '{name}' 已存在")
+            raise ValidationError(t("error.peripheral_name_exists", name=name))
         
-        Validator.validate_hex(self.base_addr_edit.text().strip(), "基地址")
-        Validator.validate_hex(self.offset_edit.text().strip(), "地址块偏移")
-        Validator.validate_hex(self.size_edit.text().strip(), "地址块大小")
+        Validator.validate_hex(self.base_addr_edit.text().strip(), t("error.base_address_validation"))
+        Validator.validate_hex(self.offset_edit.text().strip(), t("error.offset_address_validation"))
+        Validator.validate_hex(self.size_edit.text().strip(), t("error.address_block_size_validation"))
         
         # 验证继承关系
         derived_from = self.derived_combo.currentText()
-        if derived_from != "无" and derived_from not in self.existing_peripherals:
-            raise ValidationError(f"继承的外设 '{derived_from}' 不存在")
+        if derived_from != t("value.none") and derived_from not in self.existing_peripherals:
+            raise ValidationError(t("error.derived_peripheral_not_exist", derived_from=derived_from))
     
     def collect_data(self):
         """收集数据"""
         derived_from = self.derived_combo.currentText()
-        if derived_from == "无":
+        if derived_from == t("value.none"):
             derived_from = ""
         
         self.result_data = {
@@ -196,7 +197,7 @@ class RegisterEditDialog(BaseEditDialog):
         self.original_name = register.name if register else ""
         
         # 设置标题
-        title = "编辑寄存器" if is_edit and register else "添加寄存器"
+        title = t("label.dialog_title_edit_register") if is_edit and register else t("label.dialog_title_add_register")
         
         super().__init__(parent, title)
         
@@ -207,38 +208,38 @@ class RegisterEditDialog(BaseEditDialog):
         """设置表单内容"""
         # 寄存器名
         self.name_edit = QLineEdit()
-        self.add_form_row("寄存器名:", self.name_edit)
+        self.add_form_row(t("label.register_name") + ":", self.name_edit)
         
         # 偏移地址
         self.offset_edit = QLineEdit()
-        self.offset_edit.setPlaceholderText("例如: 0x0C")
-        self.add_form_row("偏移地址:", self.offset_edit)
+        self.offset_edit.setPlaceholderText(t("placeholder.offset"))
+        self.add_form_row(t("label.offset_prefix") + ":", self.offset_edit)
         
         # 显示名称
         self.display_name_edit = QLineEdit()
-        self.display_name_edit.setPlaceholderText("可选的显示名称")
-        self.add_form_row("显示名称:", self.display_name_edit)
+        self.display_name_edit.setPlaceholderText(t("placeholder.display_name"))
+        self.add_form_row(t("label.display_name") + ":", self.display_name_edit)
         
         # 描述
         self.desc_edit = QLineEdit()
-        self.desc_edit.setPlaceholderText("寄存器描述")
-        self.add_form_row("描述:", self.desc_edit)
+        self.desc_edit.setPlaceholderText(t("placeholder.register_description"))
+        self.add_form_row(t("label.description") + ":", self.desc_edit)
         
         # 访问权限
         self.access_combo = QComboBox()
         self.access_combo.addItems(ACCESS_OPTIONS)
-        self.add_form_row("访问权限:", self.access_combo)
+        self.add_form_row(t("label.access") + ":", self.access_combo)
         
         # 复位值
         self.reset_edit = QLineEdit()
         self.reset_edit.setText("0x00000000")
-        self.add_form_row("复位值:", self.reset_edit)
+        self.add_form_row(t("label.reset_value") + ":", self.reset_edit)
         
         # 大小
         self.size_edit = QLineEdit()
         self.size_edit.setText("0x20")
-        self.size_edit.setPlaceholderText("例如: 0x20 (32位)")
-        self.add_form_row("大小:", self.size_edit)
+        self.size_edit.setPlaceholderText(t("placeholder.size"))
+        self.add_form_row(t("label.size") + ":", self.size_edit)
     
     def load_data(self, register: Register):
         """加载数据"""
@@ -263,20 +264,20 @@ class RegisterEditDialog(BaseEditDialog):
     def validate_input(self):
         """验证输入"""
         name = self.name_edit.text().strip()
-        Validator.validate_name(name, "寄存器名")
+        Validator.validate_name(name, t("error.register_name_validation"))
         
         # 检查名称是否已存在
         if (not self.is_edit or name != self.original_name) and name in self.existing_registers:
-            raise ValidationError(f"寄存器名 '{name}' 已存在")
+            raise ValidationError(t("error.register_name_exists", name=name))
         
-        Validator.validate_hex(self.offset_edit.text().strip(), "偏移地址")
-        Validator.validate_hex(self.reset_edit.text().strip(), "复位值")
-        Validator.validate_hex(self.size_edit.text().strip(), "大小")
+        Validator.validate_hex(self.offset_edit.text().strip(), t("error.offset_address_validation"))
+        Validator.validate_hex(self.reset_edit.text().strip(), t("error.reset_value_validation"))
+        Validator.validate_hex(self.size_edit.text().strip(), t("error.size_validation"))
     
     def collect_data(self):
         """收集数据"""
         access = self.access_combo.currentText()
-        if access == "无":
+        if access == t("value.none"):
             access = None
         
         self.result_data = {
@@ -301,7 +302,7 @@ class FieldEditDialog(BaseEditDialog):
         self.original_name = field.name if field else ""
         
         # 设置标题
-        title = "编辑位域" if is_edit and field else "添加位域"
+        title = t("label.dialog_title_edit_field") if is_edit and field else t("label.dialog_title_add_field")
         
         super().__init__(parent, title)
         
@@ -312,38 +313,38 @@ class FieldEditDialog(BaseEditDialog):
         """设置表单内容"""
         # 位域名
         self.name_edit = QLineEdit()
-        self.add_form_row("位域名:", self.name_edit)
+        self.add_form_row(t("label.field_name") + ":", self.name_edit)
         
         # 起始位
         self.offset_spin = QSpinBox()
         self.offset_spin.setRange(0, 31)
-        self.add_form_row("起始位:", self.offset_spin)
+        self.add_form_row(t("label.bit_offset") + ":", self.offset_spin)
         
         # 位宽
         self.width_spin = QSpinBox()
         self.width_spin.setRange(1, 32)
         self.width_spin.setValue(1)
-        self.add_form_row("位宽:", self.width_spin)
+        self.add_form_row(t("label.bit_width") + ":", self.width_spin)
         
         # 显示名称
         self.display_name_edit = QLineEdit()
-        self.display_name_edit.setPlaceholderText("可选的显示名称")
-        self.add_form_row("显示名称:", self.display_name_edit)
+        self.display_name_edit.setPlaceholderText(t("placeholder.optional_display_name"))
+        self.add_form_row(t("label.display_name") + ":", self.display_name_edit)
         
         # 描述
         self.desc_edit = QLineEdit()
-        self.desc_edit.setPlaceholderText("位域描述")
-        self.add_form_row("描述:", self.desc_edit)
+        self.desc_edit.setPlaceholderText(t("placeholder.field_description"))
+        self.add_form_row(t("label.description") + ":", self.desc_edit)
         
         # 访问权限
         self.access_combo = QComboBox()
         self.access_combo.addItems(ACCESS_OPTIONS)
-        self.add_form_row("访问权限:", self.access_combo)
+        self.add_form_row(t("label.access") + ":", self.access_combo)
         
         # 复位值
         self.reset_edit = QLineEdit()
         self.reset_edit.setText("0x0")
-        self.add_form_row("复位值:", self.reset_edit)
+        self.add_form_row(t("label.reset_value") + ":", self.reset_edit)
     
     def load_data(self, field: Field):
         """加载数据"""
@@ -368,19 +369,19 @@ class FieldEditDialog(BaseEditDialog):
     def validate_input(self):
         """验证输入"""
         name = self.name_edit.text().strip()
-        Validator.validate_name(name, "位域名")
+        Validator.validate_name(name, t("error.field_name_validation"))
         
         # 验证位域范围
         offset = self.offset_spin.value()
         width = self.width_spin.value()
         Validator.validate_bit_range(offset, width)
         
-        Validator.validate_hex(self.reset_edit.text().strip(), "复位值")
+        Validator.validate_hex(self.reset_edit.text().strip(), t("error.reset_value_validation"))
     
     def collect_data(self):
         """收集数据"""
         access = self.access_combo.currentText()
-        if access == "无":
+        if access == t("value.none"):
             access = None
         
         self.result_data = {
@@ -407,7 +408,7 @@ class InterruptEditDialog(BaseEditDialog):
         self.original_name = interrupt.name if interrupt else ""
         
         # 设置标题
-        title = "编辑中断" if is_edit and interrupt else "添加中断"
+        title = t("label.dialog_title_edit_interrupt") if is_edit and interrupt else t("label.dialog_title_add_interrupt")
         
         super().__init__(parent, title)
         
@@ -418,22 +419,22 @@ class InterruptEditDialog(BaseEditDialog):
         """设置表单内容"""
         # 中断名
         self.name_edit = QLineEdit()
-        self.add_form_row("中断名:", self.name_edit)
+        self.add_form_row(t("label.interrupt_name") + ":", self.name_edit)
         
         # 中断号
         self.value_spin = QSpinBox()
         self.value_spin.setRange(0, 255)
-        self.add_form_row("中断号:", self.value_spin)
+        self.add_form_row(t("label.interrupt_value") + ":", self.value_spin)
         
         # 关联外设
         self.periph_combo = QComboBox()
         self.periph_combo.addItems(self.peripherals)
-        self.add_form_row("关联外设:", self.periph_combo)
+        self.add_form_row(t("label.peripheral") + ":", self.periph_combo)
         
         # 描述
         self.desc_edit = QLineEdit()
-        self.desc_edit.setPlaceholderText("中断描述")
-        self.add_form_row("描述:", self.desc_edit)
+        self.desc_edit.setPlaceholderText(t("placeholder.interrupt_description"))
+        self.add_form_row(t("label.description") + ":", self.desc_edit)
     
     def load_data(self, interrupt: Interrupt):
         """加载数据"""
@@ -453,7 +454,7 @@ class InterruptEditDialog(BaseEditDialog):
     def validate_input(self):
         """验证输入"""
         name = self.name_edit.text().strip()
-        Validator.validate_name(name, "中断名")
+        Validator.validate_name(name, t("error.interrupt_name_validation"))
         
         # 验证中断号
         value = self.value_spin.value()
@@ -462,7 +463,7 @@ class InterruptEditDialog(BaseEditDialog):
         # 验证关联外设
         peripheral = self.periph_combo.currentText()
         if not peripheral:
-            raise ValidationError("必须选择关联外设")
+            raise ValidationError(t("error.must_select_peripheral"))
     
     def collect_data(self):
         """收集数据"""

@@ -81,10 +81,6 @@ class SVDGenerator:
         # 添加厂商信息（如果存在）
         if self.device_info.vendor:
             ET.SubElement(root, "vendor").text = self.device_info.vendor
-        
-        # 添加版权信息（如果存在）
-        if self.device_info.copyright:
-            ET.SubElement(root, "copyright").text = self.device_info.copyright
     
     def _add_cpu_info(self, root: ET.Element):
         """添加CPU信息"""

@@ -1,3 +1,8 @@
 PyQt6>=6.5.0
 # 可选：如果需要更好的XML处理
 # lxml>=4.9.0
+
+# 测试依赖
+pytest>=7.0.0
+pytest-qt>=4.0.0
+pytest-cov>=4.0.0

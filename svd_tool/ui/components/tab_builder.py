@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QComboBox, QSpinBox, QCheckBox
 )
 from PyQt6.QtCore import Qt
+from ...i18n.i18n import t
 
 
 class TabBuilder:
@@ -38,64 +39,64 @@ class TabBuilder:
             layout = QVBoxLayout(tab)
 
             # 基本信息组
-            basic_group = QGroupBox("基本信息")
+            basic_group = QGroupBox(t("label.basic_info"))
             basic_layout = QHBoxLayout(basic_group)
-
+            
             left_layout = QVBoxLayout()
             right_layout = QVBoxLayout()
-
+            
             # 左侧表单
-            left_layout.addWidget(QLabel("IC型号:"))
+            left_layout.addWidget(QLabel(t("label.ic_model") + ":"))
             ic_name_edit = QLineEdit()
-            ic_name_edit.setPlaceholderText("例如: STM32F103C8")
+            ic_name_edit.setPlaceholderText(t("placeholder.ic_model"))
             left_layout.addWidget(ic_name_edit)
-
-            left_layout.addWidget(QLabel("IC描述:"))
+            
+            left_layout.addWidget(QLabel(t("label.ic_description") + ":"))
             ic_desc_edit = QLineEdit()
-            ic_desc_edit.setPlaceholderText("例如: 32位ARM Cortex-M3微控制器")
+            ic_desc_edit.setPlaceholderText(t("placeholder.ic_description"))
             left_layout.addWidget(ic_desc_edit)
-
-            left_layout.addWidget(QLabel("版本号:"))
+            
+            left_layout.addWidget(QLabel(t("label.version") + ":"))
             version_edit = QLineEdit()
-            version_edit.setPlaceholderText("例如: 1.0")
+            version_edit.setPlaceholderText(t("placeholder.version"))
             left_layout.addWidget(version_edit)
-
-            left_layout.addWidget(QLabel("SVD版本:"))
+            
+            left_layout.addWidget(QLabel(t("label.svd_version") + ":"))
             svd_version_combo = QComboBox()
             svd_version_combo.addItems(["1.0", "1.1", "1.2", "1.3", "1.3.1"])
             svd_version_combo.setCurrentText("1.3")
             left_layout.addWidget(svd_version_combo)
-
+            
             # 右侧表单
-            right_layout.addWidget(QLabel("CPU名称:"))
+            right_layout.addWidget(QLabel(t("label.cpu_name") + ":"))
             cpu_name_edit = QLineEdit()
-            cpu_name_edit.setPlaceholderText("例如: Cortex-M3")
+            cpu_name_edit.setPlaceholderText(t("placeholder.cpu_name"))
             right_layout.addWidget(cpu_name_edit)
-
-            right_layout.addWidget(QLabel("CPU修订版:"))
+            
+            right_layout.addWidget(QLabel(t("label.cpu_revision") + ":"))
             cpu_rev_edit = QLineEdit()
-            cpu_rev_edit.setPlaceholderText("例如: r1p1")
+            cpu_rev_edit.setPlaceholderText(t("placeholder.cpu_revision"))
             right_layout.addWidget(cpu_rev_edit)
 
-            right_layout.addWidget(QLabel("端序:"))
+            right_layout.addWidget(QLabel(t("label.endian") + ":"))
             endian_combo = QComboBox()
-            endian_combo.addItems(["little", "big", "selectable"])
-            endian_combo.setCurrentText("little")
+            endian_combo.addItems([t("value.little"), t("value.big"), t("value.selectable")])
+            endian_combo.setCurrentText(t("value.little"))
             right_layout.addWidget(endian_combo)
-
-            right_layout.addWidget(QLabel("MPU存在:"))
+            
+            right_layout.addWidget(QLabel(t("label.mpu_exists") + ":"))
             mpu_combo = QComboBox()
-            mpu_combo.addItems(["是", "否"])
-            mpu_combo.setCurrentText("否")
+            mpu_combo.addItems([t("value.yes"), t("value.no")])
+            mpu_combo.setCurrentText(t("value.no"))
             right_layout.addWidget(mpu_combo)
-
-            right_layout.addWidget(QLabel("FPU存在:"))
+            
+            right_layout.addWidget(QLabel(t("label.fpu_exists") + ":"))
             fpu_combo = QComboBox()
-            fpu_combo.addItems(["是", "否"])
-            fpu_combo.setCurrentText("否")
+            fpu_combo.addItems([t("value.yes"), t("value.no")])
+            fpu_combo.setCurrentText(t("value.no"))
             right_layout.addWidget(fpu_combo)
-
-            right_layout.addWidget(QLabel("NVIC优先级位数:"))
+            
+            right_layout.addWidget(QLabel(t("label.nvic_prio_bits") + ":"))
             nvic_prio_spin = QSpinBox()
             nvic_prio_spin.setRange(0, 8)
             nvic_prio_spin.setValue(4)
@@ -106,39 +107,39 @@ class TabBuilder:
             layout.addWidget(basic_group)
 
             # 公司版权信息组
-            company_group = QGroupBox("公司版权信息")
+            company_group = QGroupBox(t("label.company_copyright"))
             company_layout = QHBoxLayout(company_group)
-
+            
             company_left_layout = QVBoxLayout()
             company_right_layout = QVBoxLayout()
-
-            company_left_layout.addWidget(QLabel("公司名称:"))
+            
+            company_left_layout.addWidget(QLabel(t("label.company_name") + ":"))
             company_name_edit = QLineEdit()
-            company_name_edit.setPlaceholderText("例如: STMicroelectronics")
+            company_name_edit.setPlaceholderText(t("placeholder.company_name"))
             company_left_layout.addWidget(company_name_edit)
-
-            company_left_layout.addWidget(QLabel("版权信息:"))
+            
+            company_left_layout.addWidget(QLabel(t("label.copyright_info") + ":"))
             copyright_edit = QLineEdit()
-            copyright_edit.setPlaceholderText("例如: Copyright 2025 STMicroelectronics. All rights reserved.")
+            copyright_edit.setPlaceholderText(t("placeholder.copyright_info"))
             company_left_layout.addWidget(copyright_edit)
 
             # 作者字段，带"不显示"复选框
             author_layout = QHBoxLayout()
-            author_layout.addWidget(QLabel("作者:"))
+            author_layout.addWidget(QLabel(t("label.author") + ":"))
             author_edit = QLineEdit()
-            author_edit.setPlaceholderText("例如: SVD Tool Team")
+            author_edit.setPlaceholderText(t("placeholder.author"))
             author_layout.addWidget(author_edit)
-            author_checkbox = QCheckBox("不显示")
+            author_checkbox = QCheckBox(t("label.do_not_display"))
             author_checkbox.setChecked(False)
             author_layout.addWidget(author_checkbox)
             company_right_layout.addLayout(author_layout)
 
             # 许可证字段，添加"不显示"选项
             license_layout = QHBoxLayout()
-            license_layout.addWidget(QLabel("许可证:"))
+            license_layout.addWidget(QLabel(t("label.license") + ":"))
             license_combo = QComboBox()
-            license_combo.addItems(["不显示", "Apache-2.0", "MIT", "BSD-3-Clause", "Proprietary", "Other"])
-            license_combo.setCurrentText("Apache-2.0")
+            license_combo.addItems([t("license.do_not_display"), t("license.apache_2_0"), t("license.mit"), t("license.bsd_3_clause"), t("license.proprietary"), t("license.other")])
+            license_combo.setCurrentText(t("license.apache_2_0"))
             license_layout.addWidget(license_combo)
             company_right_layout.addLayout(license_layout)
 
@@ -147,11 +148,11 @@ class TabBuilder:
             layout.addWidget(company_group)
 
             # 描述信息组
-            desc_group = QGroupBox("详细描述")
+            desc_group = QGroupBox(t("label.detailed_description"))
             desc_layout = QVBoxLayout(desc_group)
-
+            
             desc_edit = QTextEdit()
-            desc_edit.setPlaceholderText("输入设备的详细描述...")
+            desc_edit.setPlaceholderText(t("label.enter_detailed_description"))
             desc_edit.setMaximumHeight(150)
             desc_layout.addWidget(desc_edit)
 
@@ -170,7 +171,7 @@ class TabBuilder:
             author_edit.setEnabled(not author_checkbox.isChecked())
 
             self.logger.debug(f"调用addTab前，标签页数量: {tab_widget.count()}")
-            index = tab_widget.addTab(tab, "基本信息")
+            index = tab_widget.addTab(tab, t("tab.basic_info_tab"))
             self.logger.debug(f"addTab返回索引: {index}，标签页数量: {tab_widget.count()}")
 
             # 返回控件字典
@@ -218,28 +219,28 @@ class TabBuilder:
         periph_toolbar = QHBoxLayout()
 
         # 三个独立的添加按钮
-        add_periph_btn = QPushButton("添加外设")
-        add_periph_btn.setToolTip("添加新的外设")
+        add_periph_btn = QPushButton(t("button.add_peripheral"))
+        add_periph_btn.setToolTip(t("tooltip.add_peripheral"))
         periph_toolbar.addWidget(add_periph_btn)
-
-        add_reg_btn = QPushButton("添加寄存器")
+        
+        add_reg_btn = QPushButton(t("button.add_register"))
         add_reg_btn.setEnabled(False)
-        add_reg_btn.setToolTip("在当前选中的外设下添加寄存器")
+        add_reg_btn.setToolTip(t("tooltip.add_register"))
         periph_toolbar.addWidget(add_reg_btn)
 
-        add_field_btn = QPushButton("添加位域")
+        add_field_btn = QPushButton(t("button.add_field"))
         add_field_btn.setEnabled(False)
-        add_field_btn.setToolTip("在当前选中的寄存器下添加位域")
+        add_field_btn.setToolTip(t("tooltip.add_field"))
         periph_toolbar.addWidget(add_field_btn)
-
-        edit_periph_btn = QPushButton("编辑")
+        
+        edit_periph_btn = QPushButton(t("button.edit"))
         edit_periph_btn.setEnabled(False)
-        edit_periph_btn.setToolTip("编辑当前选中的项目")
+        edit_periph_btn.setToolTip(t("tooltip.edit_peripheral"))
         periph_toolbar.addWidget(edit_periph_btn)
-
-        delete_periph_btn = QPushButton("删除")
+        
+        delete_periph_btn = QPushButton(t("button.delete"))
         delete_periph_btn.setEnabled(False)
-        delete_periph_btn.setToolTip("删除当前选中的项目")
+        delete_periph_btn.setToolTip(t("tooltip.delete_peripheral"))
         periph_toolbar.addWidget(delete_periph_btn)
 
         periph_toolbar.addStretch()
@@ -247,7 +248,7 @@ class TabBuilder:
 
         # 外设树（现在包含寄存器作为子项）
         periph_tree = QTreeWidget()
-        periph_tree.setHeaderLabels(["名称", "偏移量/基地址", "描述", "访问权限", "复位值"])
+        periph_tree.setHeaderLabels([t("label.name_column"), t("label.offset_column"), t("label.description_column"), t("label.access_column"), t("label.reset_value_column")])
         periph_tree.setColumnWidth(0, 180)  # 名称
         periph_tree.setColumnWidth(1, 100)  # 偏移量/基地址
         periph_tree.setColumnWidth(2, 200)  # 描述
@@ -312,7 +313,7 @@ class TabBuilder:
             visualization_widget = QWidget()
             visualization_widget.setMinimumHeight(200)
             visualization_widget.setStyleSheet("background-color: #f0f0f0;")
-            placeholder_label = QLabel("可视化控件加载失败")
+            placeholder_label = QLabel(t("label.no_data"))
             placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout_placeholder = QVBoxLayout(visualization_widget)
             layout_placeholder.addWidget(placeholder_label)
@@ -322,7 +323,7 @@ class TabBuilder:
         # 位域表格（直接编辑，无需工具栏按钮）
         field_table = QTableWidget()
         field_table.setColumnCount(6)
-        field_table.setHorizontalHeaderLabels(["名称", "位偏移", "位宽", "访问权限", "复位值", "描述"])
+        field_table.setHorizontalHeaderLabels([t("label.name_column"), t("label.bit_offset_column"), t("label.bit_width_column"), t("label.access_column"), t("label.reset_value_column"), t("label.description_column")])
 
         # 获取header对象并设置拉伸
         header = field_table.horizontalHeader()
@@ -403,7 +404,7 @@ class TabBuilder:
 
         layout.addWidget(splitter)
 
-        tab_widget.addTab(tab, "外设/寄存器")
+        tab_widget.addTab(tab, t("tab.peripheral_tab"))
 
         # 返回控件字典
         widgets = {
@@ -428,14 +429,14 @@ class TabBuilder:
         # 工具栏
         toolbar = QHBoxLayout()
 
-        add_irq_btn = QPushButton("添加中断")
+        add_irq_btn = QPushButton(t("button.add_interrupt"))
         toolbar.addWidget(add_irq_btn)
 
-        edit_irq_btn = QPushButton("编辑中断")
+        edit_irq_btn = QPushButton(t("label.edit_interrupt"))
         edit_irq_btn.setEnabled(False)
         toolbar.addWidget(edit_irq_btn)
 
-        delete_irq_btn = QPushButton("删除中断")
+        delete_irq_btn = QPushButton(t("label.delete_interrupt"))
         delete_irq_btn.setEnabled(False)
         toolbar.addWidget(delete_irq_btn)
 
@@ -445,7 +446,7 @@ class TabBuilder:
         # 中断表格（列顺序：名称、值、外设、描述）
         irq_table = QTableWidget()
         irq_table.setColumnCount(4)
-        irq_table.setHorizontalHeaderLabels(["名称", "值", "外设", "描述"])
+        irq_table.setHorizontalHeaderLabels([t("label.name_column"), t("label.value_column"), t("label.peripheral"), t("label.description_column")])
 
         # 获取header对象并设置拉伸和样式
         header = irq_table.horizontalHeader()
@@ -513,7 +514,7 @@ class TabBuilder:
 
         layout.addWidget(irq_table)
 
-        tab_widget.addTab(tab, "中断")
+        tab_widget.addTab(tab, t("tab.interrupt_tab"))
 
         # 返回控件字典
         widgets = {
@@ -534,13 +535,13 @@ class TabBuilder:
         # 工具栏
         toolbar = QHBoxLayout()
 
-        generate_btn = QPushButton("生成SVD")
+        generate_btn = QPushButton(t("button.generate"))
         toolbar.addWidget(generate_btn)
 
-        preview_btn = QPushButton("预览XML")
+        preview_btn = QPushButton(t("button.preview"))
         toolbar.addWidget(preview_btn)
 
-        export_btn = QPushButton("导出文件")
+        export_btn = QPushButton(t("button.export_file"))
         toolbar.addWidget(export_btn)
 
         toolbar.addStretch()
@@ -553,7 +554,7 @@ class TabBuilder:
         preview_edit.setFontPointSize(10)
         layout.addWidget(preview_edit)
 
-        tab_widget.addTab(tab, "预览/导出")
+        tab_widget.addTab(tab, t("tab.preview_tab"))
 
         # 返回控件字典
         widgets = {

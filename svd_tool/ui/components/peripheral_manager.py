@@ -148,6 +148,10 @@ class PeripheralManager(QObject):
         
         periph_tree.clear()
         
+        # 重新设置列标题（重要：语言切换时需要更新）
+        from ...i18n.i18n import t
+        periph_tree.setHeaderLabels([t("label.name_column"), t("label.offset_column"), t("label.description_column"), t("label.access_column"), t("label.reset_value_column")])
+        
         # 创建项目映射，便于后续查找
         item_map = {}  # 路径 -> 项目
         
@@ -463,30 +467,30 @@ class PeripheralManager(QObject):
         # 执行菜单动作
         action = menu.exec(periph_tree.mapToGlobal(pos))
         if action:
-            action_text = action.text()
+            action_data = action.data()
             item_type = main_window.tree_manager.get_item_type(item)
             item_name = main_window.tree_manager.get_item_name(item)
             
             # 根据动作类型执行相应操作
-            if action_text == "编辑外设":
+            if action_data == "edit_peripheral":
                 self.edit_peripheral(item_name)
-            elif action_text == "删除外设":
+            elif action_data == "delete_peripheral":
                 self.delete_selected_peripheral()
-            elif action_text == "添加寄存器":
+            elif action_data == "add_register":
                 # 调用主窗口的添加寄存器功能
                 if hasattr(main_window, 'add_register'):
                     # 设置当前选择为此外设
                     self.state_manager.set_selection(peripheral=item_name)
                     main_window.add_register()
-            elif action_text == "编辑寄存器":
+            elif action_data == "edit_register":
                 # 调用主窗口的编辑寄存器功能
                 if hasattr(main_window, 'edit_register'):
                     main_window.edit_register(item_name)
-            elif action_text == "删除寄存器":
+            elif action_data == "delete_register":
                 # 调用主窗口的删除寄存器功能
                 if hasattr(main_window, 'delete_register'):
                     main_window.delete_register(item_name)
-            elif action_text == "添加位域":
+            elif action_data == "add_field":
                 # 调用主窗口的添加位域功能
                 if hasattr(main_window, 'add_field'):
                     # 需要获取寄存器名称和外设名称
@@ -501,32 +505,32 @@ class PeripheralManager(QObject):
                             register=reg_name
                         )
                         main_window.add_field()
-            elif action_text == "编辑位域":
+            elif action_data == "edit_field":
                 # 调用主窗口的编辑位域功能
                 if hasattr(main_window, 'edit_field'):
                     main_window.edit_field(item_name)
-            elif action_text == "删除位域":
+            elif action_data == "delete_field":
                 # 调用主窗口的删除位域功能
                 if hasattr(main_window, 'delete_field'):
                     main_window.delete_field(item_name)
-            elif action_text == "按字母排序":
+            elif action_data == "sort_alphabetically":
                 # 调用主窗口的排序功能
                 if hasattr(main_window, 'sort_items_alphabetically'):
                     main_window.sort_items_alphabetically()
-            elif action_text == "复制外设":
+            elif action_data == "copy_peripheral":
                 # 复制外设数据
                 self.copy_peripheral(item_name)
-            elif action_text == "粘贴外设":
+            elif action_data == "paste_peripheral":
                 # 粘贴外设数据
                 self.paste_peripheral()
-            elif action_text == "复制寄存器":
+            elif action_data == "copy_register":
                 # 复制寄存器数据，需要获取外设名称
                 if item_type == NODE_TYPES["REGISTER"]:
                     parent_item = item.parent()
                     if parent_item:
                         periph_name = main_window.tree_manager.get_item_name(parent_item)
                         self.copy_register(periph_name, item_name)
-            elif action_text == "粘贴寄存器":
+            elif action_data == "paste_register":
                 # 粘贴寄存器数据，需要获取外设名称
                 if item_type == NODE_TYPES["REGISTER"]:
                     parent_item = item.parent()
@@ -536,7 +540,7 @@ class PeripheralManager(QObject):
                 elif item_type == NODE_TYPES["PERIPHERAL"]:
                     # 在所选外设中粘贴寄存器
                     self.paste_register(item_name)
-            elif action_text == "复制位域":
+            elif action_data == "copy_field":
                 # 复制位域数据，需要获取外设名称和寄存器名称
                 if item_type == NODE_TYPES["FIELD"]:
                     reg_item = item.parent()
@@ -546,7 +550,7 @@ class PeripheralManager(QObject):
                             periph_name = main_window.tree_manager.get_item_name(periph_item)
                             reg_name = main_window.tree_manager.get_item_name(reg_item)
                             self.copy_field(periph_name, reg_name, item_name)
-            elif action_text == "粘贴位域":
+            elif action_data == "paste_field":
                 # 粘贴位域数据，需要获取外设名称和寄存器名称
                 if item_type == NODE_TYPES["FIELD"]:
                     reg_item = item.parent()
@@ -563,10 +567,10 @@ class PeripheralManager(QObject):
                         periph_name = main_window.tree_manager.get_item_name(periph_item)
                         reg_name = item_name
                         self.paste_field(periph_name, reg_name)
-            elif action_text == "上移":
+            elif action_data == "move_up":
                 # 调用移动功能
                 self.move_selected_peripheral_up()
-            elif action_text == "下移":
+            elif action_data == "move_down":
                 # 调用移动功能
                 self.move_selected_peripheral_down()
     

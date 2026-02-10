@@ -40,6 +40,8 @@ from .components.menu_bar import MenuBarBuilder
 from .components.toolbar import ToolBarBuilder
 from .managers.file_operations import FileOperations
 from .managers.device_info_manager import DeviceInfoManager
+from .coordinator import Coordinator
+from ..i18n.i18n import I18nManager, get_i18n_manager, set_i18n_manager, t
 
 from ..utils.helpers import pretty_xml, format_hex
 from ..utils.logger import Logger
@@ -55,6 +57,13 @@ class MainWindowRefactored(QMainWindow):
     def __init__(self):
         super().__init__()
         
+        # 初始化协调器
+        self.coordinator = Coordinator()
+        
+        # 初始化国际化管理器
+        self.i18n_manager = I18nManager()
+        set_i18n_manager(self.i18n_manager)
+        
         # 初始化组件
         self.state_manager = StateManager()
         self.layout_manager = LayoutManager(self)
@@ -68,7 +77,14 @@ class MainWindowRefactored(QMainWindow):
         
         # 初始化文件操作管理器
         self.file_operations = FileOperations(self.state_manager, self.layout_manager)
-        self.device_info_manager = DeviceInfoManager(self.state_manager, self.layout_manager)
+        self.device_info_manager = DeviceInfoManager(coordinator=self.coordinator)
+        
+        # 注册组件到协调器
+        self.coordinator.register_component('state_manager', self.state_manager)
+        self.coordinator.register_component('layout_manager', self.layout_manager)
+        self.coordinator.register_component('peripheral_manager', self.peripheral_manager)
+        self.coordinator.register_component('device_info_manager', self.device_info_manager)
+        self.coordinator.register_component('file_operations', self.file_operations)
         
         # GUI 日志处理器
         self._gui_log_handler = None
@@ -652,7 +668,7 @@ class MainWindowRefactored(QMainWindow):
         search_count_label = self.layout_manager.get_widget('search_count_label')
         if search_count_label:
             if count > 0:
-                search_count_label.setText(f"找到 {count} 个结果")
+                search_count_label.setText(t("search.found", count=count))
             else:
                 search_count_label.setText("")
         
@@ -850,12 +866,12 @@ class MainWindowRefactored(QMainWindow):
                     if parser.warnings:
                         warning_msg = "\n".join(parser.warnings[:10])
                         if len(parser.warnings) > 10:
-                            warning_msg += f"\n...还有{len(parser.warnings)-10}条警告"
-                        QMessageBox.warning(self, "解析警告", warning_msg)
-                    
+                            warning_msg += t("msg.more_warnings", count=len(parser.warnings)-10)
+                        QMessageBox.warning(self, t("msg.parse_warning"), warning_msg)
+                
                 except Exception as e:
                     self.logger.error(f"文件加载失败: {str(e)}")
-                    QMessageBox.critical(self, "加载错误", f"文件加载失败: {str(e)}")
+                    QMessageBox.critical(self, t("msg.load_error"), t("msg.file_load_failed_detail", error=str(e)))
     
     def save_svd_file(self):
         """保存SVD文件"""
@@ -891,11 +907,11 @@ class MainWindowRefactored(QMainWindow):
             # 更新状态
             self.current_file_path = file_path
             self.layout_manager.update_status(f"SVD文件已保存: {file_path}")
-            QMessageBox.information(self, "保存成功", f"SVD文件已保存到:\n{file_path}")
+            QMessageBox.information(self, t("msg.save_success"), t("msg.svd_file_saved", path=file_path))
             
         except Exception as e:
             self.logger.error(f"文件保存失败: {str(e)}")
-            QMessageBox.critical(self, "保存错误", f"文件保存失败: {str(e)}")
+            QMessageBox.critical(self, t("msg.save_error"), t("msg.file_save_failed_detail", error=str(e)))
     
     def check_unsaved_changes(self) -> bool:
         """检查未保存的更改"""
@@ -912,7 +928,7 @@ class MainWindowRefactored(QMainWindow):
             # 验证数据
             errors = self.state_manager.validate_device_info()
             if errors:
-                QMessageBox.warning(self, "验证错误", "\n".join(errors))
+                QMessageBox.warning(self, t("msg.validation_error"), "\n".join(errors))
                 return
             
             # 生成SVD
@@ -929,7 +945,7 @@ class MainWindowRefactored(QMainWindow):
             
         except Exception as e:
             self.logger.error(f"SVD生成失败: {str(e)}")
-            QMessageBox.critical(self, "生成错误", f"SVD生成失败: {str(e)}")
+            QMessageBox.critical(self, t("msg.generate_error"), t("msg.svd_generate_failed", error=str(e)))
     
     def preview_xml(self):
         """预览XML"""
@@ -948,7 +964,7 @@ class MainWindowRefactored(QMainWindow):
             
         except Exception as e:
             self.logger.error(f"XML预览失败: {str(e)}")
-            QMessageBox.critical(self, "预览错误", f"XML预览失败: {str(e)}")
+            QMessageBox.critical(self, t("msg.preview_error"), t("msg.xml_preview_failed", error=str(e)))
     
     def export_file(self):
         """导出文件"""
@@ -973,11 +989,11 @@ class MainWindowRefactored(QMainWindow):
                 f.write(svd_xml)
             
             self.logger.info(f"SVD文件已保存: {file_path}")
-            QMessageBox.information(self, "保存成功", f"SVD文件已保存到:\n{file_path}")
+            QMessageBox.information(self, t("msg.save_success"), t("msg.svd_file_saved", path=file_path))
             
         except Exception as e:
             self.logger.error(f"文件保存失败: {str(e)}")
-            QMessageBox.critical(self, "保存错误", f"文件保存失败: {str(e)}")
+            QMessageBox.critical(self, t("msg.save_error"), t("msg.file_save_failed_detail", error=str(e)))
     
     # ===================== 其他方法 =====================
     def enable_tree_drag_drop(self):
@@ -1076,7 +1092,7 @@ class MainWindowRefactored(QMainWindow):
                 # 如果结构无效，恢复UI
                 self.peripheral_manager.update_peripheral_tree()
                 from PyQt6.QtWidgets import QMessageBox
-                QMessageBox.warning(self, "拖放错误", "拖放操作导致无效的树结构，已恢复")
+                QMessageBox.warning(self, t("msg.drag_drop_error"), t("msg.drag_drop_invalid_structure"))
             else:
                 # 更新数据模型
                 self.update_data_model_from_tree()
@@ -1135,7 +1151,7 @@ class MainWindowRefactored(QMainWindow):
                 
         except Exception as e:
             self.logger.error(f"按字母排序失败: {str(e)}")
-            QMessageBox.warning(self, "排序错误", f"按字母排序失败: {str(e)}")
+            QMessageBox.warning(self, t("msg.sort_error"), t("msg.sort_alphabetically_failed", error=str(e)))
     
     def sort_items_by_address(self):
         """按地址/偏移排序"""
@@ -1178,7 +1194,7 @@ class MainWindowRefactored(QMainWindow):
                 
         except Exception as e:
             self.logger.error(f"按地址排序失败: {str(e)}")
-            QMessageBox.warning(self, "排序错误", f"按地址排序失败: {str(e)}")
+            QMessageBox.warning(self, t("msg.sort_error"), t("msg.sort_by_address_failed", error=str(e)))
     
     def expand_all_tree(self):
         """展开所有树节点"""
@@ -1199,7 +1215,7 @@ class MainWindowRefactored(QMainWindow):
         # 检查是否有选中的外设
         current_peripheral = self.state_manager.get_current_peripheral()
         if not current_peripheral:
-            QMessageBox.warning(self, "警告", "请先选择一个外设")
+            QMessageBox.warning(self, t("message.warning"), t("msg.select_peripheral_first"))
             return
         
         # 获取当前外设的寄存器列表
@@ -1251,20 +1267,20 @@ class MainWindowRefactored(QMainWindow):
         if reg_name is None:
             current_register = self.state_manager.get_current_register()
             if not current_register:
-                QMessageBox.warning(self, "警告", "请先选择一个寄存器")
+                QMessageBox.warning(self, t("message.warning"), t("msg.select_register_first"))
                 return
             reg_name = current_register
         
         # 检查是否有选中的外设
         current_peripheral = self.state_manager.get_current_peripheral()
         if not current_peripheral:
-            QMessageBox.warning(self, "警告", "请先选择一个外设")
+            QMessageBox.warning(self, t("message.warning"), t("msg.select_peripheral_first"))
             return
         
         # 检查寄存器是否存在
         if (current_peripheral not in self.state_manager.device_info.peripherals or
             reg_name not in self.state_manager.device_info.peripherals[current_peripheral].registers):
-            QMessageBox.warning(self, "警告", f"寄存器 '{reg_name}' 不存在")
+            QMessageBox.warning(self, t("message.warning"), t("msg.register_not_exist", name=reg_name))
             return
         
         # 获取寄存器对象
@@ -1334,26 +1350,26 @@ class MainWindowRefactored(QMainWindow):
         if reg_name is None:
             current_register = self.state_manager.get_current_register()
             if not current_register:
-                QMessageBox.warning(self, "警告", "请先选择一个寄存器")
+                QMessageBox.warning(self, t("message.warning"), t("msg.select_register_first"))
                 return
             reg_name = current_register
         
         # 检查是否有选中的外设
         current_peripheral = self.state_manager.get_current_peripheral()
         if not current_peripheral:
-            QMessageBox.warning(self, "警告", "请先选择一个外设")
+            QMessageBox.warning(self, t("message.warning"), t("msg.select_peripheral_first"))
             return
         
         # 检查寄存器是否存在
         if (current_peripheral not in self.state_manager.device_info.peripherals or
             reg_name not in self.state_manager.device_info.peripherals[current_peripheral].registers):
-            QMessageBox.warning(self, "警告", f"寄存器 '{reg_name}' 不存在")
+            QMessageBox.warning(self, t("message.warning"), t("msg.register_not_exist", name=reg_name))
             return
         
         # 确认删除
         reply = QMessageBox.question(
-            self, "确认删除",
-            f"确定要删除寄存器 '{reg_name}' 吗？\n这将同时删除该寄存器下的所有位域。",
+            self, t("msg.confirm_delete"),
+            t("msg.confirm_delete_register", name=reg_name),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -1382,7 +1398,7 @@ class MainWindowRefactored(QMainWindow):
         # 检查是否有选中的外设
         current_peripheral = self.state_manager.get_current_peripheral()
         if not current_peripheral:
-            QMessageBox.warning(self, "警告", "请先选择一个外设")
+            QMessageBox.warning(self, t("message.warning"), t("msg.select_peripheral_first"))
             return
         
         # 如果没有提供寄存器名列表，尝试从当前选择获取
@@ -1391,7 +1407,7 @@ class MainWindowRefactored(QMainWindow):
             # 目前先使用当前选中的寄存器
             current_register = self.state_manager.get_current_register()
             if not current_register:
-                QMessageBox.warning(self, "警告", "请先选择一个或多个寄存器")
+                QMessageBox.warning(self, t("message.warning"), t("msg.select_registers_first"))
                 return
             register_names = [current_register]
         
@@ -1403,19 +1419,17 @@ class MainWindowRefactored(QMainWindow):
                 valid_registers.append(reg_name)
         
         if not valid_registers:
-            QMessageBox.warning(self, "警告", "没有找到有效的寄存器")
+            QMessageBox.warning(self, t("message.warning"), t("msg.no_valid_registers"))
             return
         
         # 确认删除
         if len(valid_registers) == 1:
-            message = f"确定要删除寄存器 '{valid_registers[0]}' 吗？\n这将同时删除该寄存器下的所有位域。"
+            message = t("msg.confirm_delete_register", name=valid_registers[0])
         else:
-            message = f"确定要删除 {len(valid_registers)} 个寄存器吗？\n这将同时删除这些寄存器下的所有位域。\n\n寄存器列表: {', '.join(valid_registers[:5])}"
-            if len(valid_registers) > 5:
-                message += f" 等 {len(valid_registers)} 个寄存器"
+            message = t("msg.confirm_delete_multiple_registers", count=len(valid_registers))
         
         reply = QMessageBox.question(
-            self, "确认批量删除",
+            self, t("msg.confirm_batch_delete"),
             message,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
@@ -1452,18 +1466,18 @@ class MainWindowRefactored(QMainWindow):
         # 检查是否有选中的外设和寄存器
         current_peripheral = self.state_manager.get_current_peripheral()
         if not current_peripheral:
-            QMessageBox.warning(self, "警告", "请先选择一个外设")
+            QMessageBox.warning(self, t("message.warning"), t("msg.select_peripheral_first"))
             return
         
         current_register = self.state_manager.get_current_register()
         if not current_register:
-            QMessageBox.warning(self, "警告", "请先选择一个寄存器")
+            QMessageBox.warning(self, t("message.warning"), t("msg.select_register_first"))
             return
         
         # 检查寄存器是否存在
         if (current_peripheral not in self.state_manager.device_info.peripherals or
             current_register not in self.state_manager.device_info.peripherals[current_peripheral].registers):
-            QMessageBox.warning(self, "警告", f"寄存器 '{current_register}' 不存在")
+            QMessageBox.warning(self, t("message.warning"), t("msg.register_not_exist", name=current_register))
             return
         
         # 创建对话框
@@ -1508,26 +1522,26 @@ class MainWindowRefactored(QMainWindow):
         if field_name is None:
             current_field = self.state_manager.get_current_field()
             if not current_field:
-                QMessageBox.warning(self, "警告", "请先选择一个位域")
+                QMessageBox.warning(self, t("message.warning"), t("msg.select_field_first"))
                 return
             field_name = current_field
         
         # 检查是否有选中的外设和寄存器
         current_peripheral = self.state_manager.get_current_peripheral()
         if not current_peripheral:
-            QMessageBox.warning(self, "警告", "请先选择一个外设")
+            QMessageBox.warning(self, t("message.warning"), t("msg.select_peripheral_first"))
             return
         
         current_register = self.state_manager.get_current_register()
         if not current_register:
-            QMessageBox.warning(self, "警告", "请先选择一个寄存器")
+            QMessageBox.warning(self, t("message.warning"), t("msg.select_register_first"))
             return
         
         # 检查位域是否存在
         if (current_peripheral not in self.state_manager.device_info.peripherals or
             current_register not in self.state_manager.device_info.peripherals[current_peripheral].registers or
             field_name not in self.state_manager.device_info.peripherals[current_peripheral].registers[current_register].fields):
-            QMessageBox.warning(self, "警告", f"位域 '{field_name}' 不存在")
+            QMessageBox.warning(self, t("message.warning"), t("msg.field_not_exist", name=field_name))
             return
         
         # 获取位域对象
@@ -1589,32 +1603,32 @@ class MainWindowRefactored(QMainWindow):
         if field_name is None:
             current_field = self.state_manager.get_current_field()
             if not current_field:
-                QMessageBox.warning(self, "警告", "请先选择一个位域")
+                QMessageBox.warning(self, t("message.warning"), t("msg.select_field_first"))
                 return
             field_name = current_field
         
         # 检查是否有选中的外设和寄存器
         current_peripheral = self.state_manager.get_current_peripheral()
         if not current_peripheral:
-            QMessageBox.warning(self, "警告", "请先选择一个外设")
+            QMessageBox.warning(self, t("message.warning"), t("msg.select_peripheral_first"))
             return
         
         current_register = self.state_manager.get_current_register()
         if not current_register:
-            QMessageBox.warning(self, "警告", "请先选择一个寄存器")
+            QMessageBox.warning(self, t("message.warning"), t("msg.select_register_first"))
             return
         
         # 检查位域是否存在
         if (current_peripheral not in self.state_manager.device_info.peripherals or
             current_register not in self.state_manager.device_info.peripherals[current_peripheral].registers or
             field_name not in self.state_manager.device_info.peripherals[current_peripheral].registers[current_register].fields):
-            QMessageBox.warning(self, "警告", f"位域 '{field_name}' 不存在")
+            QMessageBox.warning(self, t("message.warning"), t("msg.field_not_exist", name=field_name))
             return
         
         # 确认删除
         reply = QMessageBox.question(
-            self, "确认删除",
-            f"确定要删除位域 '{field_name}' 吗？",
+            self, t("msg.confirm_delete"),
+            t("msg.confirm_delete_field", name=field_name),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -1686,12 +1700,12 @@ class MainWindowRefactored(QMainWindow):
             # 获取中断表格当前选中的行
             irq_table = self.layout_manager.get_widget('irq_table')
             if not irq_table:
-                QMessageBox.warning(self, "警告", "中断表格未找到")
+                QMessageBox.warning(self, t("message.warning"), t("msg.interrupt_table_not_found"))
                 return
                 
             selected_rows = irq_table.selectedItems()
             if not selected_rows:
-                QMessageBox.warning(self, "警告", "请先选择一个中断")
+                QMessageBox.warning(self, t("message.warning"), t("msg.select_interrupt_first"))
                 return
                 
             # 获取第一列（名称列）的文本
@@ -1699,7 +1713,7 @@ class MainWindowRefactored(QMainWindow):
         
         # 检查中断是否存在
         if interrupt_name not in self.state_manager.device_info.interrupts:
-            QMessageBox.warning(self, "警告", f"中断 '{interrupt_name}' 不存在")
+            QMessageBox.warning(self, t("message.warning"), t("msg.interrupt_not_exist", name=interrupt_name))
             return
         
         # 获取中断对象
@@ -1760,12 +1774,12 @@ class MainWindowRefactored(QMainWindow):
             # 获取中断表格当前选中的行
             irq_table = self.layout_manager.get_widget('irq_table')
             if not irq_table:
-                QMessageBox.warning(self, "警告", "中断表格未找到")
+                QMessageBox.warning(self, t("message.warning"), t("msg.interrupt_table_not_found"))
                 return
                 
             selected_rows = irq_table.selectedItems()
             if not selected_rows:
-                QMessageBox.warning(self, "警告", "请先选择一个中断")
+                QMessageBox.warning(self, t("message.warning"), t("msg.select_interrupt_first"))
                 return
                 
             # 获取第一列（名称列）的文本
@@ -1773,13 +1787,13 @@ class MainWindowRefactored(QMainWindow):
         
         # 检查中断是否存在
         if interrupt_name not in self.state_manager.device_info.interrupts:
-            QMessageBox.warning(self, "警告", f"中断 '{interrupt_name}' 不存在")
+            QMessageBox.warning(self, t("message.warning"), t("msg.interrupt_not_exist", name=interrupt_name))
             return
         
         # 确认删除
         reply = QMessageBox.question(
-            self, "确认删除",
-            f"确定要删除中断 '{interrupt_name}' 吗？",
+            self, t("msg.confirm_delete"),
+            t("msg.confirm_delete_interrupt", name=interrupt_name),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -1823,6 +1837,44 @@ class MainWindowRefactored(QMainWindow):
             irq_table.setItem(i, 2, QTableWidgetItem(interrupt.peripheral or ""))
             irq_table.setItem(i, 3, QTableWidgetItem(interrupt.description or ""))
     
+    def _refresh_all_data(self):
+        """重新填充所有数据到新创建的控件中"""
+        # 更新基础信息标签页
+        if hasattr(self, 'device_info_manager'):
+            self.device_info_manager.update_ui_from_device_info(self.state_manager.device_info)
+        
+        # 更新外设树
+        if hasattr(self, 'peripheral_manager'):
+            self.peripheral_manager.update_peripheral_tree()
+        
+        # 更新中断表格
+        self._update_interrupt_table()
+        
+        # 更新可视化控件（使用当前选择）
+        selection = self.state_manager.get_selection()
+        self.update_visualization(
+            selection.get('peripheral') or '',
+            selection.get('register') or '',
+            selection.get('field') or ''
+        )
+        
+        # 更新位域表格
+        if selection.get('register') and selection.get('peripheral'):
+            device_info = self.state_manager.device_info
+            if (selection['peripheral'] in device_info.peripherals and
+                selection['register'] in device_info.peripherals[selection['peripheral']].registers):
+                reg_obj = device_info.peripherals[selection['peripheral']].registers[selection['register']]
+                self.layout_manager.update_field_table(selection['peripheral'], selection['register'], reg_obj)
+            else:
+                self.layout_manager.update_field_table()
+        else:
+            self.layout_manager.update_field_table()
+        
+        # 更新位域图（触发重绘以更新语言）
+        visualization_widget = self.layout_manager.get_widget('visualization_widget')
+        if visualization_widget and hasattr(visualization_widget, 'bit_field'):
+            visualization_widget.bit_field.update()
+    
     def on_irq_context_menu(self, pos):
         """中断表格右键菜单"""
         irq_table = self.layout_manager.get_widget('irq_table')
@@ -1839,15 +1891,19 @@ class MainWindowRefactored(QMainWindow):
         # 创建右键菜单
         menu = QMenu()
         
-        edit_action = menu.addAction("编辑中断")
-        delete_action = menu.addAction("删除中断")
+        edit_action = menu.addAction(t("menu.edit_interrupt"))
+        edit_action.setData("edit_interrupt")
+        delete_action = menu.addAction(t("menu.delete_interrupt"))
+        delete_action.setData("delete_interrupt")
         
         # 执行菜单动作
         action = menu.exec(irq_table.mapToGlobal(pos))
-        if action == edit_action:
-            self.edit_interrupt(interrupt_name)
-        elif action == delete_action:
-            self.delete_interrupt(interrupt_name)
+        if action:
+            action_data = action.data()
+            if action_data == "edit_interrupt":
+                self.edit_interrupt(interrupt_name)
+            elif action_data == "delete_interrupt":
+                self.delete_interrupt(interrupt_name)
 
     # ===================== 日志面板相关 =====================
     class _LogSignalEmitter(QObject):
@@ -1976,16 +2032,16 @@ class MainWindowRefactored(QMainWindow):
         """手动保存当前日志到文件（弹出保存对话框）"""
         try:
             if not hasattr(self, 'log_text') or not self.log_text:
-                QMessageBox.warning(self, "警告", "日志面板未创建")
+                QMessageBox.warning(self, t("message.warning"), t("msg.log_panel_not_created"))
                 return
             
             log_content = self.log_text.toPlainText()
             if not log_content.strip():
-                QMessageBox.warning(self, "警告", "日志内容为空")
+                QMessageBox.warning(self, t("message.warning"), t("msg.log_content_empty"))
                 return
             
             file_path, _ = QFileDialog.getSaveFileName(
-                self, "保存日志", "svd_log.txt", "文本文件 (*.txt);;所有文件 (*.*)"
+                self, t("msg.save_success"), "svd_log.txt", "文本文件 (*.txt);;所有文件 (*.*)"
             )
             
             if file_path:
@@ -1994,11 +2050,11 @@ class MainWindowRefactored(QMainWindow):
                 
                 self.layout_manager.update_status(f"日志已保存到: {file_path}")
                 self.logger.info(f"日志已保存到: {file_path}")
-                QMessageBox.information(self, "成功", "日志保存成功")
-                
+                QMessageBox.information(self, t("message.success"), t("msg.log_save_success"))
+            
         except Exception as e:
             self.logger.error(f"保存日志时出错: {str(e)}")
-            QMessageBox.warning(self, "错误", f"保存日志时出错:\n{str(e)}")
+            QMessageBox.warning(self, t("message.error"), t("msg.save_log_error_detail", error=str(e)))
 
     def toggle_log_panel(self, checked: bool):
         """切换日志面板显示/隐藏"""
@@ -2008,7 +2064,7 @@ class MainWindowRefactored(QMainWindow):
                 try:
                     self.create_log_panel()
                 except Exception:
-                    QMessageBox.warning(self, "错误", "创建日志面板失败")
+                    QMessageBox.warning(self, t("message.error"), t("msg.create_log_panel_error"))
                     return
             
             if checked:
@@ -2028,7 +2084,7 @@ class MainWindowRefactored(QMainWindow):
             validation_result = self.state_manager.validate_and_get_summary()
             
             if validation_result['valid']:
-                QMessageBox.information(self, "验证通过", "所有数据验证通过！")
+                QMessageBox.information(self, t("msg.validation_passed"), t("msg.all_data_validated"))
                 self.layout_manager.update_status("数据验证通过")
             else:
                 # 构建错误消息
@@ -2042,13 +2098,139 @@ class MainWindowRefactored(QMainWindow):
                 if error_count > 10:
                     error_message += f"\n... 还有 {error_count - 10} 个错误未显示"
                 
-                QMessageBox.warning(self, "验证失败", error_message)
-                self.layout_manager.update_status(f"数据验证失败，发现 {error_count} 个错误")
+                QMessageBox.warning(self, t("msg.validation_failed"), error_message)
+                self.layout_manager.update_status(t("msg.data_validation_failed", count=error_count))
                 
         except Exception as e:
             self.logger.error(f"验证过程中发生错误: {str(e)}")
-            QMessageBox.warning(self, "验证错误", f"验证过程中发生错误:\n{str(e)}")
+            QMessageBox.warning(self, t("msg.validation_error"), t("msg.validation_error_detail", error=str(e)))
             self.layout_manager.update_status("验证过程出错")
+    
+    def set_language(self, locale: str):
+        """设置语言"""
+        if hasattr(self, 'i18n_manager') and self.i18n_manager:
+            self.i18n_manager.set_locale(locale)
+            language_name = "中文" if locale == "zh_CN" else "English"
+            self.layout_manager.update_status(t("msg.language_changed", language=language_name))
+            self.logger.info(f"语言已切换为: {language_name}")
+            
+            # 重新创建菜单栏以更新文本
+            self._recreate_menu_bar()
+            
+            # 重新创建工具栏以更新文本
+            self._recreate_toolbar()
+            
+            # 更新搜索相关文本
+            self._update_search_ui()
+            
+            # 重新创建标签页以更新文本（但保留数据）
+            self._recreate_tabs()
+    
+    def _recreate_toolbar(self):
+        """重新创建工具栏以更新语言"""
+        # 删除所有现有工具栏
+        toolbars = self.findChildren(QToolBar)
+        for toolbar in toolbars:
+            self.removeToolBar(toolbar)
+        
+        # 重新创建工具栏
+        from .components.toolbar import ToolBarBuilder
+        toolbar_builder = ToolBarBuilder(self, self)
+        toolbar_builder.create()
+    
+    def _recreate_menu_bar(self):
+        """重新创建菜单栏以更新语言"""
+        # 清除现有菜单栏
+        menubar = self.menuBar()
+        if menubar:
+            menubar.clear()
+        
+        # 重新创建菜单栏
+        from .components.menu_bar import MenuBarBuilder
+        menu_builder = MenuBarBuilder(self, self)
+        menu_builder.create()
+    
+    def _update_search_ui(self):
+        """更新搜索相关的UI文本"""
+        # 更新搜索标签
+        search_label = self.layout_manager.get_widget('search_label')
+        if search_label:
+            search_label.setText(t("search.label"))
+        
+        # 更新搜索框占位符
+        search_edit = self.layout_manager.get_widget('search_edit')
+        if search_edit:
+            search_edit.setPlaceholderText(t("search.placeholder"))
+        
+        # 更新搜索按钮文本
+        search_prev_btn = self.layout_manager.get_widget('search_prev_btn')
+        if search_prev_btn:
+            search_prev_btn.setText(t("search.prev"))
+        
+        search_next_btn = self.layout_manager.get_widget('search_next_btn')
+        if search_next_btn:
+            search_next_btn.setText(t("search.next"))
+    
+    def _update_tab_titles(self):
+        """更新标签页标题（不重新创建标签页）"""
+        tab_widget = self.layout_manager.get_widget('tab_widget')
+        if not tab_widget:
+            return
+        
+        # 更新标签页标题
+        tab_widget.setTabText(0, t("tab.basic_info"))
+        tab_widget.setTabText(1, t("tab.peripherals"))
+        tab_widget.setTabText(2, t("tab.interrupts"))
+        tab_widget.setTabText(3, t("tab.preview"))
+    
+    def _recreate_tabs(self):
+        """重新创建标签页以更新语言"""
+        # 获取标签页控件
+        tab_widget = self.layout_manager.get_widget('tab_widget')
+        if not tab_widget:
+            return
+        
+        # 保存当前选中的标签页索引
+        current_index = tab_widget.currentIndex()
+        
+        # 保存当前状态快照（包括设备信息和选中状态）
+        state_snapshot = self.state_manager.get_device_state_snapshot()
+        
+        # 清除所有标签页
+        while tab_widget.count() > 0:
+            tab_widget.removeTab(0)
+        
+        # 重新创建标签页
+        self.layout_manager.create_basic_info_tab(tab_widget)
+        self.layout_manager.create_peripheral_tab(tab_widget)
+        self.layout_manager.create_interrupt_tab(tab_widget)
+        self.layout_manager.create_preview_tab(tab_widget)
+        
+        # 重新连接UI信号（重要：重新创建标签页后必须重新连接信号）
+        self.peripheral_manager.connect_ui_signals()
+        self.setup_signals()
+        
+        # 重新连接中断表格右键菜单
+        irq_table = self.layout_manager.get_widget('irq_table')
+        if irq_table:
+            irq_table.customContextMenuRequested.disconnect()
+            irq_table.customContextMenuRequested.connect(self.on_irq_context_menu)
+        
+        # 恢复状态快照（包括设备信息和选中状态）
+        self.state_manager.restore_device_state(state_snapshot)
+        
+        # 刷新UI以显示恢复的数据
+        # 直接传递设备信息，避免通过coordinator获取
+        self.device_info_manager.update_ui_from_device_info(self.state_manager.device_info)
+        self.peripheral_manager.update_peripheral_tree()
+        self._update_interrupt_table()
+        
+        # 恢复之前选中的标签页
+        if current_index >= 0 and current_index < tab_widget.count():
+            tab_widget.setCurrentIndex(current_index)
+        
+        # 重新填充数据到新创建的控件中
+        self._refresh_all_data()
     
     def show_about(self):
         """显示关于对话框"""

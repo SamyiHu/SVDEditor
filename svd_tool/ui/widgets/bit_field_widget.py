@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QBrush, QFont, QPainter, QPen, QPaintEvent
 import logging
+from ...i18n.i18n import t
 
 
 class BitFieldWidget(QWidget):
@@ -49,12 +50,12 @@ class BitFieldWidget(QWidget):
         painter.fillRect(event.rect(), QColor(255, 255, 255))
         
         if not self.register:
-            painter.drawText(event.rect(), Qt.AlignmentFlag.AlignCenter, "无寄存器数据")
+            painter.drawText(event.rect(), Qt.AlignmentFlag.AlignCenter, t("label.no_register_data"))
             return
-            
+         
         # 绘制标题（更紧凑）
         painter.setFont(QFont("Arial", 9, QFont.Weight.Bold))
-        painter.drawText(10, 18, f"寄存器位域: {self.register.name} (32位)")
+        painter.drawText(10, 18, t("label.register_bit_field", name=self.register.name))
         
         # 计算绘图区域
         width = self.width() - 20

@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, pyqtSignal, QObject
 from PyQt6.QtGui import QColor, QBrush, QFont, QPainter, QPen, QPaintEvent
 import logging
+from ...i18n.i18n import t
 
 
 class AddressMapWidget(QWidget):
@@ -55,12 +56,12 @@ class AddressMapWidget(QWidget):
         painter.fillRect(event.rect(), QColor(255, 255, 255))
         
         if not self.peripheral:
-            painter.drawText(event.rect(), Qt.AlignmentFlag.AlignCenter, "无外设数据")
+            painter.drawText(event.rect(), Qt.AlignmentFlag.AlignCenter, t("label.no_peripheral_data"))
             return
-            
+             
         # 绘制标题
         painter.setFont(QFont("Arial", 10, QFont.Weight.Bold))
-        painter.drawText(10, 20, f"外设地址映射: {self.peripheral.name}")
+        painter.drawText(10, 20, t("label.peripheral_address_map", name=self.peripheral.name))
         
         # 计算绘图区域
         width = self.width() - 20
@@ -78,7 +79,7 @@ class AddressMapWidget(QWidget):
             painter.drawLine(10, axis_y, 10 + width, axis_y)
             
             # 绘制地址范围（在轴下方，与轴保持足够距离）
-            addr_text = f"0x{base_addr:08X} - 0x{base_addr + block_size - 1:08X}"
+            addr_text = t("label.address_range", start=base_addr, end=base_addr + block_size - 1)
             painter.setFont(QFont("Arial", 11, QFont.Weight.Bold))
             painter.drawText(10, axis_y + 35, addr_text)
             
@@ -200,7 +201,7 @@ class AddressMapWidget(QWidget):
                     continue
                     
         except (ValueError, AttributeError):
-            painter.drawText(10, y_offset + 30, "无法解析地址数据")
+            painter.drawText(10, y_offset + 30, t("label.cannot_parse_address_data"))
     
     def mousePressEvent(self, event):
         """鼠标点击事件"""

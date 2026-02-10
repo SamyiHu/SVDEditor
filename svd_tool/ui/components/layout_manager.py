@@ -15,6 +15,7 @@ from .toolbar import ToolBarBuilder
 from .tab_builder import TabBuilder
 from .widget_manager import WidgetManager
 from .ui_updater import UIUpdater
+from ...i18n.i18n import t
 
 
 class LayoutManager:
@@ -108,18 +109,18 @@ class LayoutManager:
         """创建搜索栏"""
         search_layout = QHBoxLayout()
 
-        search_label = QLabel("搜索:")
+        search_label = QLabel(t("search.label"))
         search_layout.addWidget(search_label)
-
+        
         search_edit = QLineEdit()
-        search_edit.setPlaceholderText("搜索外设/寄存器/位域...")
+        search_edit.setPlaceholderText(t("search.placeholder"))
         search_layout.addWidget(search_edit)
 
-        search_prev_btn = QPushButton("上一个")
+        search_prev_btn = QPushButton(t("search.prev"))
         search_prev_btn.setEnabled(False)
         search_layout.addWidget(search_prev_btn)
-
-        search_next_btn = QPushButton("下一个")
+        
+        search_next_btn = QPushButton(t("search.next"))
         search_next_btn.setEnabled(False)
         search_layout.addWidget(search_next_btn)
 
@@ -130,6 +131,7 @@ class LayoutManager:
         parent_layout.addLayout(search_layout)
 
         # 注册控件
+        self.widget_manager.register_widget('search_label', search_label)
         self.widget_manager.register_widget('search_edit', search_edit)
         self.widget_manager.register_widget('search_prev_btn', search_prev_btn)
         self.widget_manager.register_widget('search_next_btn', search_next_btn)

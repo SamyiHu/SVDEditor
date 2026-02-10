@@ -4,6 +4,7 @@
 """
 from PyQt6.QtWidgets import QToolBar, QToolButton
 from PyQt6.QtCore import Qt
+from ...i18n.i18n import t
 
 
 class ToolBarBuilder:
@@ -23,7 +24,7 @@ class ToolBarBuilder:
         
     def create(self) -> QToolBar:
         """创建工具栏并返回"""
-        toolbar = self.parent.addToolBar("主工具栏")
+        toolbar = self.parent.addToolBar(t("toolbar.main"))
         if toolbar is None:
             return None
         
@@ -43,19 +44,19 @@ class ToolBarBuilder:
         
         # 新建
         new_btn = QToolButton()
-        new_btn.setText("新建")
+        new_btn.setText(t("toolbar.new"))
         new_btn.clicked.connect(self.main_window.new_file)
         self.toolbar.addWidget(new_btn)
         
         # 打开
         open_btn = QToolButton()
-        open_btn.setText("打开")
+        open_btn.setText(t("toolbar.open"))
         open_btn.clicked.connect(self.main_window.open_svd_file)
         self.toolbar.addWidget(open_btn)
         
         # 保存
         save_btn = QToolButton()
-        save_btn.setText("保存")
+        save_btn.setText(t("toolbar.save"))
         save_btn.clicked.connect(self.main_window.save_svd_file)
         self.toolbar.addWidget(save_btn)
         
@@ -68,13 +69,13 @@ class ToolBarBuilder:
         
         # 撤消
         undo_btn = QToolButton()
-        undo_btn.setText("撤消")
+        undo_btn.setText(t("toolbar.undo"))
         undo_btn.clicked.connect(self.main_window.undo)
         self.toolbar.addWidget(undo_btn)
         
         # 重做
         redo_btn = QToolButton()
-        redo_btn.setText("重做")
+        redo_btn.setText(t("toolbar.redo"))
         redo_btn.clicked.connect(self.main_window.redo)
         self.toolbar.addWidget(redo_btn)
         
@@ -87,7 +88,7 @@ class ToolBarBuilder:
         
         # 生成SVD
         generate_btn = QToolButton()
-        generate_btn.setText("生成SVD")
+        generate_btn.setText(t("toolbar.generate_svd"))
         generate_btn.clicked.connect(self.main_window.generate_svd)
         generate_btn.setObjectName("generateSvdBtn")
         self.toolbar.addWidget(generate_btn)

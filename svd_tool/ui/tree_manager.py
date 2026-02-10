@@ -7,6 +7,7 @@ from PyQt6.QtGui import QColor, QBrush, QFont, QDrag
 
 from ..core.data_model import DeviceInfo, Peripheral, Register, Field
 from ..core.constants import NODE_TYPES, COLORS
+from ..i18n.i18n import t
 
 
 class TreeManager:
@@ -19,7 +20,7 @@ class TreeManager:
     def create_tree_widget(self) -> QTreeWidget:
         """创建树控件"""
         tree = QTreeWidget()
-        tree.setHeaderLabels(["名称", "详细信息"])
+        tree.setHeaderLabels([t("label.tree_name"), t("label.tree_detail")])
         
         # 设置列宽策略
         header = tree.header()
@@ -102,7 +103,7 @@ class TreeManager:
         """创建外设节点"""
         item = QTreeWidgetItem()
         item.setText(0, peripheral.name)
-        item.setText(1, f"基地址: {peripheral.base_address}")
+        item.setText(1, t("label.base_address_prefix") + str(peripheral.base_address))
         
         # ... 详细信息设置 ...
         
@@ -122,7 +123,7 @@ class TreeManager:
         """创建寄存器节点"""
         item = QTreeWidgetItem()
         item.setText(0, register.name)
-        item.setText(1, f"偏移: {register.offset}")
+        item.setText(1, t("label.offset_prefix") + str(register.offset))
         
         # ... 详细信息设置 ...
         
@@ -139,7 +140,7 @@ class TreeManager:
         """创建位域节点"""
         item = QTreeWidgetItem()
         item.setText(0, field.name)
-        item.setText(1, f"位[{field.bit_offset}+{field.bit_width-1}:{field.bit_offset}]")
+        item.setText(1, t("label.bit_range", start=field.bit_offset, width=field.bit_width))
         
         # ... 详细信息设置 ...
         
@@ -184,35 +185,55 @@ class TreeManager:
         item_type = self.get_item_type(item)
         
         if item_type == NODE_TYPES["PERIPHERAL"]:
-            menu.addAction("编辑外设")
-            menu.addAction("删除外设")
+            action = menu.addAction(t("menu.edit_peripheral"))
+            action.setData("edit_peripheral")
+            action = menu.addAction(t("menu.delete_peripheral"))
+            action.setData("delete_peripheral")
             menu.addSeparator()
-            menu.addAction("复制外设")
-            menu.addAction("粘贴外设")
+            action = menu.addAction(t("menu.copy_peripheral"))
+            action.setData("copy_peripheral")
+            action = menu.addAction(t("menu.paste_peripheral"))
+            action.setData("paste_peripheral")
             menu.addSeparator()
-            menu.addAction("添加寄存器")
+            action = menu.addAction(t("menu.add_register"))
+            action.setData("add_register")
             menu.addSeparator()
-            menu.addAction("按字母排序")
+            action = menu.addAction(t("menu.sort_alphabetically"))
+            action.setData("sort_alphabetically")
+            menu.addSeparator()
+            action = menu.addAction(t("button.move_up"))
+            action.setData("move_up")
+            action = menu.addAction(t("button.move_down"))
+            action.setData("move_down")
             # menu.addAction("按地址排序寄存器")
         
         elif item_type == NODE_TYPES["REGISTER"]:
-            menu.addAction("编辑寄存器")
-            menu.addAction("删除寄存器")
+            action = menu.addAction(t("menu.edit_register"))
+            action.setData("edit_register")
+            action = menu.addAction(t("menu.delete_register"))
+            action.setData("delete_register")
             menu.addSeparator()
-            menu.addAction("复制寄存器")
-            menu.addAction("粘贴寄存器")
+            action = menu.addAction(t("menu.copy_register"))
+            action.setData("copy_register")
+            action = menu.addAction(t("menu.paste_register"))
+            action.setData("paste_register")
             menu.addSeparator()
-            menu.addAction("添加位域")
+            action = menu.addAction(t("menu.add_field"))
+            action.setData("add_field")
             # menu.addSeparator()
             # menu.addAction("按字母排序子项")
             # menu.addAction("按起始位排序位域")  # 修复：改为位域排序
         
         elif item_type == NODE_TYPES["FIELD"]:
-            menu.addAction("编辑位域")
-            menu.addAction("删除位域")
+            action = menu.addAction(t("menu.edit_field"))
+            action.setData("edit_field")
+            action = menu.addAction(t("menu.delete_field"))
+            action.setData("delete_field")
             menu.addSeparator()
-            menu.addAction("复制位域")
-            menu.addAction("粘贴位域")
+            action = menu.addAction(t("menu.copy_field"))
+            action.setData("copy_field")
+            action = menu.addAction(t("menu.paste_field"))
+            action.setData("paste_field")
             # menu.addSeparator()
             # menu.addAction("按起始位排序")  # 为位域添加排序选项
         

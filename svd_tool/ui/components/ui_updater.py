@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional
 
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
 from PyQt6.QtCore import Qt
+from ...i18n.i18n import t
 
 
 class UIUpdater:
@@ -32,7 +33,7 @@ class UIUpdater:
         """
         label = self.widget_manager.get_widget('data_stats_label')
         if label:
-            text = f"外设: {stats.get('peripherals', 0)} | 寄存器: {stats.get('registers', 0)} | 位域: {stats.get('fields', 0)} | 中断: {stats.get('interrupts', 0)}"
+            text = t("status.data_stats", peripherals=stats.get('peripherals', 0), registers=stats.get('registers', 0), fields=stats.get('fields', 0), interrupts=stats.get('interrupts', 0))
             label.setText(text)
 
     def update_status(self, message: str):
@@ -88,7 +89,7 @@ class UIUpdater:
             if self.widget_manager.has_widget('mpu_combo'):
                 combo = self.widget_manager.get_widget('mpu_combo')
                 # device_info.cpu.mpu_present 是布尔值，转换为"是"/"否"
-                mpu_text = "是" if device_info.cpu.mpu_present else "否"
+                mpu_text = t("value.yes") if device_info.cpu.mpu_present else t("value.no")
                 index = combo.findText(mpu_text)
                 if index >= 0:
                     combo.setCurrentIndex(index)
@@ -97,7 +98,7 @@ class UIUpdater:
                     combo.setCurrentText(mpu_text)
             if self.widget_manager.has_widget('fpu_combo'):
                 combo = self.widget_manager.get_widget('fpu_combo')
-                fpu_text = "是" if device_info.cpu.fpu_present else "否"
+                fpu_text = t("value.yes") if device_info.cpu.fpu_present else t("value.no")
                 index = combo.findText(fpu_text)
                 if index >= 0:
                     combo.setCurrentIndex(index)
@@ -138,7 +139,7 @@ class UIUpdater:
 
                 # 如果许可证为空或为None，则设置为"不显示"
                 if not current_text or current_text.strip() == "":
-                    current_text = "不显示"
+                    current_text = t("license.do_not_display")
 
                 index = combo.findText(current_text)
                 if index >= 0:
@@ -167,7 +168,7 @@ class UIUpdater:
 
         field_table = self.widget_manager.get_widget('field_table')
         if not field_table:
-            self.logger.debug("未找到field_table控件")
+            self.logger.debug(t("warning.field_table_not_found"))
             return
 
         # 清除表格内容
