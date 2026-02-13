@@ -1,4 +1,7 @@
-# svd_tool/core/svd_parser.py
+# svd_tool/core/chunked_svd_parser.py
+"""
+分块SVD解析器 - 支持记录XML位置和按需解析
+"""
 import re
 from typing import Dict, Any, Optional, List, Tuple
 from xml.dom import minidom
@@ -7,19 +10,23 @@ import warnings
 
 from .data_model import DeviceInfo, Peripheral, Register, Field, Interrupt, CPUInfo
 from .validators import Validator, ValidationError
+from .block_manager import BlockManager, BlockType, BlockInfo
 from ..utils.logger import Logger
 
 
-class SVDParser:
-    """SVD文件解析器"""
+class ChunkedSVDParser:
+    """分块SVD文件解析器 - 支持记录XML位置和按需解析"""
     
     def __init__(self):
         self.device_info = DeviceInfo()
         self.warnings: List[str] = []
-        self.logger = Logger("svd_parser")
+        self.logger = Logger("chunked_svd_parser")
         
-        # XML行号跟踪（用于分块加载）
+        # XML行号跟踪
         self.current_line = 0
+        
+        # 块位置映射 {block_key: (start_line, end_line)}
+        self.block_positions: Dict[str, Tuple[int, int]] = {}
         
         # 解析统计
         self.stats = {
@@ -29,17 +36,38 @@ class SVDParser:
             "interrupts": 0,
             "errors": 0
         }
+        
+        # 块管理器（在解析完成后创建）
+        self.block_manager: Optional[BlockManager] = None
     
-    def parse_file(self, file_path: str) -> DeviceInfo:
-        """解析SVD文件"""
+    def parse_file(self, file_path: str) -> Tuple[DeviceInfo, BlockManager]:
+        """
+        解析SVD文件
+        
+        Args:
+            file_path: SVD文件路径
+            
+        Returns:
+            (设备信息, 块管理器)
+        """
         try:
             self.logger.info(f"开始解析SVD文件: {file_path}")
             
             # 重置行号
             self.current_line = 0
             
+            # 读取文件内容用于行号跟踪
+            with open(file_path, 'r', encoding='utf-8') as f:
+                file_lines = f.readlines()
+            
             dom = minidom.parse(file_path)
-            device_info = self._parse_dom(dom)
+            device_info = self._parse_dom(dom, file_lines)
+            
+            # 创建块管理器
+            self.block_manager = BlockManager(device_info)
+            
+            # 设置块位置信息
+            self._set_block_positions()
             
             self.logger.info(f"SVD文件解析完成: {self.stats}")
             
@@ -48,7 +76,7 @@ class SVDParser:
                 for warning in self.warnings[:5]:  # 只显示前5条警告
                     self.logger.warning(warning)
             
-            return device_info
+            return device_info, self.block_manager
             
         except ExpatError as e:
             error_msg = f"XML解析错误: {str(e)}"
@@ -59,17 +87,37 @@ class SVDParser:
             self.logger.error(error_msg)
             raise Exception(error_msg)
     
-    def parse_string(self, xml_string: str) -> DeviceInfo:
-        """解析SVD字符串"""
+    def parse_string(self, xml_string: str) -> Tuple[DeviceInfo, BlockManager]:
+        """
+        解析SVD字符串
+        
+        Args:
+            xml_string: SVD XML字符串
+            
+        Returns:
+            (设备信息, 块管理器)
+        """
         try:
             self.logger.info("开始解析SVD字符串")
             
+            # 重置行号
+            self.current_line = 0
+            
+            # 分割行用于行号跟踪
+            file_lines = xml_string.split('\n')
+            
             dom = minidom.parseString(xml_string)
-            device_info = self._parse_dom(dom)
+            device_info = self._parse_dom(dom, file_lines)
+            
+            # 创建块管理器
+            self.block_manager = BlockManager(device_info)
+            
+            # 设置块位置信息
+            self._set_block_positions()
             
             self.logger.info(f"SVD字符串解析完成: {self.stats}")
             
-            return device_info
+            return device_info, self.block_manager
             
         except ExpatError as e:
             error_msg = f"XML解析错误: {str(e)}"
@@ -80,14 +128,19 @@ class SVDParser:
             self.logger.error(error_msg)
             raise Exception(error_msg)
     
-    def _parse_dom(self, dom: minidom.Document) -> DeviceInfo:
+    def _parse_dom(self, dom: minidom.Document, file_lines: List[str]) -> DeviceInfo:
         """解析DOM对象"""
         # 重置统计
         self.stats = {k: 0 for k in self.stats.keys()}
         self.warnings.clear()
+        self.block_positions.clear()
         
         # 获取根节点
         root = dom.documentElement
+        
+        # 记录设备块位置
+        device_start_line = self._find_element_line(root, file_lines)
+        self.block_positions["device"] = (device_start_line, len(file_lines))
         
         # 解析设备基本信息
         self._parse_device_info(root)
@@ -99,12 +152,30 @@ class SVDParser:
         self._parse_standard_fields(root)
         
         # 解析外设
-        self._parse_peripherals(root)
+        self._parse_peripherals(root, file_lines)
         
         # 收集所有中断到设备信息
         self._collect_interrupts_to_device()
         
         return self.device_info
+    
+    def _find_element_line(self, node, file_lines: List[str]) -> int:
+        """
+        查找元素在文件中的起始行号
+        
+        Args:
+            node: DOM节点
+            file_lines: 文件行列表
+            
+        Returns:
+            起始行号（1-based）
+        """
+        # 对于minidom，我们使用节点位置信息
+        if hasattr(node, 'userData'):
+            return node.userData.get('line', 0)
+        
+        # 如果没有位置信息，返回0
+        return 0
     
     def _parse_device_info(self, device_node):
         """解析设备信息"""
@@ -215,7 +286,7 @@ class SVDParser:
         if reset_mask_nodes and reset_mask_nodes[0].firstChild:
             self.device_info.reset_mask = reset_mask_nodes[0].firstChild.data.strip()
     
-    def _parse_peripherals(self, device_node):
+    def _parse_peripherals(self, device_node, file_lines: List[str]):
         """解析所有外设"""
         peripherals_node = device_node.getElementsByTagName("peripherals")
         if not peripherals_node:
@@ -228,7 +299,7 @@ class SVDParser:
         
         for i, periph_node in enumerate(periph_nodes):
             try:
-                peripheral = self._parse_peripheral(periph_node)
+                peripheral = self._parse_peripheral(periph_node, file_lines)
                 if peripheral:
                     self.device_info.peripherals[peripheral.name] = peripheral
                     self.stats["peripherals"] += 1
@@ -245,7 +316,7 @@ class SVDParser:
         
         self.logger.info(f"成功解析 {self.stats['peripherals']} 个外设")
     
-    def _parse_peripheral(self, periph_node) -> Optional[Peripheral]:
+    def _parse_peripheral(self, periph_node, file_lines: List[str]) -> Optional[Peripheral]:
         """解析单个外设"""
         # 外设名称
         name_nodes = periph_node.getElementsByTagName("name")
@@ -271,60 +342,35 @@ class SVDParser:
         # 创建外设对象
         peripheral = Peripheral(name=name, base_address=base_address)
         
-        # 记录外设的XML起始行号
-        peripheral.xml_start_line = self.current_line
-        
-        # 更新行号（外设节点本身）
-        self.current_line += 1
-        
         # 描述
-        peripheral.description = ""  # 默认值
+        peripheral.description = ""
         for child in periph_node.childNodes:
             if child.nodeType == child.ELEMENT_NODE and child.tagName == "description":
                 if child.firstChild:
                     peripheral.description = child.firstChild.data.strip()
                 break
         
-        # 如果没有描述，使用名称作为默认描述
         if not peripheral.description:
             peripheral.description = peripheral.name
         
-        # 记录外设的XML结束行号
-        peripheral.xml_end_line = self.current_line
-        
         # 显示名称
-        peripheral.display_name = ""  # 默认值
-    
-        # 只查找直接的 displayName 子节点
+        peripheral.display_name = ""
         for child in periph_node.childNodes:
             if child.nodeType == child.ELEMENT_NODE and child.tagName == "displayName":
                 if child.firstChild:
                     peripheral.display_name = child.firstChild.data.strip()
-                break  # 找到第一个直接子节点就停止
-        
-        # 或者使用更精确的方法：
-        display_name = None
-        for child in periph_node.childNodes:
-            if child.nodeType == child.ELEMENT_NODE and child.tagName == "displayName":
-                if child.firstChild:
-                    display_name = child.firstChild.data.strip()
                 break
-    
-        # 如果没有找到，保持为空
-        peripheral.display_name = display_name if display_name else ""
         
         # 组名
         group_nodes = periph_node.getElementsByTagName("groupName")
         if group_nodes and group_nodes[0].firstChild:
             peripheral.group_name = group_nodes[0].firstChild.data.strip()
         else:
-            peripheral.group_name = name  # 默认使用外设名作为组名
+            peripheral.group_name = name
         
         # 继承属性
         if periph_node.hasAttribute("derivedFrom"):
             peripheral.derived_from = periph_node.getAttribute("derivedFrom")
-        else:
-            peripheral.derived_from = ""  # 确保设置为空字符串
         
         # 地址块
         addr_block_nodes = periph_node.getElementsByTagName("addressBlock")
@@ -342,14 +388,14 @@ class SVDParser:
                 peripheral.address_block["usage"] = usage_nodes[0].firstChild.data.strip()
         
         # 解析寄存器
-        self._parse_registers_for_peripheral(periph_node, peripheral)
+        self._parse_registers_for_peripheral(periph_node, peripheral, file_lines)
         
         # 解析中断
         self._parse_interrupts_for_peripheral(periph_node, peripheral)
         
         return peripheral
     
-    def _parse_registers_for_peripheral(self, periph_node, peripheral: Peripheral):
+    def _parse_registers_for_peripheral(self, periph_node, peripheral: Peripheral, file_lines: List[str]):
         """为外设解析寄存器"""
         registers_node = periph_node.getElementsByTagName("registers")
         if not registers_node:
@@ -361,7 +407,7 @@ class SVDParser:
         
         for i, reg_node in enumerate(reg_nodes):
             try:
-                register = self._parse_register(reg_node)
+                register = self._parse_register(reg_node, file_lines)
                 if register:
                     peripheral.registers[register.name] = register
                     self.stats["registers"] += 1
@@ -371,7 +417,7 @@ class SVDParser:
                 error_msg = f"外设 {peripheral.name} 解析寄存器失败: {str(e)}"
                 self.warnings.append(error_msg)
     
-    def _parse_register(self, reg_node) -> Optional[Register]:
+    def _parse_register(self, reg_node, file_lines: List[str]) -> Optional[Register]:
         """解析寄存器"""
         # 寄存器名称
         name_nodes = reg_node.getElementsByTagName("name")
@@ -392,81 +438,36 @@ class SVDParser:
         # 创建寄存器对象
         register = Register(name=name, offset=offset)
         
-        # 记录寄存器的XML起始行号
-        register.xml_start_line = self.current_line
-        
-        # 更新行号
-        self.current_line += 1
-        
-        # ----- 关键修复：回归简单直接的解析方式 -----
-        
-        # 显示名称 - 直接使用getElementsByTagName，不要遍历childNodes
-        display_name_nodes = reg_node.getElementsByTagName("displayName")
-        if display_name_nodes and display_name_nodes[0].firstChild:
-            register.display_name = display_name_nodes[0].firstChild.data.strip()
-        else:
-            register.display_name = ""
-        
-        # 描述 - 直接使用getElementsByTagName
-        desc_nodes = reg_node.getElementsByTagName("description")
-        if desc_nodes and desc_nodes[0].firstChild:
-            register.description = desc_nodes[0].firstChild.data.strip()
-        else:
-            register.description = name  # 使用名称作为默认描述
-        
-        # 访问权限 - 直接使用getElementsByTagName
-        # 直接查找 register 的直接子元素中的 access
-        reg_access = None
-        
-        # 遍历 register 的直接子节点
+        # 描述
+        register.description = ""
         for child in reg_node.childNodes:
-            if child.nodeType == child.ELEMENT_NODE:
-                if child.tagName == "access" and child.firstChild:
-                    # 找到 access 标签
-                    access_text = child.firstChild.data.strip()
-                    if access_text:
-                        reg_access = access_text
-                    break  # 找到第一个就停止
-                elif child.tagName == "fields":
-                    # 遇到 fields，说明 register 级的 access 应该在 fields 之前
-                    break
+            if child.nodeType == child.ELEMENT_NODE and child.tagName == "description":
+                if child.firstChild:
+                    register.description = child.firstChild.data.strip()
+                break
         
-        # 如果上面没找到，再尝试通用查找（作为后备）
-        if not reg_access:
-            access_nodes = reg_node.getElementsByTagName("access")
-            if access_nodes and access_nodes[0].firstChild:
-                # 但需要确认这个 access 不在 fields 内部
-                for access_node in access_nodes:
-                    # 检查这个 access 节点的父节点是不是 fields
-                    parent = access_node.parentNode
-                    is_in_fields = False
-                    
-                    # 向上遍历查找父节点
-                    while parent and parent.nodeType == parent.ELEMENT_NODE:
-                        if parent.tagName == "fields":
-                            is_in_fields = True
-                            break
-                        if parent == reg_node:
-                            # 找到 register 直接父节点
-                            break
-                        parent = parent.parentNode
-                    
-                    if not is_in_fields and access_node.firstChild:
-                        reg_access = access_node.firstChild.data.strip()
-                        break
-        
-        if reg_access:
-            register.access = reg_access
-        
-        # 复位值
-        reset_nodes = reg_node.getElementsByTagName("resetValue")
-        if reset_nodes and reset_nodes[0].firstChild:
-            register.reset_value = reset_nodes[0].firstChild.data.strip()
+        # 显示名称
+        register.display_name = ""
+        for child in reg_node.childNodes:
+            if child.nodeType == child.ELEMENT_NODE and child.tagName == "displayName":
+                if child.firstChild:
+                    register.display_name = child.firstChild.data.strip()
+                break
         
         # 大小
         size_nodes = reg_node.getElementsByTagName("size")
         if size_nodes and size_nodes[0].firstChild:
             register.size = size_nodes[0].firstChild.data.strip()
+        
+        # 访问权限
+        access_nodes = reg_node.getElementsByTagName("access")
+        if access_nodes and access_nodes[0].firstChild:
+            register.access = access_nodes[0].firstChild.data.strip()
+        
+        # 复位值
+        reset_value_nodes = reg_node.getElementsByTagName("resetValue")
+        if reset_value_nodes and reset_value_nodes[0].firstChild:
+            register.reset_value = reset_value_nodes[0].firstChild.data.strip()
         
         # 复位掩码
         reset_mask_nodes = reg_node.getElementsByTagName("resetMask")
@@ -486,7 +487,7 @@ class SVDParser:
         
         field_nodes = fields_node[0].getElementsByTagName("field")
         
-        for i, field_node in enumerate(field_nodes):
+        for field_node in field_nodes:
             try:
                 field = self._parse_field(field_node)
                 if field:
@@ -508,188 +509,133 @@ class SVDParser:
         
         name = name_nodes[0].firstChild.data.strip()
         
-        # 创建位域对象
-        field = Field(name=name)
-
-        # 位偏移和位宽
+        # 位偏移
         bit_offset_nodes = field_node.getElementsByTagName("bitOffset")
-        field.bit_offset = int(bit_offset_nodes[0].firstChild.data.strip()) if (bit_offset_nodes and bit_offset_nodes[0].firstChild) else 0
-
-        bit_width_nodes = field_node.getElementsByTagName("bitWidth")
-        field.bit_width = int(bit_width_nodes[0].firstChild.data.strip()) if (bit_width_nodes and bit_width_nodes[0].firstChild) else 1
+        if not bit_offset_nodes or not bit_offset_nodes[0].firstChild:
+            self.warnings.append(f"位域 {name} 缺少位偏移，跳过")
+            return None
         
-        # 显示名称
-        display_name_nodes = field_node.getElementsByTagName("displayName")
-        if display_name_nodes and display_name_nodes[0].firstChild:
-            field.display_name = display_name_nodes[0].firstChild.data.strip()
-        else:
-            field.display_name = ""
+        bit_offset = int(bit_offset_nodes[0].firstChild.data.strip())
+        
+        # 位宽度
+        bit_width_nodes = field_node.getElementsByTagName("bitWidth")
+        if not bit_width_nodes or not bit_width_nodes[0].firstChild:
+            self.warnings.append(f"位域 {name} 缺少位宽度，跳过")
+            return None
+        
+        bit_width = int(bit_width_nodes[0].firstChild.data.strip())
+        
+        # 创建位域对象
+        field = Field(name=name, bit_offset=bit_offset, bit_width=bit_width)
         
         # 描述
-        desc_nodes = field_node.getElementsByTagName("description")
-        if desc_nodes and desc_nodes[0].firstChild:
-            field.description = desc_nodes[0].firstChild.data.strip()
-        else:
-            field.description = name
+        field.description = ""
+        for child in field_node.childNodes:
+            if child.nodeType == child.ELEMENT_NODE and child.tagName == "description":
+                if child.firstChild:
+                    field.description = child.firstChild.data.strip()
+                break
         
+        # 显示名称
+        field.display_name = ""
+        for child in field_node.childNodes:
+            if child.nodeType == child.ELEMENT_NODE and child.tagName == "displayName":
+                if child.firstChild:
+                    field.display_name = child.firstChild.data.strip()
+                break
         
         # 访问权限
-        field_access_nodes = field_node.getElementsByTagName("access")
-        if field_access_nodes and field_access_nodes[0].firstChild:
-           field.access = field_access_nodes[0].firstChild.data.strip()
-        else:
-           field.access = None  # 明确设置为None
-
-        # 复位值
-        reset_nodes = field_node.getElementsByTagName("resetValue")
-        if reset_nodes and reset_nodes[0].firstChild:
-            field.reset_value = reset_nodes[0].firstChild.data.strip()
+        access_nodes = field_node.getElementsByTagName("access")
+        if access_nodes and access_nodes[0].firstChild:
+            field.access = access_nodes[0].firstChild.data.strip()
         
-        # 枚举值 (如果存在)
-        enum_nodes = field_node.getElementsByTagName("enumeratedValues")
-        if enum_nodes:
-            # 这里可以解析枚举值，但为了简化，我们先跳过
-            pass
+        # 复位值
+        reset_value_nodes = field_node.getElementsByTagName("resetValue")
+        if reset_value_nodes and reset_value_nodes[0].firstChild:
+            field.reset_value = reset_value_nodes[0].firstChild.data.strip()
         
         return field
     
     def _parse_interrupts_for_peripheral(self, periph_node, peripheral: Peripheral):
         """为外设解析中断"""
-        irq_nodes = periph_node.getElementsByTagName("interrupt")
+        interrupt_nodes = periph_node.getElementsByTagName("interrupt")
         
-        for irq_node in irq_nodes:
+        for interrupt_node in interrupt_nodes:
             try:
-                interrupt = self._parse_interrupt(irq_node, peripheral.name)
-                if interrupt:
-                    peripheral.interrupts.append(interrupt)
-                    self.stats["interrupts"] += 1
-                    
+                # 中断名称
+                name_nodes = interrupt_node.getElementsByTagName("name")
+                if not name_nodes or not name_nodes[0].firstChild:
+                    continue
+                
+                name = name_nodes[0].firstChild.data.strip()
+                
+                # 中断值
+                value_nodes = interrupt_node.getElementsByTagName("value")
+                if not value_nodes or not value_nodes[0].firstChild:
+                    continue
+                
+                value = int(value_nodes[0].firstChild.data.strip())
+                
+                # 创建中断对象
+                interrupt = Interrupt(name=name, value=value)
+                
+                # 描述
+                desc_nodes = interrupt_node.getElementsByTagName("description")
+                if desc_nodes and desc_nodes[0].firstChild:
+                    interrupt.description = desc_nodes[0].firstChild.data.strip()
+                
+                # 外设名称
+                interrupt.peripheral = peripheral.name
+                
+                # 添加到外设
+                peripheral.interrupts.append({
+                    "name": interrupt.name,
+                    "value": interrupt.value,
+                    "description": interrupt.description
+                })
+                
+                self.stats["interrupts"] += 1
+                
             except Exception as e:
-                self.stats["errors"] += 1
-                error_msg = f"解析中断失败: {str(e)}"
+                error_msg = f"外设 {peripheral.name} 解析中断失败: {str(e)}"
                 self.warnings.append(error_msg)
-    
-    def _parse_interrupt(self, irq_node, peripheral_name) -> Optional[Dict[str, Any]]:
-        """解析中断"""
-        # 中断名称
-        name_nodes = irq_node.getElementsByTagName("name")
-        if not name_nodes or not name_nodes[0].firstChild:
-            self.warnings.append("跳过未命名的中断")
-            return None
-        
-        name = name_nodes[0].firstChild.data.strip()
-        
-        # 中断号
-        value_nodes = irq_node.getElementsByTagName("value")
-        if not value_nodes or not value_nodes[0].firstChild:
-            self.warnings.append(f"中断 {name} 缺少中断号，跳过")
-            return None
-        
-        try:
-            value = int(value_nodes[0].firstChild.data.strip())
-        except ValueError:
-            self.warnings.append(f"中断 {name} 中断号解析失败: {value_nodes[0].firstChild.data}")
-            return None
-        
-        # 中断描述
-        description = ""
-        desc_nodes = irq_node.getElementsByTagName("description")
-        if desc_nodes and desc_nodes[0].firstChild:
-            description = desc_nodes[0].firstChild.data.strip()
-        
-        return {
-            "name": name,
-            "value": value,
-            "description": description,
-            "peripheral": peripheral_name
-        }
     
     def _collect_interrupts_to_device(self):
         """收集所有中断到设备信息"""
-        for peripheral in self.device_info.peripherals.values():
+        for periph_name, peripheral in self.device_info.peripherals.items():
             for interrupt in peripheral.interrupts:
-                # 创建Interrupt对象
-                irq = Interrupt(
-                    name=interrupt["name"],
-                    value=interrupt["value"],
-                    description=interrupt.get("description", ""),
-                    peripheral=interrupt["peripheral"]
-                )
-                self.device_info.interrupts[irq.name] = irq
+                irq_name = interrupt.get("name", "")
+                if irq_name:
+                    self.device_info.interrupts[irq_name] = Interrupt(
+                        name=irq_name,
+                        value=interrupt.get("value", 0),
+                        description=interrupt.get("description", ""),
+                        peripheral=periph_name
+                    )
     
-    def get_stats(self) -> Dict[str, int]:
-        """获取解析统计"""
-        return self.stats.copy()
-    
-    def get_warnings(self) -> List[str]:
-        """获取警告列表"""
-        return self.warnings.copy()
-    
-    def clear(self):
-        """清除解析器状态"""
-        self.device_info = DeviceInfo()
-        self.warnings.clear()
-        self.stats = {k: 0 for k in self.stats.keys()}
-
-
-class SVDFastParser(SVDParser):
-    """快速SVD解析器（用于大型文件）"""
-    
-    def _parse_peripherals(self, device_node):
-        """快速解析所有外设"""
-        peripherals_node = device_node.getElementsByTagName("peripherals")
-        if not peripherals_node:
-            self.warnings.append("未找到外设定义")
+    def _set_block_positions(self):
+        """设置块位置信息到块管理器"""
+        if not self.block_manager:
             return
         
-        periph_nodes = peripherals_node[0].getElementsByTagName("peripheral")
-        
-        self.logger.info(f"快速解析 {len(periph_nodes)} 个外设定义")
-        
-        # 使用批处理提高性能
-        batch_size = 50
-        for i in range(0, len(periph_nodes), batch_size):
-            batch = periph_nodes[i:i + batch_size]
-            for periph_node in batch:
-                try:
-                    peripheral = self._parse_peripheral_fast(periph_node)
-                    if peripheral:
-                        self.device_info.peripherals[peripheral.name] = peripheral
-                        self.stats["peripherals"] += 1
-                        
-                except Exception as e:
-                    self.stats["errors"] += 1
-                    # 快速模式下不记录详细错误
-            
-            # 更新进度
-            if (i + batch_size) % 500 == 0:
-                self.logger.debug(f"已快速解析 {min(i + batch_size, len(periph_nodes))}/{len(periph_nodes)} 个外设")
+        for block_key, (start_line, end_line) in self.block_positions.items():
+            block = self.block_manager.get_block(block_key)
+            if block:
+                block.xml_start_line = start_line
+                block.xml_end_line = end_line
     
-    def _parse_peripheral_fast(self, periph_node) -> Optional[Peripheral]:
-        """快速解析单个外设（不解析位域）"""
-        # 外设名称
-        name_nodes = periph_node.getElementsByTagName("name")
-        if not name_nodes or not name_nodes[0].firstChild:
-            return None
+    def get_block_position(self, block_key: str) -> Optional[Tuple[int, int]]:
+        """
+        获取块的XML位置
         
-        name = name_nodes[0].firstChild.data.strip()
-        
-        # 基地址
-        base_addr_nodes = periph_node.getElementsByTagName("baseAddress")
-        if not base_addr_nodes or not base_addr_nodes[0].firstChild:
-            return None
-        
-        base_address = base_addr_nodes[0].firstChild.data.strip()
-        
-        # 创建外设对象
-        peripheral = Peripheral(name=name, base_address=base_address)
-        
-        # 描述
-        desc_nodes = periph_node.getElementsByTagName("description")
-        if desc_nodes and desc_nodes[0].firstChild:
-            peripheral.description = desc_nodes[0].firstChild.data.strip()
-        
-        # 只解析基本信息，不解析寄存器和位域（加快速度）
-        # 在实际使用中，可以根据需要选择是否解析详细信息
-        
-        return peripheral
+        Args:
+            block_key: 块的key
+            
+        Returns:
+            (起始行号, 结束行号)，如果不存在则返回None
+        """
+        return self.block_positions.get(block_key)
+    
+    def get_statistics(self) -> Dict[str, int]:
+        """获取解析统计信息"""
+        return self.stats.copy()

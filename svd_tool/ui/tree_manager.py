@@ -103,7 +103,12 @@ class TreeManager:
         """创建外设节点"""
         item = QTreeWidgetItem()
         item.setText(0, peripheral.name)
-        item.setText(1, t("label.base_address_prefix") + str(peripheral.base_address))
+        
+        # 构建详细信息文本：基地址 + 继承关系
+        detail_text = t("label.base_address_prefix") + str(peripheral.base_address)
+        if peripheral.derived_from:
+            detail_text += " | " + t("label.derived_from") + ": " + peripheral.derived_from
+        item.setText(1, detail_text)
         
         # ... 详细信息设置 ...
         
@@ -112,8 +117,8 @@ class TreeManager:
 
         # 外设可以拖动，并且可以接受同级（外设）的放置
         item.setFlags(
-            item.flags() | 
-            Qt.ItemFlag.ItemIsDragEnabled | 
+            item.flags() |
+            Qt.ItemFlag.ItemIsDragEnabled |
             Qt.ItemFlag.ItemIsDropEnabled
         )
         

@@ -38,6 +38,7 @@ from .components.layout_manager import LayoutManager
 from .components.peripheral_manager import PeripheralManager
 from .components.menu_bar import MenuBarBuilder
 from .components.toolbar import ToolBarBuilder
+from .components.preview_manager import PreviewManager
 from .managers.file_operations import FileOperations
 from .managers.device_info_manager import DeviceInfoManager
 from .coordinator import Coordinator
@@ -79,12 +80,19 @@ class MainWindowRefactored(QMainWindow):
         self.file_operations = FileOperations(self.state_manager, self.layout_manager)
         self.device_info_manager = DeviceInfoManager(coordinator=self.coordinator)
         
+        # 初始化预览管理器
+        self.preview_manager = PreviewManager(self, self.state_manager, self.coordinator)
+        
+        # 预览窗口（延迟创建，保留兼容性）
+        self.preview_window = None
+        
         # 注册组件到协调器
         self.coordinator.register_component('state_manager', self.state_manager)
         self.coordinator.register_component('layout_manager', self.layout_manager)
         self.coordinator.register_component('peripheral_manager', self.peripheral_manager)
         self.coordinator.register_component('device_info_manager', self.device_info_manager)
         self.coordinator.register_component('file_operations', self.file_operations)
+        self.coordinator.register_component('preview_manager', self.preview_manager)
         
         # GUI 日志处理器
         self._gui_log_handler = None
@@ -124,8 +132,10 @@ class MainWindowRefactored(QMainWindow):
                 self.layout_manager.create_peripheral_tab(tab_widget)
                 print(f"[DEBUG] 创建中断标签页", file=sys.stderr)
                 self.layout_manager.create_interrupt_tab(tab_widget)
-                print(f"[DEBUG] 创建预览标签页", file=sys.stderr)
-                self.layout_manager.create_preview_tab(tab_widget)
+                # 设置预览管理器（支持多种显示模式）
+                print(f"[DEBUG] 设置预览管理器", file=sys.stderr)
+                self.preview_manager.setup_preview_modes(tab_widget)
+                print(f"[DEBUG] 预览管理器设置完成", file=sys.stderr)
             except Exception as e:
                 print(f"[DEBUG] 创建标签页时发生异常: {e}", file=sys.stderr)
                 import traceback
@@ -179,13 +189,10 @@ class MainWindowRefactored(QMainWindow):
         if generate_btn:
             generate_btn.clicked.connect(self.generate_svd)
         
-        preview_btn = self.layout_manager.get_widget('preview_btn')
-        if preview_btn:
-            preview_btn.clicked.connect(self.preview_xml)
-        
         export_btn = self.layout_manager.get_widget('export_btn')
         if export_btn:
             export_btn.clicked.connect(self.export_file)
+        
         
         # 连接右键菜单
         periph_tree = self.layout_manager.get_widget('periph_tree')
@@ -198,8 +205,25 @@ class MainWindowRefactored(QMainWindow):
         # 连接可视化控件信号
         visualization_widget = self.layout_manager.get_widget('visualization_widget')
         if visualization_widget:
+            import sys
+            print(f"[DEBUG] visualization_widget type: {type(visualization_widget)}", file=sys.stderr)
+            print(f"[DEBUG] visualization_widget has jump_to_peripheral: {hasattr(visualization_widget, 'jump_to_peripheral')}", file=sys.stderr)
+            print(f"[DEBUG] on_jump_to_peripheral method: {self.on_jump_to_peripheral}", file=sys.stderr)
+            print(f"[DEBUG] visualization_widget.jump_to_peripheral: {visualization_widget.jump_to_peripheral}", file=sys.stderr)
+            
+            # 设置 main_window 引用
+            visualization_widget.main_window = self
+            print(f"[DEBUG] Set visualization_widget.main_window", file=sys.stderr)
+            
             visualization_widget.bit_field.field_clicked.connect(self.on_field_clicked)
             visualization_widget.address_map.register_clicked.connect(self.on_register_clicked)
+            if hasattr(visualization_widget, 'jump_to_peripheral'):
+                print(f"[DEBUG] Connecting jump_to_peripheral signal...", file=sys.stderr)
+                visualization_widget.jump_to_peripheral.connect(self.on_jump_to_peripheral)
+                print(f"[DEBUG] jump_to_peripheral signal connected", file=sys.stderr)
+                print(f"[DEBUG] Signal receivers: {visualization_widget.jump_to_peripheral}", file=sys.stderr)
+            else:
+                print(f"[DEBUG] jump_to_peripheral signal NOT found", file=sys.stderr)
         
         # 连接中断表格右键菜单和选择变化
         irq_table = self.layout_manager.get_widget('irq_table')
@@ -271,6 +295,25 @@ class MainWindowRefactored(QMainWindow):
         edit_irq_btn.setEnabled(has_selection)
         delete_irq_btn.setEnabled(has_selection)
 
+    def open_preview_window(self):
+        """打开预览窗口（使用预览管理器）"""
+        # 使用预览管理器切换到停靠窗口模式
+        from .components.preview_manager import PreviewMode
+        self.preview_manager.set_mode(PreviewMode.DOCK)
+        self.preview_manager.set_preview_visible(True)
+        self.logger.info("预览窗口已打开")
+    
+    def _on_preview_window_closed(self):
+        """预览窗口关闭事件"""
+        self.logger.info("预览窗口已关闭")
+        # 预览管理器处理关闭逻辑
+    
+    def _on_main_window_selection_changed(self, item_type: str, item_name: str):
+        """主窗口选择变化时更新预览"""
+        # 使用预览管理器更新预览
+        selection = self.state_manager.get_selection()
+        self.preview_manager.highlight_element(selection)
+    
     def add_peripheral(self):
         """添加外设（直接调用外设管理器的对话框）"""
         self.peripheral_manager.add_peripheral_dialog()
@@ -315,6 +358,66 @@ class MainWindowRefactored(QMainWindow):
             # 清空表格
             self.layout_manager.update_field_table()
     
+    def on_preview_element_selected(self, element_type: str, peripheral_name: str, element_name: str):
+        """预览窗口元素选择事件处理
+        
+        Args:
+            element_type: 元素类型 ('peripheral', 'register', 'field', 'interrupt')
+            peripheral_name: 外设名称
+            element_name: 元素名称
+        """
+        # 解析element_name
+        register_name = None
+        field_name = None
+        
+        if element_type == 'register':
+            register_name = element_name
+        elif element_type == 'field':
+            # element_name格式为 "register.field"
+            if '.' in element_name:
+                register_name, field_name = element_name.split('.', 1)
+            else:
+                register_name = element_name
+        elif element_type == 'interrupt':
+            # 中断不需要特殊处理
+            pass
+        
+        # 更新状态管理器的选择（包含类型信息）
+        self.state_manager.set_selection(
+            peripheral=peripheral_name,
+            register=register_name,
+            field=field_name,
+            element_type=element_type
+        )
+        
+        # 在树状图中选中对应的元素（双向同步）
+        if hasattr(self, 'peripheral_manager'):
+            if element_type == 'peripheral' and peripheral_name:
+                self.peripheral_manager.select_peripheral(peripheral_name)
+            elif element_type == 'register' and peripheral_name and register_name:
+                self.peripheral_manager.select_register(peripheral_name, register_name)
+            elif element_type == 'field' and peripheral_name and register_name and field_name:
+                self.peripheral_manager.select_field(peripheral_name, register_name, field_name)
+        
+        # 更新可视化控件
+        self.update_visualization(
+            peripheral_name or '',
+            register_name or '',
+            field_name or ''
+        )
+        
+        # 更新位域表格
+        if register_name and peripheral_name:
+            device_info = self.state_manager.device_info
+            if (peripheral_name in device_info.peripherals and
+                register_name in device_info.peripherals[peripheral_name].registers):
+                reg_obj = device_info.peripherals[peripheral_name].registers[register_name]
+                self.layout_manager.update_field_table(peripheral_name, register_name, reg_obj)
+            else:
+                self.layout_manager.update_field_table()
+        else:
+            self.layout_manager.update_field_table()
+    
     def update_visualization(self, peripheral: str, register: str, field: str):
         """更新可视化控件显示"""
         visualization_widget = self.layout_manager.get_widget('visualization_widget')
@@ -323,6 +426,10 @@ class MainWindowRefactored(QMainWindow):
             
         # 设置主窗口引用
         visualization_widget.main_window = self
+        
+        # 设置树状图引用
+        tree_widget = self.layout_manager.get_widget('periph_tree')
+        visualization_widget.tree_widget = tree_widget
         
         # 获取设备信息
         device_info = self.state_manager.device_info
@@ -563,6 +670,17 @@ class MainWindowRefactored(QMainWindow):
                                 periph_tree.setCurrentItem(reg_item)
                                 break
                         break
+    
+    def on_jump_to_peripheral(self, peripheral_name: str):
+        """跳转到外设事件处理（用于继承外设的跳转）"""
+        import sys
+        print(f"[DEBUG] ===== on_jump_to_peripheral called with: {peripheral_name} =====", file=sys.stderr)
+        # 更新状态管理器的选择状态
+        self.state_manager.set_selection(peripheral=peripheral_name)
+        
+        # 更新可视化控件
+        self.update_visualization(peripheral_name, '', '')
+        print(f"[DEBUG] ===== on_jump_to_peripheral completed =====", file=sys.stderr)
     
     # ===================== 搜索功能 =====================
     def on_search_text_changed(self, text: str):
@@ -850,6 +968,11 @@ class MainWindowRefactored(QMainWindow):
                     self.state_manager.device_info = device_info
                     self.state_manager.clear_selection()
                     self.command_history.clear()
+                    
+                    # 发射文件加载信号（触发实时预览刷新）
+                    if hasattr(self, 'coordinator') and self.coordinator:
+                        print(f"[DEBUG] 调用coordinator.emit_event(device_info_updated)")
+                        self.coordinator.emit_event("device_info_updated", device_info)
                     
                     # 更新UI
                     self.peripheral_manager.update_peripheral_tree()
@@ -2085,13 +2208,13 @@ class MainWindowRefactored(QMainWindow):
             
             if validation_result['valid']:
                 QMessageBox.information(self, t("msg.validation_passed"), t("msg.all_data_validated"))
-                self.layout_manager.update_status("数据验证通过")
+                self.layout_manager.update_status(t("status.validation_passed"))
             else:
                 # 构建错误消息
                 error_count = validation_result['error_count']
                 errors = validation_result['errors']
                 
-                error_message = f"数据验证失败，发现 {error_count} 个错误：\n\n"
+                error_message = t("status.validation_failed", count=error_count) + ":\n\n"
                 for i, error in enumerate(errors[:10], 1):  # 最多显示10个错误
                     error_message += f"{i}. {error}\n"
                 
@@ -2104,7 +2227,7 @@ class MainWindowRefactored(QMainWindow):
         except Exception as e:
             self.logger.error(f"验证过程中发生错误: {str(e)}")
             QMessageBox.warning(self, t("msg.validation_error"), t("msg.validation_error_detail", error=str(e)))
-            self.layout_manager.update_status("验证过程出错")
+            self.layout_manager.update_status(t("status.validation_error"))
     
     def set_language(self, locale: str):
         """设置语言"""
@@ -2196,6 +2319,15 @@ class MainWindowRefactored(QMainWindow):
         # 保存当前状态快照（包括设备信息和选中状态）
         state_snapshot = self.state_manager.get_device_state_snapshot()
         
+        # 清理 realtime_preview 资源（在删除标签页之前）
+        realtime_preview = self.layout_manager.get_widget('realtime_preview')
+        if realtime_preview and hasattr(realtime_preview, 'cleanup'):
+            try:
+                realtime_preview.cleanup()
+            except Exception as e:
+                import logging
+                logging.warning(f"清理 realtime_preview 时出错: {e}")
+        
         # 清除所有标签页
         while tab_widget.count() > 0:
             tab_widget.removeTab(0)
@@ -2204,7 +2336,6 @@ class MainWindowRefactored(QMainWindow):
         self.layout_manager.create_basic_info_tab(tab_widget)
         self.layout_manager.create_peripheral_tab(tab_widget)
         self.layout_manager.create_interrupt_tab(tab_widget)
-        self.layout_manager.create_preview_tab(tab_widget)
         
         # 重新连接UI信号（重要：重新创建标签页后必须重新连接信号）
         self.peripheral_manager.connect_ui_signals()

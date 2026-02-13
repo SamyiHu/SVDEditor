@@ -30,130 +30,420 @@ class TabBuilder:
         self.logger = logging.getLogger("TabBuilder")
 
     def create_basic_info_tab(self, tab_widget: QTabWidget) -> QWidget:
-        """创建基础信息标签页"""
+        """创建基础信息标签页（优化版）"""
         self.logger.debug("create_basic_info_tab开始")
         try:
-            from PyQt6.QtWidgets import QFormLayout, QGridLayout
+            from PyQt6.QtWidgets import QFormLayout, QGridLayout, QFrame
+            from PyQt6.QtCore import Qt
 
             tab = QWidget()
             layout = QVBoxLayout(tab)
+            layout.setSpacing(15)  # 增加组之间的间距
+            layout.setContentsMargins(20, 20, 20, 20)  # 增加边距
 
-            # 基本信息组
-            basic_group = QGroupBox(t("label.basic_info"))
-            basic_layout = QHBoxLayout(basic_group)
-            
-            left_layout = QVBoxLayout()
-            right_layout = QVBoxLayout()
-            
-            # 左侧表单
-            left_layout.addWidget(QLabel(t("label.ic_model") + ":"))
+            # 设备信息组（使用网格布局，更整齐）
+            device_group = QGroupBox(t("label.basic_info"))
+            device_group.setStyleSheet("""
+                QGroupBox {
+                    font-weight: bold;
+                    font-size: 11pt;
+                    border: 2px solid #d0d0d0;
+                    border-radius: 8px;
+                    margin-top: 12px;
+                    padding: 15px;
+                    background-color: #fafafa;
+                }
+                QGroupBox::title {
+                    subcontrol-origin: margin;
+                    left: 15px;
+                    padding: 0 5px;
+                    color: #333;
+                }
+            """)
+            device_layout = QGridLayout(device_group)
+            device_layout.setSpacing(10)
+            device_layout.setContentsMargins(10, 20, 10, 10)
+
+            # 第一行：IC型号和描述
+            device_layout.addWidget(QLabel(t("label.ic_model") + ":"), 0, 0)
             ic_name_edit = QLineEdit()
             ic_name_edit.setPlaceholderText(t("placeholder.ic_model"))
-            left_layout.addWidget(ic_name_edit)
-            
-            left_layout.addWidget(QLabel(t("label.ic_description") + ":"))
+            ic_name_edit.setStyleSheet("""
+                QLineEdit {
+                    padding: 6px;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: white;
+                    font-size: 10pt;
+                }
+                QLineEdit:focus {
+                    border: 2px solid #4a90e2;
+                }
+            """)
+            device_layout.addWidget(ic_name_edit, 0, 1)
+
+            device_layout.addWidget(QLabel(t("label.ic_description") + ":"), 0, 2)
             ic_desc_edit = QLineEdit()
             ic_desc_edit.setPlaceholderText(t("placeholder.ic_description"))
-            left_layout.addWidget(ic_desc_edit)
-            
-            left_layout.addWidget(QLabel(t("label.version") + ":"))
+            ic_desc_edit.setStyleSheet("""
+                QLineEdit {
+                    padding: 6px;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: white;
+                    font-size: 10pt;
+                }
+                QLineEdit:focus {
+                    border: 2px solid #4a90e2;
+                }
+            """)
+            device_layout.addWidget(ic_desc_edit, 0, 3)
+
+            # 第二行：版本和SVD版本
+            device_layout.addWidget(QLabel(t("label.version") + ":"), 1, 0)
             version_edit = QLineEdit()
             version_edit.setPlaceholderText(t("placeholder.version"))
-            left_layout.addWidget(version_edit)
-            
-            left_layout.addWidget(QLabel(t("label.svd_version") + ":"))
+            version_edit.setStyleSheet("""
+                QLineEdit {
+                    padding: 6px;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: white;
+                    font-size: 10pt;
+                }
+                QLineEdit:focus {
+                    border: 2px solid #4a90e2;
+                }
+            """)
+            device_layout.addWidget(version_edit, 1, 1)
+
+            device_layout.addWidget(QLabel(t("label.svd_version") + ":"), 1, 2)
             svd_version_combo = QComboBox()
             svd_version_combo.addItems(["1.0", "1.1", "1.2", "1.3", "1.3.1"])
             svd_version_combo.setCurrentText("1.3")
-            left_layout.addWidget(svd_version_combo)
-            
-            # 右侧表单
-            right_layout.addWidget(QLabel(t("label.cpu_name") + ":"))
+            svd_version_combo.setStyleSheet("""
+                QComboBox {
+                    padding: 6px;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: white;
+                    font-size: 10pt;
+                    min-height: 20px;
+                }
+                QComboBox:focus {
+                    border: 2px solid #4a90e2;
+                }
+                QComboBox::drop-down {
+                    border: none;
+                }
+                QComboBox::down-arrow {
+                    width: 12px;
+                    height: 12px;
+                }
+            """)
+            device_layout.addWidget(svd_version_combo, 1, 3)
+
+            # 第三行：CPU名称和修订版
+            device_layout.addWidget(QLabel(t("label.cpu_name") + ":"), 2, 0)
             cpu_name_edit = QLineEdit()
             cpu_name_edit.setPlaceholderText(t("placeholder.cpu_name"))
-            right_layout.addWidget(cpu_name_edit)
-            
-            right_layout.addWidget(QLabel(t("label.cpu_revision") + ":"))
+            cpu_name_edit.setStyleSheet("""
+                QLineEdit {
+                    padding: 6px;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: white;
+                    font-size: 10pt;
+                }
+                QLineEdit:focus {
+                    border: 2px solid #4a90e2;
+                }
+            """)
+            device_layout.addWidget(cpu_name_edit, 2, 1)
+
+            device_layout.addWidget(QLabel(t("label.cpu_revision") + ":"), 2, 2)
             cpu_rev_edit = QLineEdit()
             cpu_rev_edit.setPlaceholderText(t("placeholder.cpu_revision"))
-            right_layout.addWidget(cpu_rev_edit)
+            cpu_rev_edit.setStyleSheet("""
+                QLineEdit {
+                    padding: 6px;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: white;
+                    font-size: 10pt;
+                }
+                QLineEdit:focus {
+                    border: 2px solid #4a90e2;
+                }
+            """)
+            device_layout.addWidget(cpu_rev_edit, 2, 3)
 
-            right_layout.addWidget(QLabel(t("label.endian") + ":"))
+            # 第四行：端序和MPU
+            device_layout.addWidget(QLabel(t("label.endian") + ":"), 3, 0)
             endian_combo = QComboBox()
             endian_combo.addItems([t("value.little"), t("value.big"), t("value.selectable")])
             endian_combo.setCurrentText(t("value.little"))
-            right_layout.addWidget(endian_combo)
-            
-            right_layout.addWidget(QLabel(t("label.mpu_exists") + ":"))
+            endian_combo.setStyleSheet("""
+                QComboBox {
+                    padding: 6px;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: white;
+                    font-size: 10pt;
+                    min-height: 20px;
+                }
+                QComboBox:focus {
+                    border: 2px solid #4a90e2;
+                }
+            """)
+            device_layout.addWidget(endian_combo, 3, 1)
+
+            device_layout.addWidget(QLabel(t("label.mpu_exists") + ":"), 3, 2)
             mpu_combo = QComboBox()
             mpu_combo.addItems([t("value.yes"), t("value.no")])
             mpu_combo.setCurrentText(t("value.no"))
-            right_layout.addWidget(mpu_combo)
-            
-            right_layout.addWidget(QLabel(t("label.fpu_exists") + ":"))
+            mpu_combo.setStyleSheet("""
+                QComboBox {
+                    padding: 6px;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: white;
+                    font-size: 10pt;
+                    min-height: 20px;
+                }
+                QComboBox:focus {
+                    border: 2px solid #4a90e2;
+                }
+            """)
+            device_layout.addWidget(mpu_combo, 3, 3)
+
+            # 第五行：FPU和NVIC优先级位数
+            device_layout.addWidget(QLabel(t("label.fpu_exists") + ":"), 4, 0)
             fpu_combo = QComboBox()
             fpu_combo.addItems([t("value.yes"), t("value.no")])
             fpu_combo.setCurrentText(t("value.no"))
-            right_layout.addWidget(fpu_combo)
-            
-            right_layout.addWidget(QLabel(t("label.nvic_prio_bits") + ":"))
+            fpu_combo.setStyleSheet("""
+                QComboBox {
+                    padding: 6px;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: white;
+                    font-size: 10pt;
+                    min-height: 20px;
+                }
+                QComboBox:focus {
+                    border: 2px solid #4a90e2;
+                }
+            """)
+            device_layout.addWidget(fpu_combo, 4, 1)
+
+            device_layout.addWidget(QLabel(t("label.nvic_prio_bits") + ":"), 4, 2)
             nvic_prio_spin = QSpinBox()
             nvic_prio_spin.setRange(0, 8)
             nvic_prio_spin.setValue(4)
-            right_layout.addWidget(nvic_prio_spin)
+            nvic_prio_spin.setStyleSheet("""
+                QSpinBox {
+                    padding: 6px;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: white;
+                    font-size: 10pt;
+                    min-height: 20px;
+                }
+                QSpinBox:focus {
+                    border: 2px solid #4a90e2;
+                }
+                QSpinBox::up-button, QSpinBox::down-button {
+                    width: 16px;
+                    border: none;
+                    background-color: #f0f0f0;
+                }
+                QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+                    background-color: #e0e0e0;
+                }
+            """)
+            device_layout.addWidget(nvic_prio_spin, 4, 3)
 
-            basic_layout.addLayout(left_layout)
-            basic_layout.addLayout(right_layout)
-            layout.addWidget(basic_group)
+            # 设置列拉伸
+            device_layout.setColumnStretch(1, 1)
+            device_layout.setColumnStretch(3, 1)
+
+            layout.addWidget(device_group)
+
+            # 分隔线
+            separator = QFrame()
+            separator.setFrameShape(QFrame.Shape.HLine)
+            separator.setFrameShadow(QFrame.Shadow.Sunken)
+            separator.setStyleSheet("background-color: #e0e0e0; max-height: 1px;")
+            layout.addWidget(separator)
 
             # 公司版权信息组
             company_group = QGroupBox(t("label.company_copyright"))
-            company_layout = QHBoxLayout(company_group)
-            
-            company_left_layout = QVBoxLayout()
-            company_right_layout = QVBoxLayout()
-            
-            company_left_layout.addWidget(QLabel(t("label.company_name") + ":"))
+            company_group.setStyleSheet("""
+                QGroupBox {
+                    font-weight: bold;
+                    font-size: 11pt;
+                    border: 2px solid #d0d0d0;
+                    border-radius: 8px;
+                    margin-top: 12px;
+                    padding: 15px;
+                    background-color: #fafafa;
+                }
+                QGroupBox::title {
+                    subcontrol-origin: margin;
+                    left: 15px;
+                    padding: 0 5px;
+                    color: #333;
+                }
+            """)
+            company_layout = QGridLayout(company_group)
+            company_layout.setSpacing(10)
+            company_layout.setContentsMargins(10, 20, 10, 10)
+
+            # 第一行：厂商ID和版权信息
+            company_layout.addWidget(QLabel(t("label.company_name") + ":"), 0, 0)
             company_name_edit = QLineEdit()
             company_name_edit.setPlaceholderText(t("placeholder.company_name"))
-            company_left_layout.addWidget(company_name_edit)
-            
-            company_left_layout.addWidget(QLabel(t("label.copyright_info") + ":"))
+            company_name_edit.setStyleSheet("""
+                QLineEdit {
+                    padding: 6px;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: white;
+                    font-size: 10pt;
+                }
+                QLineEdit:focus {
+                    border: 2px solid #4a90e2;
+                }
+            """)
+            company_layout.addWidget(company_name_edit, 0, 1)
+
+            company_layout.addWidget(QLabel(t("label.copyright_info") + ":"), 0, 2)
             copyright_edit = QLineEdit()
             copyright_edit.setPlaceholderText(t("placeholder.copyright_info"))
-            company_left_layout.addWidget(copyright_edit)
+            copyright_edit.setStyleSheet("""
+                QLineEdit {
+                    padding: 6px;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: white;
+                    font-size: 10pt;
+                }
+                QLineEdit:focus {
+                    border: 2px solid #4a90e2;
+                }
+            """)
+            company_layout.addWidget(copyright_edit, 0, 3)
 
-            # 作者字段，带"不显示"复选框
-            author_layout = QHBoxLayout()
-            author_layout.addWidget(QLabel(t("label.author") + ":"))
+            # 第二行：作者和许可证
+            company_layout.addWidget(QLabel(t("label.author") + ":"), 1, 0)
             author_edit = QLineEdit()
             author_edit.setPlaceholderText(t("placeholder.author"))
-            author_layout.addWidget(author_edit)
+            author_edit.setStyleSheet("""
+                QLineEdit {
+                    padding: 6px;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: white;
+                    font-size: 10pt;
+                }
+                QLineEdit:focus {
+                    border: 2px solid #4a90e2;
+                }
+            """)
+            company_layout.addWidget(author_edit, 1, 1)
+
             author_checkbox = QCheckBox(t("label.do_not_display"))
             author_checkbox.setChecked(False)
-            author_layout.addWidget(author_checkbox)
-            company_right_layout.addLayout(author_layout)
+            author_checkbox.setStyleSheet("""
+                QCheckBox {
+                    font-size: 9pt;
+                    spacing: 5px;
+                }
+                QCheckBox::indicator {
+                    width: 16px;
+                    height: 16px;
+                    border: 1px solid #ccc;
+                    border-radius: 3px;
+                    background-color: white;
+                }
+                QCheckBox::indicator:checked {
+                    background-color: #4a90e2;
+                    border: 1px solid #4a90e2;
+                }
+            """)
+            company_layout.addWidget(author_checkbox, 1, 2)
 
-            # 许可证字段，添加"不显示"选项
-            license_layout = QHBoxLayout()
-            license_layout.addWidget(QLabel(t("label.license") + ":"))
+            company_layout.addWidget(QLabel(t("label.license") + ":"), 1, 3)
             license_combo = QComboBox()
             license_combo.addItems([t("license.do_not_display"), t("license.apache_2_0"), t("license.mit"), t("license.bsd_3_clause"), t("license.proprietary"), t("license.other")])
             license_combo.setCurrentText(t("license.apache_2_0"))
-            license_layout.addWidget(license_combo)
-            company_right_layout.addLayout(license_layout)
+            license_combo.setStyleSheet("""
+                QComboBox {
+                    padding: 6px;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: white;
+                    font-size: 10pt;
+                    min-height: 20px;
+                }
+                QComboBox:focus {
+                    border: 2px solid #4a90e2;
+                }
+            """)
+            company_layout.addWidget(license_combo, 1, 4)
 
-            company_layout.addLayout(company_left_layout)
-            company_layout.addLayout(company_right_layout)
+            # 设置列拉伸
+            company_layout.setColumnStretch(1, 1)
+            company_layout.setColumnStretch(3, 1)
+            company_layout.setColumnStretch(4, 1)
+
             layout.addWidget(company_group)
+
+            # 分隔线
+            separator2 = QFrame()
+            separator2.setFrameShape(QFrame.Shape.HLine)
+            separator2.setFrameShadow(QFrame.Shadow.Sunken)
+            separator2.setStyleSheet("background-color: #e0e0e0; max-height: 1px;")
+            layout.addWidget(separator2)
 
             # 描述信息组
             desc_group = QGroupBox(t("label.detailed_description"))
+            desc_group.setStyleSheet("""
+                QGroupBox {
+                    font-weight: bold;
+                    font-size: 11pt;
+                    border: 2px solid #d0d0d0;
+                    border-radius: 8px;
+                    margin-top: 12px;
+                    padding: 15px;
+                    background-color: #fafafa;
+                }
+                QGroupBox::title {
+                    subcontrol-origin: margin;
+                    left: 15px;
+                    padding: 0 5px;
+                    color: #333;
+                }
+            """)
             desc_layout = QVBoxLayout(desc_group)
-            
+            desc_layout.setContentsMargins(10, 20, 10, 10)
+
             desc_edit = QTextEdit()
             desc_edit.setPlaceholderText(t("label.enter_detailed_description"))
             desc_edit.setMaximumHeight(150)
+            desc_edit.setStyleSheet("""
+                QTextEdit {
+                    padding: 8px;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    background-color: white;
+                    font-size: 10pt;
+                }
+                QTextEdit:focus {
+                    border: 2px solid #4a90e2;
+                }
+            """)
             desc_layout.addWidget(desc_edit)
 
             layout.addWidget(desc_group)
@@ -208,7 +498,7 @@ class TabBuilder:
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        # 创建分割器
+        # 创建两列分割器（移除了实时预览）
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
         # 左侧：外设树
@@ -395,12 +685,11 @@ class TabBuilder:
 
         right_layout.addWidget(field_table)
 
-        # 添加部件到分割器
+        # 添加部件到分割器（两列布局）
         splitter.addWidget(left_widget)
         splitter.addWidget(right_widget)
-        # 设置分割器初始大小：左侧占一半，右侧占一半
-        # 使用较大的初始值确保树状图的所有列都能显示
-        splitter.setSizes([700, 700])
+        # 设置分割器初始大小：左50%，右50%
+        splitter.setSizes([800, 800])
 
         layout.addWidget(splitter)
 
@@ -529,6 +818,8 @@ class TabBuilder:
 
     def create_preview_tab(self, tab_widget: QTabWidget) -> tuple:
         """创建预览标签页"""
+        from .realtime_preview import RealtimePreviewWidget
+        
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
@@ -538,30 +829,27 @@ class TabBuilder:
         generate_btn = QPushButton(t("button.generate"))
         toolbar.addWidget(generate_btn)
 
-        preview_btn = QPushButton(t("button.preview"))
-        toolbar.addWidget(preview_btn)
-
         export_btn = QPushButton(t("button.export_file"))
         toolbar.addWidget(export_btn)
 
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
-        # 预览文本编辑框
-        preview_edit = QTextEdit()
-        preview_edit.setReadOnly(True)
-        preview_edit.setFontFamily("Courier New")
-        preview_edit.setFontPointSize(10)
-        layout.addWidget(preview_edit)
+        # 创建实时预览组件
+        # 注意：state_manager和coordinator需要在主窗口中设置
+        self.realtime_preview = RealtimePreviewWidget(
+            state_manager=None,  # 将在主窗口中设置
+            coordinator=None
+        )
+        layout.addWidget(self.realtime_preview)
 
         tab_widget.addTab(tab, t("tab.preview_tab"))
 
         # 返回控件字典
         widgets = {
             'preview_tab': tab,
-            'preview_edit': preview_edit,
+            'realtime_preview': self.realtime_preview,
             'generate_btn': generate_btn,
-            'preview_btn': preview_btn,
             'export_btn': export_btn,
         }
 

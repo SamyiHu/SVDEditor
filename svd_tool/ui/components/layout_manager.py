@@ -91,7 +91,7 @@ class LayoutManager:
         self.main_window.setStatusBar(status_bar)
 
         # 状态标签
-        status_label = QLabel("就绪")
+        status_label = QLabel(t("status.ready"))
         status_bar.addWidget(status_label)
 
         # 数据统计标签

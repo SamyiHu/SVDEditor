@@ -34,6 +34,7 @@ class ToolBarBuilder:
         self._add_file_actions()
         self._add_edit_actions()
         self._add_generate_action()
+        self._add_preview_action()
         
         return toolbar
     
@@ -92,5 +93,18 @@ class ToolBarBuilder:
         generate_btn.clicked.connect(self.main_window.generate_svd)
         generate_btn.setObjectName("generateSvdBtn")
         self.toolbar.addWidget(generate_btn)
+        
+        self.toolbar.addSeparator()
+    
+    def _add_preview_action(self):
+        """添加预览窗口按钮"""
+        if self.toolbar is None:
+            return
+        
+        # 实时预览
+        preview_btn = QToolButton()
+        preview_btn.setText(t("toolbar.preview"))
+        preview_btn.clicked.connect(self.main_window.open_preview_window)
+        self.toolbar.addWidget(preview_btn)
         
         self.toolbar.addSeparator()

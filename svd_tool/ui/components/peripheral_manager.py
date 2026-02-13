@@ -71,13 +71,21 @@ class PeripheralManager(QObject):
     
     def on_periph_tree_selection_changed(self):
         """外设树选择变更"""
+        import logging
+        logger = logging.getLogger("PeripheralManager")
+        logger.info("=== on_periph_tree_selection_changed 被调用 ===")
+        
         periph_tree = self.layout_manager.get_widget('periph_tree')
         if not periph_tree:
+            logger.warning("periph_tree 不存在")
             return
         
         selected_items = periph_tree.selectedItems()
+        logger.info(f"选中项数量: {len(selected_items)}")
+        
         if not selected_items:
             # 清除选择
+            logger.info("没有选中项，清除选择")
             self.state_manager.set_selection()
             self.selection_changed.emit(None, None, None)
             return
@@ -87,13 +95,13 @@ class PeripheralManager(QObject):
         
         if item_type == 'peripheral':
             periph_name = item.text(0)
-            self.state_manager.set_selection(peripheral=periph_name)
+            self.state_manager.set_selection(peripheral=periph_name, element_type='peripheral')
             self.selection_changed.emit(periph_name, None, None)
         elif item_type == 'register':
             # 寄存器被选中，需要获取父外设
             periph_name = item.parent().text(0) if item.parent() else None
             reg_name = item.text(0)
-            self.state_manager.set_selection(peripheral=periph_name, register=reg_name)
+            self.state_manager.set_selection(peripheral=periph_name, register=reg_name, element_type='register')
             self.selection_changed.emit(periph_name, reg_name, None)
         elif item_type == 'field':
             # 位域被选中，需要获取父外设和寄存器
@@ -102,7 +110,7 @@ class PeripheralManager(QObject):
             periph_name = periph_item.text(0) if periph_item else None
             reg_name = reg_item.text(0) if reg_item else None
             field_name = item.text(0)
-            self.state_manager.set_selection(peripheral=periph_name, register=reg_name, field=field_name)
+            self.state_manager.set_selection(peripheral=periph_name, register=reg_name, field=field_name, element_type='field')
             self.selection_changed.emit(periph_name, reg_name, field_name)
     
     def on_periph_tree_double_clicked(self, item, column):
@@ -164,6 +172,9 @@ class PeripheralManager(QObject):
             periph_item.setData(0, Qt.ItemDataRole.UserRole, 'peripheral')
             periph_item.setData(0, Qt.ItemDataRole.UserRole + 1, periph_name)  # 设置名称数据
             
+            # 默认折叠外设
+            periph_item.setExpanded(False)
+            
             # 保存到映射
             item_map[periph_name] = periph_item
             
@@ -177,6 +188,9 @@ class PeripheralManager(QObject):
                 reg_item.setText(4, register.reset_value)
                 reg_item.setData(0, Qt.ItemDataRole.UserRole, 'register')
                 reg_item.setData(0, Qt.ItemDataRole.UserRole + 1, reg_name)  # 设置名称数据
+                
+                # 默认折叠寄存器
+                reg_item.setExpanded(False)
                 
                 # 保存到映射
                 reg_path = f"{periph_name}/{reg_name}"
@@ -268,6 +282,9 @@ class PeripheralManager(QObject):
         from svd_tool.ui.dialog_factories import DialogFactory
         
         dialog_factory = DialogFactory(self.layout_manager.main_window)
+        # 设置已存在的外设列表，用于继承关系选择
+        existing_peripherals = list(self.state_manager.device_info.peripherals.keys())
+        dialog_factory.set_existing_peripherals(existing_peripherals)
         dialog = dialog_factory.create_peripheral_dialog()
         
         if dialog.exec():
@@ -325,6 +342,9 @@ class PeripheralManager(QObject):
             return
         
         dialog_factory = DialogFactory(self.layout_manager.main_window)
+        # 设置已存在的外设列表，用于继承关系选择
+        existing_peripherals = list(self.state_manager.device_info.peripherals.keys())
+        dialog_factory.set_existing_peripherals(existing_peripherals)
         dialog = dialog_factory.create_peripheral_dialog(peripheral, is_edit=True)
         
         if dialog.exec():
@@ -355,9 +375,18 @@ class PeripheralManager(QObject):
                     )
                     return
                 
-                # 删除旧的外设，添加新的
-                self.state_manager.delete_peripheral(periph_name)
-                self.state_manager.add_peripheral(updated_peripheral)
+                # 使用 rename_peripheral 方法（保持位置，支持撤销）
+                try:
+                    self.state_manager.rename_peripheral(periph_name, updated_peripheral.name)
+                    # 更新外设的其他属性
+                    self.state_manager.update_peripheral(updated_peripheral.name, updated_peripheral)
+                except ValueError as e:
+                    QMessageBox.warning(
+                        self.layout_manager.main_window,
+                        "警告",
+                        str(e)
+                    )
+                    return
                 
                 # 更新选择
                 self.state_manager.set_selection(peripheral=updated_peripheral.name)
@@ -749,10 +778,7 @@ class PeripheralManager(QObject):
         """选中指定外设（公开方法）"""
         self._select_peripheral_in_tree(periph_name)
         # 更新状态管理器的当前选中
-        self.state_manager.current_peripheral = periph_name
-        self.state_manager.current_register = None
-        self.state_manager.current_field = None
-        self.state_manager._notify_selection_change()
+        self.state_manager.set_selection(peripheral=periph_name, element_type='peripheral')
     
     def select_register(self, periph_name: str, reg_name: str):
         """选中指定寄存器"""
@@ -764,16 +790,17 @@ class PeripheralManager(QObject):
         for i in range(periph_tree.topLevelItemCount()):
             periph_item = periph_tree.topLevelItem(i)
             if periph_item.text(0) == periph_name:
+                # 展开外设
+                periph_item.setExpanded(True)
                 # 查找寄存器项目
                 for j in range(periph_item.childCount()):
                     reg_item = periph_item.child(j)
                     if reg_item.text(0) == reg_name:
+                        # 展开寄存器
+                        reg_item.setExpanded(True)
                         periph_tree.setCurrentItem(reg_item)
                         # 更新状态管理器的当前选中
-                        self.state_manager.current_peripheral = periph_name
-                        self.state_manager.current_register = reg_name
-                        self.state_manager.current_field = None
-                        self.state_manager._notify_selection_change()
+                        self.state_manager.set_selection(peripheral=periph_name, register=reg_name, element_type='register')
                         return
                 break
     
@@ -787,20 +814,21 @@ class PeripheralManager(QObject):
         for i in range(periph_tree.topLevelItemCount()):
             periph_item = periph_tree.topLevelItem(i)
             if periph_item.text(0) == periph_name:
+                # 展开外设
+                periph_item.setExpanded(True)
                 # 查找寄存器项目
                 for j in range(periph_item.childCount()):
                     reg_item = periph_item.child(j)
                     if reg_item.text(0) == reg_name:
+                        # 展开寄存器
+                        reg_item.setExpanded(True)
                         # 查找位域项目
                         for k in range(reg_item.childCount()):
                             field_item = reg_item.child(k)
                             if field_item.text(0) == field_name:
                                 periph_tree.setCurrentItem(field_item)
                                 # 更新状态管理器的当前选中
-                                self.state_manager.current_peripheral = periph_name
-                                self.state_manager.current_register = reg_name
-                                self.state_manager.current_field = field_name
-                                self.state_manager._notify_selection_change()
+                                self.state_manager.set_selection(peripheral=periph_name, register=reg_name, field=field_name, element_type='field')
                                 return
                         break
                 break

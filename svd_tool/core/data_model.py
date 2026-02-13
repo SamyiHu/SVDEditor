@@ -22,6 +22,8 @@ class Field:
     bit_width: int = 1
     access: Optional[str] = None
     reset_value: str = "0x0"
+    xml_start_line: int = 0  # XML起始行号
+    xml_end_line: int = 0  # XML结束行号
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -42,6 +44,14 @@ class Register:
     reset_value: str = "0x00000000"
     reset_mask: str = "0xFFFFFFFF"
     fields: Dict[str, Field] = field(default_factory=dict)
+    xml_start_line: int = 0  # XML起始行号
+    xml_end_line: int = 0  # XML结束行号
+    xml_start_line: int = 0  # XML起始行号
+    xml_end_line: int = 0  # XML结束行号
+    xml_start_line: int = 0  # XML起始行号
+    xml_end_line: int = 0  # XML结束行号
+
+
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -67,6 +77,10 @@ class Peripheral:
     })
     registers: Dict[str, Register] = field(default_factory=dict)
     interrupts: List[Dict[str, Any]] = field(default_factory=list)
+    xml_start_line: int = 0  # XML起始行号
+    xml_end_line: int = 0  # XML结束行号
+    xml_start_line: int = 0  # XML起始行号
+    xml_end_line: int = 0  # XML结束行号
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""

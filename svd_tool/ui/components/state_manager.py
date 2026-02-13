@@ -24,6 +24,8 @@ class StateManager:
         self.current_peripheral: Optional[str] = None
         self.current_register: Optional[str] = None
         self.current_field: Optional[str] = None
+        self.current_interrupt: Optional[str] = None
+        self.current_type: Optional[str] = None  # 'peripheral', 'register', 'field', 'interrupt'
         
         # 状态变更回调
         self._state_change_callbacks: List[Callable[[], None]] = []
@@ -34,10 +36,20 @@ class StateManager:
         if callback not in self._state_change_callbacks:
             self._state_change_callbacks.append(callback)
     
+    def unregister_state_change_callback(self, callback: Callable[[], None]):
+        """注销状态变更回调"""
+        if callback in self._state_change_callbacks:
+            self._state_change_callbacks.remove(callback)
+    
     def register_selection_change_callback(self, callback: Callable[[], None]):
         """注册选择变更回调"""
         if callback not in self._selection_change_callbacks:
             self._selection_change_callbacks.append(callback)
+    
+    def unregister_selection_change_callback(self, callback: Callable[[], None]):
+        """注销选择变更回调"""
+        if callback in self._selection_change_callbacks:
+            self._selection_change_callbacks.remove(callback)
     
     def _notify_state_change(self):
         """通知状态变更"""
@@ -66,7 +78,8 @@ class StateManager:
             'selection': {
                 'peripheral': self.current_peripheral,
                 'register': self.current_register,
-                'field': self.current_field
+                'field': self.current_field,
+                'interrupt': self.current_interrupt
             }
         }
         
@@ -103,6 +116,7 @@ class StateManager:
             self.current_peripheral = selection.get('peripheral')
             self.current_register = selection.get('register')
             self.current_field = selection.get('field')
+            self.current_interrupt = selection.get('interrupt')
         
         # 通知状态变更
         self._notify_state_change()
@@ -110,53 +124,106 @@ class StateManager:
     
     # ===================== 选择管理 =====================
     def set_selection(self, peripheral: Optional[str] = None,
-                     register: Optional[str] = None,
-                     field: Optional[str] = None):
+                      register: Optional[str] = None,
+                      field: Optional[str] = None,
+                      interrupt: Optional[str] = None,
+                      element_type: Optional[str] = None):
         """设置当前选中项"""
+        import logging
+        logger = logging.getLogger("StateManager")
+        logger.info(f"=== set_selection 被调用 ===")
+        logger.info(f"参数: peripheral={peripheral}, register={register}, field={field}, interrupt={interrupt}, element_type={element_type}")
+        logger.info(f"当前状态: peripheral={self.current_peripheral}, register={self.current_register}, field={self.current_field}, interrupt={self.current_interrupt}, type={self.current_type}")
+        
         changed = False
         
-        # 如果设置了新的外设，清除寄存器和位域选择（除非同时设置了寄存器）
+        # 如果设置了新的外设，清除寄存器、位域和中断选择（除非同时设置了其他项）
         if peripheral is not None and peripheral != self.current_peripheral:
             self.current_peripheral = peripheral
             changed = True
             
-            # 如果只设置了外设而没有设置寄存器，清除寄存器和位域选择
-            if register is None:
+            # 如果只设置了外设而没有设置其他项，清除其他选择
+            if register is None and interrupt is None:
                 if self.current_register is not None:
                     self.current_register = None
                     changed = True
                 if self.current_field is not None:
                     self.current_field = None
                     changed = True
+                if self.current_interrupt is not None:
+                    self.current_interrupt = None
+                    changed = True
         
-        # 如果设置了新的寄存器，清除位域选择（除非同时设置了位域）
+        # 如果设置了新的寄存器，清除位域和中断选择（除非同时设置了位域）
         if register is not None and register != self.current_register:
             self.current_register = register
             changed = True
             
-            # 如果只设置了寄存器而没有设置位域，清除位域选择
+            # 如果只设置了寄存器而没有设置位域，清除位域和中断选择
             if field is None:
                 if self.current_field is not None:
                     self.current_field = None
+                    changed = True
+                if self.current_interrupt is not None:
+                    self.current_interrupt = None
                     changed = True
         
         if field is not None and field != self.current_field:
             self.current_field = field
             changed = True
+            # 选择位域时清除中断选择
+            if self.current_interrupt is not None:
+                self.current_interrupt = None
+                changed = True
+        
+        if interrupt is not None and interrupt != self.current_interrupt:
+            self.current_interrupt = interrupt
+            changed = True
+            # 选择中断时清除寄存器和位域选择
+            if self.current_register is not None:
+                self.current_register = None
+                changed = True
+            if self.current_field is not None:
+                self.current_field = None
+                changed = True
+        
+        # 更新类型
+        if element_type is not None and element_type != self.current_type:
+            self.current_type = element_type
+            changed = True
+        
+        # 自动推断类型
+        if element_type is None:
+            if field is not None:
+                self.current_type = 'field'
+            elif register is not None:
+                self.current_type = 'register'
+            elif interrupt is not None:
+                self.current_type = 'interrupt'
+            elif peripheral is not None:
+                self.current_type = 'peripheral'
+            else:
+                self.current_type = None
+            changed = True
         
         if changed:
+            logger.info(f"选择已变化，通知回调")
             self._notify_selection_change()
+        else:
+            logger.info(f"选择未变化，不通知回调")
     
     def clear_selection(self):
         """清除所有选中项"""
-        self.set_selection(None, None, None)
+        self.set_selection(None, None, None, None, None)
     
     def get_selection(self) -> Dict[str, Optional[str]]:
         """获取当前选中项"""
         return {
+            'type': self.current_type,
             'peripheral': self.current_peripheral,
             'register': self.current_register,
-            'field': self.current_field
+            'field': self.current_field,
+            'interrupt': self.current_interrupt
         }
     
     def get_current_peripheral(self) -> Optional[str]:
@@ -178,6 +245,7 @@ class StateManager:
         self.current_peripheral = None
         self.current_register = None
         self.current_field = None
+        self.current_type = None
         self._notify_state_change()
         self._notify_selection_change()
     
@@ -206,6 +274,64 @@ class StateManager:
         if name in self.device_info.peripherals:
             self.device_info.peripherals[name] = peripheral
             self._notify_state_change()
+    
+    def rename_peripheral(self, old_name: str, new_name: str):
+        """重命名外设（保持位置，支持撤销）"""
+        if old_name not in self.device_info.peripherals:
+            return
+        
+        if new_name in self.device_info.peripherals:
+            raise ValueError(f"外设 '{new_name}' 已存在")
+        
+        # 保存旧的外设数据
+        old_peripheral = self.device_info.peripherals[old_name]
+        was_current = (self.current_peripheral == old_name)
+        
+        # 获取所有外设的名称列表（保持顺序）
+        peripheral_names = list(self.device_info.peripherals.keys())
+        old_index = peripheral_names.index(old_name)
+        
+        # 创建执行函数
+        def execute():
+            # 创建新的外设字典，保持顺序
+            new_peripherals = {}
+            for i, name in enumerate(peripheral_names):
+                if i == old_index:
+                    new_peripherals[new_name] = self.device_info.peripherals[old_name]
+                else:
+                    new_peripherals[name] = self.device_info.peripherals[name]
+            self.device_info.peripherals = new_peripherals
+            
+            # 更新选中状态
+            if was_current:
+                self.current_peripheral = new_name
+                self._notify_selection_change()
+            self._notify_state_change()
+        
+        # 创建撤销函数
+        def undo():
+            # 恢复旧的外设字典
+            old_peripherals = {}
+            for i, name in enumerate(peripheral_names):
+                if i == old_index:
+                    old_peripherals[old_name] = self.device_info.peripherals[new_name]
+                else:
+                    old_peripherals[name] = self.device_info.peripherals[name]
+            self.device_info.peripherals = old_peripherals
+            
+            # 恢复选中状态
+            if was_current:
+                self.current_peripheral = old_name
+                self._notify_selection_change()
+            self._notify_state_change()
+        
+        # 创建命令并执行
+        command = Command(
+            execute=execute,
+            undo=undo,
+            description=t("cmd.rename_peripheral", old_name=old_name, new_name=new_name)
+        )
+        self.execute_command(command)
     
     def delete_peripheral(self, name: str):
         """删除外设"""

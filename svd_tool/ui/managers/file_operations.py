@@ -72,8 +72,12 @@ class FileOperations(QObject):
                     self.state_manager.device_info = device_info
                     self.state_manager.clear_selection()
                     self.state_manager.command_history.clear()
+                    
+                    # 通知状态变化（触发实时预览更新）
+                    self.state_manager._notify_state_change()
 
                     # 更新UI
+                    print(f"[DEBUG] 发射file_loaded信号: {device_info.name if device_info else 'None'}")
                     self.file_loaded.emit(device_info)
                     self.layout_manager.update_status(f"已加载: {os.path.basename(file_path)}")
 

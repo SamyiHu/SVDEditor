@@ -46,6 +46,10 @@
   
   "button.generate": "Generate",
   "button.preview": "Preview",
+  "button.enabled": "Enabled",
+  "button.disabled": "Disabled",
+  "button.refresh": "Refresh",
+  "button.jump_to_selection": "Jump to Selection",
   
   "tab.basic_info": "Basic Info",
   "tab.peripherals": "Peripherals",
@@ -62,8 +66,8 @@
   "message.file_load_failed": "File load failed",
   "message.file_save_failed": "File save failed",
   
-  "message.validation_passed": "Validation passed",
-  "message.validation_failed": "Validation failed",
+  "msg.validation_passed": "Validation passed",
+  "msg.validation_failed": "Validation failed",
   
   "message.confirm_delete": "Are you sure you want to delete?",
   "message.confirm_exit": "Are you sure you want to exit?",
@@ -128,6 +132,7 @@
   "msg.language_changed": "Language changed to: {language}",
   
   "label.basic_info": "Basic Info",
+  "label.auto_refresh": "Auto Refresh",
   "label.ic_model": "IC Model",
   "label.ic_description": "IC Description",
   "label.version": "Version",
@@ -300,6 +305,7 @@
   "toolbar.undo": "Undo",
   "toolbar.redo": "Redo",
   "toolbar.generate_svd": "Generate SVD",
+  "toolbar.preview": "Realtime Preview",
   
   "tab.basic_info_tab": "Basic Info",
   "tab.peripheral_tab": "Peripherals/Registers",
@@ -350,7 +356,15 @@
   "status.registers": "Registers",
   "status.fields": "Fields",
   "status.interrupts": "Interrupts",
+  "status.ready": "Ready",
+  "status.validation_passed": "Data validation passed",
+  "status.validation_failed": "Data validation failed, found {count} errors",
+  "status.validation_error": "Validation process error",
   "status.data_stats": "Peripherals: {peripherals} | Registers: {registers} | Fields: {fields} | Interrupts: {interrupts}",
+  "status.lines": "Lines",
+  "status.error": "Error",
+  "status.selected": "Selected",
+  "status.xml_edited": "XML edited",
   
   "error.device_name_empty": "Device name cannot be empty",
   "error.device_version_empty": "Device version cannot be empty",
@@ -405,15 +419,15 @@
   "warning.periph_tree_not_found_2": "periph_tree widget not found",
   "warning.irq_table_not_found_3": "irq_table widget not found",
   
-  "label.peripheral_name": "Peripheral Name",
+
   "label.register_name": "Register Name",
   "label.field_name": "Field Name",
-  "label.interrupt_name": "Interrupt Name",
-  "label.interrupt_value": "Interrupt Value",
+
+ 
   "label.address_block_offset": "Address Block Offset",
   "label.address_block_size": "Address Block Size",
   "label.derived_from": "Derived From",
-  "label.peripheral": "Peripheral",
+
   
   "placeholder.base_address": "e.g.: 0x40000000",
   "placeholder.group_name": "Group Name",
@@ -430,5 +444,12 @@
   "error.must_select_peripheral": "Must select a peripheral",
   "error.derived_peripheral_not_exist": "Derived peripheral '{derived_from}' does not exist",
   "error.register_name_exists": "Register name '{name}' already exists",
-  "error.peripheral_name_exists": "Peripheral name '{name}' already exists"
+  "error.peripheral_name_exists": "Peripheral name '{name}' already exists",
+  
+  "label.preview_mode": "Preview Mode",
+  "label.show_preview": "Show Preview",
+  "preview_mode.tab": "Tab",
+  "preview_mode.bottom": "Bottom",
+  "preview_mode.dock": "Dock Window",
+  "preview_mode.expanded": "Expanded"
 }

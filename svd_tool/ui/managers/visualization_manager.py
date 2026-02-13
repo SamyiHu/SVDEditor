@@ -40,8 +40,13 @@ class VisualizationManager:
         if not visualization_widget:
             return
         
-        # 设置主窗口引用
-        visualization_widget.main_window = self.get_widget('main_window')
+        # 设置状态管理器引用
+        state_manager = self.get_state_manager()
+        visualization_widget.state_manager = state_manager
+        
+        # 设置树状图引用
+        tree_widget = self.get_widget('periph_tree')
+        visualization_widget.tree_widget = tree_widget
         
         # 获取设备信息
         state_manager = self.get_state_manager()
@@ -60,7 +65,9 @@ class VisualizationManager:
                     # 显示寄存器
                     if register in periph.registers:
                         reg = periph.registers[register]
-                        visualization_widget.show_register(reg)
+                        # 如果是继承外设，传递源外设名称
+                        source_peripheral_name = periph.derived_from if periph.derived_from else None
+                        visualization_widget.show_register(reg, source_peripheral_name)
                         
                         if field:
                             # 显示位域

@@ -50,6 +50,10 @@
   "button.generate": "生成",
   "button.preview": "预览",
   "button.export_file": "导出文件",
+  "button.enabled": "已启用",
+  "button.disabled": "已禁用",
+  "button.refresh": "刷新",
+  "button.jump_to_selection": "跳转到选中",
   
   "tab.basic_info": "基本信息",
   "tab.peripherals": "外设",
@@ -87,7 +91,8 @@
   "msg.load_error": "加载错误",
   "msg.save_success": "保存成功",
   "msg.save_error": "保存错误",
-  "msg.validation_error": "验证错误",
+  "msg.validation_failed": "验证失败",
+  "msg.validation_passed": "验证通过",
   "msg.generate_error": "生成错误",
   "msg.preview_error": "预览错误",
   "msg.drag_drop_error": "拖放错误",
@@ -133,6 +138,7 @@
   "msg.language_changed": "语言已切换为: {language}",
   
   "label.basic_info": "基本信息",
+  "label.auto_refresh": "自动刷新",
   "label.ic_model": "IC型号",
   "label.ic_description": "IC描述",
   "label.version": "版本号",
@@ -302,6 +308,7 @@
   "toolbar.undo": "撤消",
   "toolbar.redo": "重做",
   "toolbar.generate_svd": "生成SVD",
+  "toolbar.preview": "实时预览",
   
   "label.peripherals_registers": "外设/寄存器",
   "label.preview_export": "预览/导出",
@@ -311,6 +318,8 @@
   "label.register_bit_field": "寄存器位域: {name} (32位)",
   "label.peripheral_address_map": "外设地址映射: {name}",
   "label.address_range": "0x{start:08X} - 0x{end:08X}",
+  "label.from_source": "来自",
+  "label.from_source": "来自",
   "label.cannot_parse_address_data": "无法解析地址数据",
   
   "label.tree_name": "名称",
@@ -323,7 +332,18 @@
   "status.registers": "寄存器",
   "status.fields": "位域",
   "status.interrupts": "中断",
+  "status.ready": "就绪",
+  "status.validation_passed": "数据验证通过",
+  "status.validation_failed": "数据验证失败，发现 {count} 个错误",
+  "status.validation_error": "验证过程出错",
   "status.data_stats": "外设: {peripherals} | 寄存器: {registers} | 位域: {fields} | 中断: {interrupts}",
+  "status.lines": "行数",
+  "status.error": "错误",
+  "status.selected": "已选中",
+  "status.xml_edited": "XML已编辑",
+  "status.edited_not_saved": "已编辑，未保存",
+  "status.xml_saved": "XML已保存",
+  "status.xml_parse_error": "XML解析错误",
   
   "menu.edit_peripheral": "编辑外设",
   "menu.delete_peripheral": "删除外设",
@@ -346,6 +366,7 @@
   "menu.edit_interrupt": "编辑中断",
   "menu.delete_interrupt": "删除中断",
   
+  "error.title": "错误",
   "error.device_name_empty": "设备名称不能为空",
   "error.device_version_empty": "设备版本不能为空",
   "error.peripheral_name_validation": "外设名称",
@@ -376,6 +397,7 @@
   
   "cmd.add_peripheral": "添加外设: {name}",
   "cmd.delete_peripheral": "删除外设: {name}",
+  "cmd.rename_peripheral": "重命名外设: {old_name} -> {new_name}",
   
   "search.label": "搜索:",
   "search.placeholder": "搜索外设/寄存器/位域...",
@@ -417,6 +439,7 @@
   "placeholder.register_description": "寄存器描述",
   
   "value.none": "无",
+  "label.click_to_jump": "点击跳转到源外设",
   
   "error.address_block_size_validation": "地址块大小",
   "error.reset_value_validation": "复位值",
@@ -424,5 +447,12 @@
   "error.must_select_peripheral": "必须选择关联外设",
   "error.derived_peripheral_not_exist": "继承的外设 '{derived_from}' 不存在",
   "error.register_name_exists": "寄存器名 '{name}' 已存在",
-  "error.peripheral_name_exists": "外设名 '{name}' 已存在"
+  "error.peripheral_name_exists": "外设名 '{name}' 已存在",
+  
+  "label.preview_mode": "预览模式",
+  "label.show_preview": "显示预览",
+  "preview_mode.tab": "标签页",
+  "preview_mode.bottom": "底部",
+  "preview_mode.dock": "停靠窗口",
+  "preview_mode.expanded": "展开"
 }

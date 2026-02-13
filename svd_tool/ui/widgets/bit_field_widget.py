@@ -13,6 +13,7 @@ class BitFieldWidget(QWidget):
     """寄存器位域图控件"""
     # 定义信号
     field_clicked = pyqtSignal(object)  # 发射字段对象
+    jump_to_source_peripheral = pyqtSignal(str)  # 跳转到源外设
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -23,11 +24,24 @@ class BitFieldWidget(QWidget):
         self.field_rects = {}  # 字段名 -> QRect
         self.selected_field_name = None  # 当前选中的位域名称
         self.hovered_field_name = None  # 鼠标悬停的位域名称
+        self.source_peripheral_name = None  # 源外设名称（用于继承外设）
         self.setMouseTracking(True)  # 启用鼠标跟踪
         
-    def set_register(self, register):
-        """设置寄存器数据"""
+    def set_register(self, register, source_peripheral_name=None):
+        """设置寄存器数据
+        
+        Args:
+            register: 寄存器对象
+            source_peripheral_name: 源外设名称（用于继承外设）
+        """
         self.register = register
+        # 更新源外设名称
+        if source_peripheral_name is not None:
+            if source_peripheral_name != "":
+                self.source_peripheral_name = source_peripheral_name
+            else:
+                # 如果传递了空字符串，清除源外设名称
+                self.source_peripheral_name = None
         if register:
             self.fields = list(register.fields.values())
         else:
@@ -35,7 +49,12 @@ class BitFieldWidget(QWidget):
         self.field_rects.clear()
         self.selected_field_name = None  # 重置选中状态
         self.update()
-        
+    
+    def set_source_peripheral(self, source_peripheral_name):
+        """设置源外设名称（用于继承外设）"""
+        self.source_peripheral_name = source_peripheral_name
+        self.update()
+    
     def set_selected_field(self, field_name):
         """设置选中的位域"""
         self.selected_field_name = field_name
@@ -49,13 +68,42 @@ class BitFieldWidget(QWidget):
         # 背景
         painter.fillRect(event.rect(), QColor(255, 255, 255))
         
+        # 如果没有寄存器但有源外设名称，显示继承信息
+        if not self.register and self.source_peripheral_name:
+            rect = event.rect()
+            center_x = rect.x() + rect.width() // 2
+            center_y = rect.y() + rect.height() // 2
+            
+            # 绘制继承信息
+            painter.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+            text = f"{t('label.derived_from')}: {self.source_peripheral_name}"
+            text_rect = painter.fontMetrics().boundingRect(text)
+            text_x = center_x - text_rect.width() // 2
+            text_y = center_y - 20
+            painter.drawText(text_x, text_y, text)
+            
+            # 绘制提示文本
+            painter.setFont(QFont("Arial", 10))
+            hint_text = t("label.click_to_jump")
+            hint_rect = painter.fontMetrics().boundingRect(hint_text)
+            hint_x = center_x - hint_rect.width() // 2
+            hint_y = center_y + 20
+            painter.drawText(hint_x, hint_y, hint_text)
+            return
+        
         if not self.register:
             painter.drawText(event.rect(), Qt.AlignmentFlag.AlignCenter, t("label.no_register_data"))
             return
          
         # 绘制标题（更紧凑）
         painter.setFont(QFont("Arial", 9, QFont.Weight.Bold))
-        painter.drawText(10, 18, t("label.register_bit_field", name=self.register.name))
+        title_text = t("label.register_bit_field", name=self.register.name)
+        
+        # 如果是继承外设的寄存器，添加源外设标注
+        if self.source_peripheral_name:
+            title_text += f" ({t('label.from_source')}: {self.source_peripheral_name})"
+        
+        painter.drawText(10, 18, title_text)
         
         # 计算绘图区域
         width = self.width() - 20
@@ -226,6 +274,17 @@ class BitFieldWidget(QWidget):
     
     def mousePressEvent(self, event):
         """鼠标点击事件"""
+        import sys
+        print(f"[DEBUG] BitFieldWidget mousePressEvent called", file=sys.stderr)
+        print(f"[DEBUG] self.register: {self.register}", file=sys.stderr)
+        print(f"[DEBUG] self.source_peripheral_name: {self.source_peripheral_name}", file=sys.stderr)
+        # 如果没有寄存器但有源外设名称，发射跳转信号
+        if not self.register and self.source_peripheral_name:
+            print(f"[DEBUG] Emitting jump_to_source_peripheral signal", file=sys.stderr)
+            self.jump_to_source_peripheral.emit(self.source_peripheral_name)
+            print(f"[DEBUG] jump_to_source_peripheral signal emitted", file=sys.stderr)
+            return
+        
         if not self.register or not self.fields:
             return
             
