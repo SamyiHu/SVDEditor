@@ -29,7 +29,7 @@ class TabBuilder:
         self.main_window = main_window
         self.logger = logging.getLogger("TabBuilder")
 
-    def create_basic_info_tab(self, tab_widget: QTabWidget) -> QWidget:
+    def create_basic_info_tab(self, tab_widget: QTabWidget) -> tuple:
         """创建基础信息标签页（优化版）"""
         self.logger.debug("create_basic_info_tab开始")
         try:
@@ -38,230 +38,102 @@ class TabBuilder:
 
             tab = QWidget()
             layout = QVBoxLayout(tab)
-            layout.setSpacing(15)  # 增加组之间的间距
-            layout.setContentsMargins(20, 20, 20, 20)  # 增加边距
+            layout.setSpacing(0)
+            layout.setContentsMargins(0, 0, 0, 0)
 
             # 设备信息组（使用网格布局，更整齐）
             device_group = QGroupBox(t("label.basic_info"))
             device_group.setStyleSheet("""
                 QGroupBox {
                     font-weight: bold;
-                    font-size: 11pt;
-                    border: 2px solid #d0d0d0;
-                    border-radius: 8px;
-                    margin-top: 12px;
-                    padding: 15px;
-                    background-color: #fafafa;
-                }
-                QGroupBox::title {
-                    subcontrol-origin: margin;
-                    left: 15px;
-                    padding: 0 5px;
-                    color: #333;
+                    border: 1px solid #CCCCCC;
+                    border-radius: 5px;
+                    margin-top: 10px;
+                    padding: 10px;
                 }
             """)
             device_layout = QGridLayout(device_group)
-            device_layout.setSpacing(10)
-            device_layout.setContentsMargins(10, 20, 10, 10)
+            device_layout.setSpacing(8)
+            device_layout.setContentsMargins(8, 15, 8, 8)
 
             # 第一行：IC型号和描述
-            device_layout.addWidget(QLabel(t("label.ic_model") + ":"), 0, 0)
+            ic_model_label = QLabel(t("label.ic_model") + ":")
+            device_layout.addWidget(ic_model_label, 0, 0)
             ic_name_edit = QLineEdit()
             ic_name_edit.setPlaceholderText(t("placeholder.ic_model"))
-            ic_name_edit.setStyleSheet("""
-                QLineEdit {
-                    padding: 6px;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    background-color: white;
-                    font-size: 10pt;
-                }
-                QLineEdit:focus {
-                    border: 2px solid #4a90e2;
-                }
-            """)
+            ic_name_edit.setMinimumWidth(150)  # 设置最小宽度
             device_layout.addWidget(ic_name_edit, 0, 1)
 
-            device_layout.addWidget(QLabel(t("label.ic_description") + ":"), 0, 2)
+            ic_desc_label = QLabel(t("label.ic_description") + ":")
+            device_layout.addWidget(ic_desc_label, 0, 2)
             ic_desc_edit = QLineEdit()
             ic_desc_edit.setPlaceholderText(t("placeholder.ic_description"))
-            ic_desc_edit.setStyleSheet("""
-                QLineEdit {
-                    padding: 6px;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    background-color: white;
-                    font-size: 10pt;
-                }
-                QLineEdit:focus {
-                    border: 2px solid #4a90e2;
-                }
-            """)
+            ic_desc_edit.setMinimumWidth(150)  # 设置最小宽度
             device_layout.addWidget(ic_desc_edit, 0, 3)
 
             # 第二行：版本和SVD版本
-            device_layout.addWidget(QLabel(t("label.version") + ":"), 1, 0)
+            version_label = QLabel(t("label.version") + ":")
+            device_layout.addWidget(version_label, 1, 0)
             version_edit = QLineEdit()
             version_edit.setPlaceholderText(t("placeholder.version"))
-            version_edit.setStyleSheet("""
-                QLineEdit {
-                    padding: 6px;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    background-color: white;
-                    font-size: 10pt;
-                }
-                QLineEdit:focus {
-                    border: 2px solid #4a90e2;
-                }
-            """)
+            version_edit.setMaximumWidth(80)  # 版本号通常较短，限制最大宽度
             device_layout.addWidget(version_edit, 1, 1)
 
-            device_layout.addWidget(QLabel(t("label.svd_version") + ":"), 1, 2)
+            svd_version_label = QLabel(t("label.svd_version") + ":")
+            device_layout.addWidget(svd_version_label, 1, 2)
             svd_version_combo = QComboBox()
             svd_version_combo.addItems(["1.0", "1.1", "1.2", "1.3", "1.3.1"])
             svd_version_combo.setCurrentText("1.3")
-            svd_version_combo.setStyleSheet("""
-                QComboBox {
-                    padding: 6px;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    background-color: white;
-                    font-size: 10pt;
-                    min-height: 20px;
-                }
-                QComboBox:focus {
-                    border: 2px solid #4a90e2;
-                }
-                QComboBox::drop-down {
-                    border: none;
-                }
-                QComboBox::down-arrow {
-                    width: 12px;
-                    height: 12px;
-                }
-            """)
+            svd_version_combo.setMaximumWidth(80)  # SVD版本较短，限制最大宽度
             device_layout.addWidget(svd_version_combo, 1, 3)
 
             # 第三行：CPU名称和修订版
-            device_layout.addWidget(QLabel(t("label.cpu_name") + ":"), 2, 0)
+            cpu_name_label = QLabel(t("label.cpu_name") + ":")
+            device_layout.addWidget(cpu_name_label, 2, 0)
             cpu_name_edit = QLineEdit()
             cpu_name_edit.setPlaceholderText(t("placeholder.cpu_name"))
-            cpu_name_edit.setStyleSheet("""
-                QLineEdit {
-                    padding: 6px;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    background-color: white;
-                    font-size: 10pt;
-                }
-                QLineEdit:focus {
-                    border: 2px solid #4a90e2;
-                }
-            """)
+            cpu_name_edit.setMinimumWidth(150)  # CPU名称可能较长
             device_layout.addWidget(cpu_name_edit, 2, 1)
 
-            device_layout.addWidget(QLabel(t("label.cpu_revision") + ":"), 2, 2)
+            cpu_rev_label = QLabel(t("label.cpu_revision") + ":")
+            device_layout.addWidget(cpu_rev_label, 2, 2)
             cpu_rev_edit = QLineEdit()
             cpu_rev_edit.setPlaceholderText(t("placeholder.cpu_revision"))
-            cpu_rev_edit.setStyleSheet("""
-                QLineEdit {
-                    padding: 6px;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    background-color: white;
-                    font-size: 10pt;
-                }
-                QLineEdit:focus {
-                    border: 2px solid #4a90e2;
-                }
-            """)
+            cpu_rev_edit.setMaximumWidth(80)  # CPU修订版通常较短（如r0p0）
             device_layout.addWidget(cpu_rev_edit, 2, 3)
 
             # 第四行：端序和MPU
-            device_layout.addWidget(QLabel(t("label.endian") + ":"), 3, 0)
+            endian_label = QLabel(t("label.endian") + ":")
+            device_layout.addWidget(endian_label, 3, 0)
             endian_combo = QComboBox()
             endian_combo.addItems([t("value.little"), t("value.big"), t("value.selectable")])
             endian_combo.setCurrentText(t("value.little"))
-            endian_combo.setStyleSheet("""
-                QComboBox {
-                    padding: 6px;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    background-color: white;
-                    font-size: 10pt;
-                    min-height: 20px;
-                }
-                QComboBox:focus {
-                    border: 2px solid #4a90e2;
-                }
-            """)
+            endian_combo.setMaximumWidth(100)  # 端序选项较短
             device_layout.addWidget(endian_combo, 3, 1)
 
-            device_layout.addWidget(QLabel(t("label.mpu_exists") + ":"), 3, 2)
+            mpu_label = QLabel(t("label.mpu_exists") + ":")
+            device_layout.addWidget(mpu_label, 3, 2)
             mpu_combo = QComboBox()
             mpu_combo.addItems([t("value.yes"), t("value.no")])
             mpu_combo.setCurrentText(t("value.no"))
-            mpu_combo.setStyleSheet("""
-                QComboBox {
-                    padding: 6px;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    background-color: white;
-                    font-size: 10pt;
-                    min-height: 20px;
-                }
-                QComboBox:focus {
-                    border: 2px solid #4a90e2;
-                }
-            """)
+            mpu_combo.setMaximumWidth(60)  # 是/否选项很短
             device_layout.addWidget(mpu_combo, 3, 3)
 
             # 第五行：FPU和NVIC优先级位数
-            device_layout.addWidget(QLabel(t("label.fpu_exists") + ":"), 4, 0)
+            fpu_label = QLabel(t("label.fpu_exists") + ":")
+            device_layout.addWidget(fpu_label, 4, 0)
             fpu_combo = QComboBox()
             fpu_combo.addItems([t("value.yes"), t("value.no")])
             fpu_combo.setCurrentText(t("value.no"))
-            fpu_combo.setStyleSheet("""
-                QComboBox {
-                    padding: 6px;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    background-color: white;
-                    font-size: 10pt;
-                    min-height: 20px;
-                }
-                QComboBox:focus {
-                    border: 2px solid #4a90e2;
-                }
-            """)
+            fpu_combo.setMaximumWidth(60)  # 是/否选项很短
             device_layout.addWidget(fpu_combo, 4, 1)
 
-            device_layout.addWidget(QLabel(t("label.nvic_prio_bits") + ":"), 4, 2)
+            nvic_label = QLabel(t("label.nvic_prio_bits") + ":")
+            device_layout.addWidget(nvic_label, 4, 2)
             nvic_prio_spin = QSpinBox()
             nvic_prio_spin.setRange(0, 8)
             nvic_prio_spin.setValue(4)
-            nvic_prio_spin.setStyleSheet("""
-                QSpinBox {
-                    padding: 6px;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    background-color: white;
-                    font-size: 10pt;
-                    min-height: 20px;
-                }
-                QSpinBox:focus {
-                    border: 2px solid #4a90e2;
-                }
-                QSpinBox::up-button, QSpinBox::down-button {
-                    width: 16px;
-                    border: none;
-                    background-color: #f0f0f0;
-                }
-                QSpinBox::up-button:hover, QSpinBox::down-button:hover {
-                    background-color: #e0e0e0;
-                }
-            """)
+            nvic_prio_spin.setMaximumWidth(60)  # 数字输入框较短
             device_layout.addWidget(nvic_prio_spin, 4, 3)
 
             # 设置列拉伸
@@ -269,186 +141,89 @@ class TabBuilder:
             device_layout.setColumnStretch(3, 1)
 
             layout.addWidget(device_group)
-
-            # 分隔线
-            separator = QFrame()
-            separator.setFrameShape(QFrame.Shape.HLine)
-            separator.setFrameShadow(QFrame.Shadow.Sunken)
-            separator.setStyleSheet("background-color: #e0e0e0; max-height: 1px;")
-            layout.addWidget(separator)
-
-            # 公司版权信息组
             company_group = QGroupBox(t("label.company_copyright"))
             company_group.setStyleSheet("""
                 QGroupBox {
                     font-weight: bold;
-                    font-size: 11pt;
-                    border: 2px solid #d0d0d0;
-                    border-radius: 8px;
-                    margin-top: 12px;
-                    padding: 15px;
-                    background-color: #fafafa;
-                }
-                QGroupBox::title {
-                    subcontrol-origin: margin;
-                    left: 15px;
-                    padding: 0 5px;
-                    color: #333;
+                    border: 1px solid #CCCCCC;
+                    border-radius: 5px;
+                    margin-top: 10px;
+                    padding: 10px;
                 }
             """)
             company_layout = QGridLayout(company_group)
-            company_layout.setSpacing(10)
-            company_layout.setContentsMargins(10, 20, 10, 10)
+            company_layout.setSpacing(8)
+            company_layout.setContentsMargins(8, 15, 8, 8)
 
             # 第一行：厂商ID和版权信息
-            company_layout.addWidget(QLabel(t("label.company_name") + ":"), 0, 0)
+            company_name_label = QLabel(t("label.company_name") + ":")
+            company_layout.addWidget(company_name_label, 0, 0)
             company_name_edit = QLineEdit()
             company_name_edit.setPlaceholderText(t("placeholder.company_name"))
-            company_name_edit.setStyleSheet("""
-                QLineEdit {
-                    padding: 6px;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    background-color: white;
-                    font-size: 10pt;
-                }
-                QLineEdit:focus {
-                    border: 2px solid #4a90e2;
-                }
-            """)
+            company_name_edit.setMinimumWidth(150)  # 厂商名称可能较长
             company_layout.addWidget(company_name_edit, 0, 1)
 
-            company_layout.addWidget(QLabel(t("label.copyright_info") + ":"), 0, 2)
+            company_checkbox = QCheckBox(t("label.do_not_display"))
+            company_checkbox.setChecked(False)
+            company_layout.addWidget(company_checkbox, 0, 2)
+
+            copyright_label = QLabel(t("label.copyright_info") + ":")
+            company_layout.addWidget(copyright_label, 0, 3)
             copyright_edit = QLineEdit()
             copyright_edit.setPlaceholderText(t("placeholder.copyright_info"))
-            copyright_edit.setStyleSheet("""
-                QLineEdit {
-                    padding: 6px;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    background-color: white;
-                    font-size: 10pt;
-                }
-                QLineEdit:focus {
-                    border: 2px solid #4a90e2;
-                }
-            """)
-            company_layout.addWidget(copyright_edit, 0, 3)
+            copyright_edit.setMinimumWidth(150)  # 版权信息可能较长
+            company_layout.addWidget(copyright_edit, 0, 4)
+
+            copyright_checkbox = QCheckBox(t("label.do_not_display"))
+            copyright_checkbox.setChecked(False)
+            company_layout.addWidget(copyright_checkbox, 0, 5)
 
             # 第二行：作者和许可证
-            company_layout.addWidget(QLabel(t("label.author") + ":"), 1, 0)
+            author_label = QLabel(t("label.author") + ":")
+            company_layout.addWidget(author_label, 1, 0)
             author_edit = QLineEdit()
             author_edit.setPlaceholderText(t("placeholder.author"))
-            author_edit.setStyleSheet("""
-                QLineEdit {
-                    padding: 6px;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    background-color: white;
-                    font-size: 10pt;
-                }
-                QLineEdit:focus {
-                    border: 2px solid #4a90e2;
-                }
-            """)
+            author_edit.setMinimumWidth(150)  # 作者名称可能较长
             company_layout.addWidget(author_edit, 1, 1)
 
             author_checkbox = QCheckBox(t("label.do_not_display"))
             author_checkbox.setChecked(False)
-            author_checkbox.setStyleSheet("""
-                QCheckBox {
-                    font-size: 9pt;
-                    spacing: 5px;
-                }
-                QCheckBox::indicator {
-                    width: 16px;
-                    height: 16px;
-                    border: 1px solid #ccc;
-                    border-radius: 3px;
-                    background-color: white;
-                }
-                QCheckBox::indicator:checked {
-                    background-color: #4a90e2;
-                    border: 1px solid #4a90e2;
-                }
-            """)
             company_layout.addWidget(author_checkbox, 1, 2)
 
-            company_layout.addWidget(QLabel(t("label.license") + ":"), 1, 3)
+            license_label = QLabel(t("label.license") + ":")
+            company_layout.addWidget(license_label, 1, 3)
             license_combo = QComboBox()
             license_combo.addItems([t("license.do_not_display"), t("license.apache_2_0"), t("license.mit"), t("license.bsd_3_clause"), t("license.proprietary"), t("license.other")])
             license_combo.setCurrentText(t("license.apache_2_0"))
-            license_combo.setStyleSheet("""
-                QComboBox {
-                    padding: 6px;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    background-color: white;
-                    font-size: 10pt;
-                    min-height: 20px;
-                }
-                QComboBox:focus {
-                    border: 2px solid #4a90e2;
-                }
-            """)
+            license_combo.setMinimumWidth(150)  # 许可证选项可能较长
             company_layout.addWidget(license_combo, 1, 4)
 
             # 设置列拉伸
             company_layout.setColumnStretch(1, 1)
-            company_layout.setColumnStretch(3, 1)
             company_layout.setColumnStretch(4, 1)
 
             layout.addWidget(company_group)
+            layout.addStretch(1)
 
-            # 分隔线
-            separator2 = QFrame()
-            separator2.setFrameShape(QFrame.Shape.HLine)
-            separator2.setFrameShadow(QFrame.Shadow.Sunken)
-            separator2.setStyleSheet("background-color: #e0e0e0; max-height: 1px;")
-            layout.addWidget(separator2)
+            # 连接厂商名称复选框信号
+            def on_company_checkbox_changed(state):
+                company_name_edit.setEnabled(not company_checkbox.isChecked())
+                if company_checkbox.isChecked():
+                    company_name_edit.clear()
 
-            # 描述信息组
-            desc_group = QGroupBox(t("label.detailed_description"))
-            desc_group.setStyleSheet("""
-                QGroupBox {
-                    font-weight: bold;
-                    font-size: 11pt;
-                    border: 2px solid #d0d0d0;
-                    border-radius: 8px;
-                    margin-top: 12px;
-                    padding: 15px;
-                    background-color: #fafafa;
-                }
-                QGroupBox::title {
-                    subcontrol-origin: margin;
-                    left: 15px;
-                    padding: 0 5px;
-                    color: #333;
-                }
-            """)
-            desc_layout = QVBoxLayout(desc_group)
-            desc_layout.setContentsMargins(10, 20, 10, 10)
+            company_checkbox.stateChanged.connect(on_company_checkbox_changed)
+            # 初始状态
+            company_name_edit.setEnabled(not company_checkbox.isChecked())
 
-            desc_edit = QTextEdit()
-            desc_edit.setPlaceholderText(t("label.enter_detailed_description"))
-            desc_edit.setMaximumHeight(150)
-            desc_edit.setStyleSheet("""
-                QTextEdit {
-                    padding: 8px;
-                    border: 1px solid #ccc;
-                    border-radius: 4px;
-                    background-color: white;
-                    font-size: 10pt;
-                }
-                QTextEdit:focus {
-                    border: 2px solid #4a90e2;
-                }
-            """)
-            desc_layout.addWidget(desc_edit)
+            # 连接版权信息复选框信号
+            def on_copyright_checkbox_changed(state):
+                copyright_edit.setEnabled(not copyright_checkbox.isChecked())
+                if copyright_checkbox.isChecked():
+                    copyright_edit.clear()
 
-            layout.addWidget(desc_group)
-
-            layout.addStretch()
+            copyright_checkbox.stateChanged.connect(on_copyright_checkbox_changed)
+            # 初始状态
+            copyright_edit.setEnabled(not copyright_checkbox.isChecked())
 
             # 连接作者复选框信号
             def on_author_checkbox_changed(state):
@@ -478,11 +253,12 @@ class TabBuilder:
                 'fpu_combo': fpu_combo,
                 'nvic_prio_spin': nvic_prio_spin,
                 'company_name_edit': company_name_edit,
+                'company_checkbox': company_checkbox,
                 'copyright_edit': copyright_edit,
+                'copyright_checkbox': copyright_checkbox,
                 'author_edit': author_edit,
                 'author_checkbox': author_checkbox,
                 'license_combo': license_combo,
-                'desc_edit': desc_edit,
             }
 
             return tab, widgets

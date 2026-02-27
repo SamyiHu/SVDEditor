@@ -1,6 +1,6 @@
 # SVD工具测试套件
 
-本目录包含SVD工具重构项目的完整测试套件，用于验证重构后的代码功能完整性、GUI交互和系统稳定性。
+本目录包含SVD Editor项目的完整测试套件，用于验证代码功能完整性、GUI交互和系统稳定性。
 
 ## 测试结构
 
@@ -54,6 +54,13 @@
   - 测试核心模块导入
   - 验证基本依赖关系
 
+- **`test_device_info_manager.py`** - 设备信息管理器测试
+  - 测试设备信息验证
+  - 测试从UI更新设备信息
+  - 测试从设备信息更新UI
+  - 测试重置设备信息
+  - 测试错误处理
+
 ### 3. 集成测试 (`integration_tests/`)
 测试多个组件协同工作的集成功能。
 
@@ -63,25 +70,73 @@
   - 测试组件间信号连接
   - 验证GUI完整渲染
 
-## 其他测试文件
+## 功能测试文件
+
+以下测试文件用于验证特定功能：
+
+- **`run_tests.py`** - 测试运行脚本
+  - 自动发现并运行所有测试
+  - 提供统一的测试入口
 
 - **`analyze_main_window.py`** - 主窗口分析工具
-  - 分析原始main_window.py的结构和功能
+  - 分析main_window_refactored.py的结构和功能
   - 为重构提供参考
 
-- **`test_*.py`** (各种遗留测试) - 历史测试文件
-  - `test_all_improvements.py` - 所有改进测试
-  - `test_final_verification.py` - 最终验证测试
-  - `test_fix.py` - 修复测试
-  - `test_graphics.py` - 图形测试
-  - `test_inheritance_fix.py` - 继承修复测试
-  - `test_rectangle_fix.py` - 矩形修复测试
-  - `test_refactored_components.py` - 重构组件测试
-  - `test_simplified_text.py` - 简化文本测试
+- **`final_integration_test.py`** - 最终集成测试
+  - 验证重构版主窗口的完整启动流程
+  - 测试所有组件导入和初始化
+
+- **`test_refactored_components.py`** - 重构组件测试
+  - 测试状态管理器（StateManager）
+  - 测试布局管理器（LayoutManager）
+  - 测试外设管理器（PeripheralManager）
+  - 测试菜单栏和工具栏构建器
+  - 测试可视化控件
+
+- **`test_chunked_loading.py`** - 分块加载功能测试
+  - 测试块管理器（BlockManager）
+  - 测试分块解析器（ChunkedSVDParser）
+  - 测试分块生成器（ChunkedSVDGenerator）
+  - 测试分块加载的性能和正确性
+
+- **`test_i18n.py`** - 国际化功能测试
+  - 测试I18nManager初始化
+  - 测试中英文翻译切换
+  - 测试参数化翻译
+  - 测试回退语言机制
+
+- **`test_inheritance_fix.py`** - 继承外设显示修复测试
+  - 测试继承外设的derived_from属性
+  - 测试继承外设的显示逻辑
+  - 测试继承外设的跳转功能
+
+- **`test_move_functionality.py`** - 移动外设功能测试
+  - 测试外设上移功能
+  - 测试外设下移功能
+  - 测试边界情况（最上/最下）
+
+- **`test_rectangle_fix.py`** - 矩形绘制修复测试
+  - 测试矩形右边封口问题
+  - 测试不同宽度寄存器的显示
+  - 测试位域矩形的正确绘制
+
+- **`test_simplified_text.py`** - 简化文本显示测试
+  - 测试不同宽度下的文本显示策略
+  - 测试文本缩写逻辑
+  - 测试文本显示优化
 
 ## 运行测试
 
 ### 运行所有测试
+```bash
+# 使用测试运行脚本
+python tests/run_tests.py
+
+# 或使用pytest
+pytest tests/
+```
+
+### 运行特定类别的测试
 ```bash
 # 运行GUI测试
 python -m tests.gui_tests.gui_test_basic
@@ -94,14 +149,29 @@ python -m tests.unit_tests.test_about_message
 python -m tests.unit_tests.test_register_management
 python -m tests.unit_tests.test_field_management
 python -m tests.unit_tests.test_simple_import
+python -m tests.unit_tests.test_device_info_manager
 
 # 运行集成测试
 python -m tests.integration_tests.test_run_refactored
 ```
 
-### 测试环境要求
+### 运行功能测试
+```bash
+# 运行特定功能测试
+python tests/test_refactored_components.py
+python tests/test_chunked_loading.py
+python tests/test_i18n.py
+python tests/test_inheritance_fix.py
+python tests/test_move_functionality.py
+python tests/test_rectangle_fix.py
+python tests/test_simplified_text.py
+```
+
+## 测试环境要求
+
 - Python 3.8+
 - PyQt6
+- pytest
 - 项目依赖包（见requirements.txt）
 
 ## 测试覆盖率
@@ -126,12 +196,20 @@ python -m tests.integration_tests.test_run_refactored
    - 树管理器（TreeManager）
    - 日志系统和关于对话框
 
+4. **高级功能** - 90%覆盖
+   - 分块加载（Chunked Loading）
+   - 国际化（i18n）
+   - 继承外设支持
+   - 外设移动功能
+   - 可视化优化
+
 ## 测试结果
 
 所有测试已在Windows 11 + Python 3.11 + PyQt6环境下通过验证：
 - ✅ GUI测试：3/3 通过
-- ✅ 单元测试：5/5 通过
+- ✅ 单元测试：6/6 通过
 - ✅ 集成测试：1/1 通过
+- ✅ 功能测试：7/7 通过
 
 ## 注意事项
 
@@ -142,20 +220,30 @@ python -m tests.integration_tests.test_run_refactored
 
 ## 维护指南
 
-1. **添加新测试**：
-   - GUI测试放在`gui_tests/`目录
-   - 单元测试放在`unit_tests/`目录
-   - 集成测试放在`integration_tests/`目录
+### 添加新测试
+1. GUI测试放在`gui_tests/`目录
+2. 单元测试放在`unit_tests/`目录
+3. 集成测试放在`integration_tests/`目录
+4. 功能测试放在`tests/`根目录
 
-2. **更新测试**：
-   - 修改测试后更新此文档
-   - 确保测试名称和描述准确
+### 更新测试
+1. 修改测试后更新此文档
+2. 确保测试名称和描述准确
+3. 添加必要的测试用例说明
 
-3. **运行测试**：
-   - 定期运行完整测试套件
-   - 在代码修改后运行相关测试
+### 运行测试
+1. 定期运行完整测试套件
+2. 在代码修改后运行相关测试
+3. 确保所有测试通过后再提交代码
 
 ## 版本历史
+
+- **v2.0** (2026-02-10) - 测试脚本整理
+  - 删除临时性bug修复验证脚本
+  - 删除诊断和调试脚本
+  - 删除重复和过时的测试脚本
+  - 保留核心功能测试和集成测试
+  - 更新测试文档
 
 - **v1.7** (2026-02-04) - 测试套件组织完成
   - 创建分类目录结构

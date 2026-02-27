@@ -95,11 +95,27 @@ class DeviceInfoManager(QObject):
             
             # 更新公司版权信息
             company_name_edit = self.coordinator.get_widget('company_name_edit')
-            if company_name_edit:
+            company_checkbox = self.coordinator.get_widget('company_checkbox')
+            if company_name_edit and company_checkbox:
+                if company_checkbox.isChecked():
+                    # 如果勾选了"不显示"，则清空厂商名称字段
+                    device_info.vendor = ""
+                else:
+                    device_info.vendor = company_name_edit.text().strip()
+            elif company_name_edit:
+                # 如果没有复选框，则直接获取文本
                 device_info.vendor = company_name_edit.text().strip()
             
             copyright_edit = self.coordinator.get_widget('copyright_edit')
-            if copyright_edit:
+            copyright_checkbox = self.coordinator.get_widget('copyright_checkbox')
+            if copyright_edit and copyright_checkbox:
+                if copyright_checkbox.isChecked():
+                    # 如果勾选了"不显示"，则清空版权信息字段
+                    device_info.copyright = ""
+                else:
+                    device_info.copyright = copyright_edit.text().strip()
+            elif copyright_edit:
+                # 如果没有复选框，则直接获取文本
                 device_info.copyright = copyright_edit.text().strip()
             
             # 处理作者字段（考虑"不显示"复选框）
@@ -247,12 +263,30 @@ class DeviceInfoManager(QObject):
             
             # 更新公司版权信息控件
             company_name_edit = self.coordinator.get_widget('company_name_edit')
-            if company_name_edit:
-                company_name_edit.setText(device_info.vendor or "")
+            company_checkbox = self.coordinator.get_widget('company_checkbox')
+            if company_name_edit and company_checkbox:
+                # 如果厂商名称为空或为None，则勾选"不显示"
+                if not device_info.vendor or device_info.vendor.strip() == "":
+                    company_checkbox.setChecked(True)
+                    company_name_edit.clear()
+                    company_name_edit.setEnabled(False)
+                else:
+                    company_checkbox.setChecked(False)
+                    company_name_edit.setText(device_info.vendor)
+                    company_name_edit.setEnabled(True)
             
             copyright_edit = self.coordinator.get_widget('copyright_edit')
-            if copyright_edit:
-                copyright_edit.setText(device_info.copyright or "")
+            copyright_checkbox = self.coordinator.get_widget('copyright_checkbox')
+            if copyright_edit and copyright_checkbox:
+                # 如果版权信息为空或为None，则勾选"不显示"
+                if not device_info.copyright or device_info.copyright.strip() == "":
+                    copyright_checkbox.setChecked(True)
+                    copyright_edit.clear()
+                    copyright_edit.setEnabled(False)
+                else:
+                    copyright_checkbox.setChecked(False)
+                    copyright_edit.setText(device_info.copyright)
+                    copyright_edit.setEnabled(True)
             
             # 更新作者字段和复选框状态
             author_edit = self.coordinator.get_widget('author_edit')
@@ -282,11 +316,6 @@ class DeviceInfoManager(QObject):
                 else:
                     license_combo.addItem(current_text)
                     license_combo.setCurrentText(current_text)
-            
-            # 更新详细描述
-            desc_edit = self.coordinator.get_widget('desc_edit')
-            if desc_edit:
-                desc_edit.setText(device_info.description or "")
             
             # 更新其他信息控件
             vendor_id_edit = self.coordinator.get_widget('vendor_id_edit')

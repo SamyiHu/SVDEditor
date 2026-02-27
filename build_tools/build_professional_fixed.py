@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-专业构建脚本 - 修复编码问题版本
-解决报毒和目录结构问题
+Professional Build Script - Fixed Encoding Version / 专业构建脚本 - 修复编码问题版本
+Solves false positive virus detection and directory structure issues / 解决报毒和目录结构问题
 """
 
 import os
@@ -11,6 +12,12 @@ import platform
 import shutil
 import tempfile
 from pathlib import Path
+
+# Set UTF-8 encoding for Windows console / 为Windows控制台设置UTF-8编码
+if sys.platform == 'win32':
+    import codecs
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
 class ProfessionalBuilder:
     def __init__(self):
@@ -475,6 +482,23 @@ Python版本: {platform.python_version()}
 
 def main():
     """主函数"""
+    import argparse
+    
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='SVD Editor 专业构建工具')
+    parser.add_argument('--arch', type=str, choices=['32bit', '64bit', 'auto'], default=None,
+                        help='目标架构 (32bit/64bit/auto)')
+    parser.add_argument('--onefile', action='store_true', default=None,
+                        help='构建单文件版本')
+    parser.add_argument('--onedir', action='store_true', default=None,
+                        help='构建目录版本')
+    parser.add_argument('--console', action='store_true', default=None,
+                        help='构建调试版本 (显示控制台)')
+    parser.add_argument('--all', action='store_true', default=None,
+                        help='构建所有版本')
+    
+    args = parser.parse_args()
+    
     print("SVD Editor 专业构建工具")
     print("="*60)
     print("解决报毒问题和目录结构不美观问题")
@@ -484,60 +508,88 @@ def main():
     # 获取当前架构
     current_arch = builder.arch
     
-    # 架构选择
-    print(f"\n当前系统架构: {current_arch}")
-    print("\n请选择目标架构:")
-    print("1. 使用当前系统架构 (自动检测)")
-    print("2. 构建32位版本")
-    print("3. 构建64位版本")
-    
-    arch_choice = input("\n请选择架构 (1-3): ").strip()
-    
-    target_arch = current_arch
-    if arch_choice == '2':
-        target_arch = '32bit'
-        if current_arch != '32bit':
-            print("警告: 当前Python不是32位，构建可能失败")
-            confirm = input("继续构建? (y/n): ").lower()
-            if confirm != 'y':
-                return
-    elif arch_choice == '3':
-        target_arch = '64bit'
-        if current_arch != '64bit':
-            print("警告: 当前Python不是64位，构建可能失败")
-            confirm = input("继续构建? (y/n): ").lower()
-            if confirm != 'y':
-                return
-    elif arch_choice != '1':
-        print("无效选择，使用当前系统架构")
-    
-    # 构建选项
-    print(f"\n目标架构: {target_arch}")
-    print("\n构建选项:")
-    print("1. 构建单文件版本 (推荐)")
-    print("2. 构建便携目录版本")
-    print("3. 构建调试版本 (显示控制台)")
-    print("4. 构建所有版本")
-    
-    choice = input("\n请选择构建模式 (1-4): ").strip()
-    
-    if choice == '1':
-        # 单文件版本
-        builder.build(arch=target_arch, console=False, onefile=True)
-    elif choice == '2':
-        # 便携目录版本
-        builder.build(arch=target_arch, console=False, onefile=False)
-    elif choice == '3':
-        # 调试版本
-        builder.build(arch=target_arch, console=True, onefile=True)
-    elif choice == '4':
-        # 所有版本
-        print("\n构建所有版本...")
-        builder.build(arch=target_arch, console=False, onefile=True)
-        builder.build(arch=target_arch, console=False, onefile=False)
+    # 如果没有提供命令行参数，使用交互式输入
+    if args.arch is None and args.onefile is None and args.onedir is None and args.console is None and args.all is None:
+        # 架构选择
+        print(f"\n当前系统架构: {current_arch}")
+        print("\n请选择目标架构:")
+        print("1. 使用当前系统架构 (自动检测)")
+        print("2. 构建32位版本")
+        print("3. 构建64位版本")
+        
+        arch_choice = input("\n请选择架构 (1-3): ").strip()
+        
+        target_arch = current_arch
+        if arch_choice == '2':
+            target_arch = '32bit'
+            if current_arch != '32bit':
+                print("警告: 当前Python不是32位，构建可能失败")
+                confirm = input("继续构建? (y/n): ").lower()
+                if confirm != 'y':
+                    return
+        elif arch_choice == '3':
+            target_arch = '64bit'
+            if current_arch != '64bit':
+                print("警告: 当前Python不是64位，构建可能失败")
+                confirm = input("继续构建? (y/n): ").lower()
+                if confirm != 'y':
+                    return
+        elif arch_choice != '1':
+            print("无效选择，使用当前系统架构")
+        
+        # 构建选项
+        print(f"\n目标架构: {target_arch}")
+        print("\n构建选项:")
+        print("1. 构建单文件版本 (推荐)")
+        print("2. 构建便携目录版本")
+        print("3. 构建调试版本 (显示控制台)")
+        print("4. 构建所有版本")
+        
+        choice = input("\n请选择构建模式 (1-4): ").strip()
+        
+        if choice == '1':
+            # 单文件版本
+            builder.build(arch=target_arch, console=False, onefile=True)
+        elif choice == '2':
+            # 便携目录版本
+            builder.build(arch=target_arch, console=False, onefile=False)
+        elif choice == '3':
+            # 调试版本
+            builder.build(arch=target_arch, console=True, onefile=True)
+        elif choice == '4':
+            # 所有版本
+            print("\n构建所有版本...")
+            builder.build(arch=target_arch, console=False, onefile=True)
+            builder.build(arch=target_arch, console=False, onefile=False)
+        else:
+            print("无效选择")
+            return
     else:
-        print("无效选择")
-        return
+        # 使用命令行参数
+        target_arch = args.arch if args.arch != 'auto' else current_arch
+        
+        if args.all:
+            # 构建所有版本
+            print(f"\n构建所有版本 (架构: {target_arch})...")
+            builder.build(arch=target_arch, console=False, onefile=True)
+            builder.build(arch=target_arch, console=False, onefile=False)
+        elif args.console:
+            # 调试版本
+            onefile = args.onefile if args.onefile is not None else True
+            print(f"\n构建调试版本 (架构: {target_arch}, 单文件: {onefile})...")
+            builder.build(arch=target_arch, console=True, onefile=onefile)
+        elif args.onefile:
+            # 单文件版本
+            print(f"\n构建单文件版本 (架构: {target_arch})...")
+            builder.build(arch=target_arch, console=False, onefile=True)
+        elif args.onedir:
+            # 目录版本
+            print(f"\n构建目录版本 (架构: {target_arch})...")
+            builder.build(arch=target_arch, console=False, onefile=False)
+        else:
+            # 默认单文件版本
+            print(f"\n构建单文件版本 (架构: {target_arch})...")
+            builder.build(arch=target_arch, console=False, onefile=True)
     
     # 打印总结
     builder.print_summary()

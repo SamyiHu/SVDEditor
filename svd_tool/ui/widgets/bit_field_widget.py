@@ -7,6 +7,9 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QBrush, QFont, QPainter, QPen, QPaintEvent
 import logging
 from ...i18n.i18n import t
+from ...utils.logger import get_logger
+
+logger = get_logger("bit_field_widget")
 
 
 class BitFieldWidget(QWidget):
@@ -18,7 +21,6 @@ class BitFieldWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(200)  # 增加高度以减少拥挤
-        self.setMaximumHeight(250)
         self.register = None
         self.fields = []
         self.field_rects = {}  # 字段名 -> QRect
@@ -36,12 +38,11 @@ class BitFieldWidget(QWidget):
         """
         self.register = register
         # 更新源外设名称
-        if source_peripheral_name is not None:
-            if source_peripheral_name != "":
-                self.source_peripheral_name = source_peripheral_name
-            else:
-                # 如果传递了空字符串，清除源外设名称
-                self.source_peripheral_name = None
+        if source_peripheral_name is not None and source_peripheral_name != "":
+            self.source_peripheral_name = source_peripheral_name
+        else:
+            # 如果没有传递源外设名称，或者传递了空字符串，清除源外设名称
+            self.source_peripheral_name = None
         if register:
             self.fields = list(register.fields.values())
         else:
@@ -274,32 +275,31 @@ class BitFieldWidget(QWidget):
     
     def mousePressEvent(self, event):
         """鼠标点击事件"""
-        import sys
-        print(f"[DEBUG] BitFieldWidget mousePressEvent called", file=sys.stderr)
-        print(f"[DEBUG] self.register: {self.register}", file=sys.stderr)
-        print(f"[DEBUG] self.source_peripheral_name: {self.source_peripheral_name}", file=sys.stderr)
+        logger.debug("BitFieldWidget mousePressEvent called")
+        logger.debug(f"self.register: {self.register}")
+        logger.debug(f"self.source_peripheral_name: {self.source_peripheral_name}")
         # 如果没有寄存器但有源外设名称，发射跳转信号
         if not self.register and self.source_peripheral_name:
-            print(f"[DEBUG] Emitting jump_to_source_peripheral signal", file=sys.stderr)
+            logger.debug("Emitting jump_to_source_peripheral signal")
             self.jump_to_source_peripheral.emit(self.source_peripheral_name)
-            print(f"[DEBUG] jump_to_source_peripheral signal emitted", file=sys.stderr)
+            logger.debug("jump_to_source_peripheral signal emitted")
             return
         
         if not self.register or not self.fields:
             return
             
         pos = event.pos()
-        # print(f"[DEBUG] BitFieldWidget mouse press at ({pos.x()}, {pos.y()})")
+        # logger.debug(f"BitFieldWidget mouse press at ({pos.x()}, {pos.y()})")
         # 检查点击了哪个字段矩形
         for field in self.fields:
             if field.name in self.field_rects:
                 x, y, w, h = self.field_rects[field.name]
                 if x <= pos.x() <= x + w and y <= pos.y() <= y + h:
-                    # print(f"[DEBUG] Field '{field.name}' clicked")
+                    # logger.debug(f"Field '{field.name}' clicked")
                     # 发射信号
                     self.field_clicked.emit(field)
                     return
-        # print("[DEBUG] No field clicked")
+        # logger.debug("No field clicked")
         super().mousePressEvent(event)
     
     def mouseMoveEvent(self, event):

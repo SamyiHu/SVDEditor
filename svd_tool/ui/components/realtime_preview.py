@@ -169,6 +169,20 @@ class HighlightedTextEdit(QPlainTextEdit):
         """设置当前高亮的元素"""
         key = (element_type, peripheral_name, element_name)
         
+        # 根据元素类型清除其他类型的高亮键
+        if element_type == 'field':
+            # 选中位域，清除寄存器和外设的高亮键
+            self.highlight_keys['register'] = None
+            self.highlight_keys['peripheral'] = None
+        elif element_type == 'register':
+            # 选中寄存器，清除位域和外设的高亮键
+            self.highlight_keys['field'] = None
+            self.highlight_keys['peripheral'] = None
+        elif element_type == 'peripheral':
+            # 选中外设，清除位域和寄存器的高亮键
+            self.highlight_keys['field'] = None
+            self.highlight_keys['register'] = None
+        
         # 更新多层级高亮
         if element_type in self.highlight_keys:
             self.highlight_keys[element_type] = key
@@ -207,6 +221,10 @@ class HighlightedTextEdit(QPlainTextEdit):
     def clear_highlight(self):
         """清除高亮"""
         self.current_highlight_key = None
+        # 清除所有类型的高亮键
+        self.highlight_keys['peripheral'] = None
+        self.highlight_keys['register'] = None
+        self.highlight_keys['field'] = None
         self.update()
     
     def mousePressEvent(self, event: QMouseEvent):
@@ -544,15 +562,16 @@ class RealtimePreviewWidget(QWidget):
     element_selected = pyqtSignal(str, str, str)  # (element_type, peripheral_name, element_name)
     xml_edited = pyqtSignal(str)  # XML被编辑时发射
     
-    def __init__(self, state_manager, coordinator=None):
+    def __init__(self, state_manager, coordinator=None, parent=None):
         """
         初始化实时预览组件
         
         Args:
             state_manager: 状态管理器
             coordinator: 协调器（可选）
+            parent: 父部件（可选）
         """
-        super().__init__()
+        super().__init__(parent)
         self.state_manager = state_manager
         self.coordinator = coordinator
         self.logger = logging.getLogger("RealtimePreviewWidget")
@@ -597,6 +616,10 @@ class RealtimePreviewWidget(QWidget):
         # 初始化UI
         self.init_ui()
         
+        # 不在这里调用 show()，因为这个部件应该作为子部件显示
+        # 而不是作为独立窗口显示
+        # self.show()
+        
         # 注册状态变化回调
         if self.state_manager:
             self.state_manager.register_state_change_callback(self.on_state_changed)
@@ -614,8 +637,7 @@ class RealtimePreviewWidget(QWidget):
         
         # 工具栏
         toolbar = QHBoxLayout()
-        
-        toolbar.addStretch()
+        toolbar.setContentsMargins(5, 2, 5, 2)
         
         # 保存按钮（保存编辑的XML到设备信息）
         save_btn = QPushButton(t("button.save"))
@@ -626,6 +648,8 @@ class RealtimePreviewWidget(QWidget):
         jump_btn = QPushButton(t("button.jump_to_selection"))
         jump_btn.clicked.connect(self.jump_to_selection)
         toolbar.addWidget(jump_btn)
+        
+        toolbar.addStretch()
         
         layout.addLayout(toolbar)
         
@@ -638,6 +662,7 @@ class RealtimePreviewWidget(QWidget):
         # 预览文本编辑器（使用HighlightedTextEdit以支持高亮和折叠功能）
         self.preview_edit = HighlightedTextEdit()
         self.preview_edit.setReadOnly(False)  # 改为可编辑
+        # self.preview_edit.show()  # 确保编辑器可见
         
         # 设置字体
         font = QFont("Consolas, 'Courier New', monospace")
@@ -682,19 +707,16 @@ class RealtimePreviewWidget(QWidget):
         self.status_label.setStyleSheet("color: #666; font-size: 9pt;")
         layout.addWidget(self.status_label)
     
-    def toggle_auto_refresh(self, checked: bool):
-        """切换自动刷新"""
-        self.auto_refresh_checkbox.setText(t("button.enabled") if checked else t("button.disabled"))
-        self.logger.debug(f"自动刷新切换: {checked}")
-        if checked:
-            self.refresh_preview()
-    
     def refresh_preview(self, immediate: bool = False):
         """刷新预览
         
         Args:
             immediate: 是否立即刷新（不使用防抖）
         """
+        self.logger.debug(f"refresh_preview 被调用，immediate={immediate}")
+        self.logger.debug(f"preview_edit 存在={hasattr(self, 'preview_edit')}, preview_edit={self.preview_edit if hasattr(self, 'preview_edit') else 'N/A'}")
+        if hasattr(self, 'preview_edit') and self.preview_edit:
+            self.logger.debug(f"preview_edit 可见={self.preview_edit.isVisible()}, 文本长度={len(self.preview_edit.toPlainText())}")
         self.logger.debug(f"refresh_preview called, immediate={immediate}")
         if immediate:
             # 立即刷新
@@ -776,15 +798,18 @@ class RealtimePreviewWidget(QWidget):
     
     def _update_preview(self):
         """更新预览内容（内部方法）"""
+        self.logger.debug("_update_preview 被调用")
         try:
             # 检查预览编辑器是否仍然有效
             if not hasattr(self, 'preview_edit') or self.preview_edit is None:
                 self.logger.debug("预览编辑器不存在，跳过更新")
                 return
             
-            # 检查窗口是否仍然有效
-            if not self.isVisible():
-                self.logger.debug("窗口不可见，跳过更新")
+            # 检查Qt对象是否已被删除
+            try:
+                _ = self.preview_edit.isVisible()
+            except RuntimeError:
+                self.logger.debug("preview_edit对象已被删除，跳过更新")
                 return
             
             # 获取设备信息
@@ -814,7 +839,9 @@ class RealtimePreviewWidget(QWidget):
                 current_position = 0
             
             # 更新文本
+            self.logger.debug(f"准备设置预览文本，长度={len(pretty_svd)}")
             self.preview_edit.setPlainText(pretty_svd)
+            self.logger.debug("预览文本已设置")
             
             # 重建行号映射和折叠标记
             self._build_line_map(pretty_svd)
@@ -877,6 +904,7 @@ class RealtimePreviewWidget(QWidget):
     
     def on_fold_clicked(self, element_type: str, peripheral_name: str, element_name: str, is_expanded: bool):
         """折叠点击处理"""
+        self.logger.debug(f"on_fold_clicked 被调用，element_type={element_type}, peripheral_name={peripheral_name}, element_name={element_name}, is_expanded={is_expanded}")
         key = (element_type, peripheral_name, element_name)
         
         if is_expanded:
@@ -890,6 +918,7 @@ class RealtimePreviewWidget(QWidget):
             self.logger.debug(f"折叠元素: {element_type} - {element_name}")
         
         # 重新渲染
+        self.logger.debug("调用 _apply_folding")
         self._apply_folding()
     
     def _draw_fold_blocks(self, painter: QPainter):
@@ -1112,9 +1141,11 @@ class RealtimePreviewWidget(QWidget):
     
     def _apply_folding(self):
         """应用折叠效果"""
+        self.logger.debug(f"_apply_folding 被调用，folded_elements数量={len(self.folded_elements)}")
         # 更新高亮编辑器的数据
         self.preview_edit.set_folded_elements(self.folded_elements)
         self.preview_edit.update()
+        self.logger.debug("_apply_folding 完成")
     
     def _build_line_map(self, xml_text: str):
         """构建行号映射和元素范围映射"""
@@ -1364,6 +1395,7 @@ class RealtimePreviewWidget(QWidget):
     
     def on_device_info_updated(self, device_info):
         """设备信息更新回调"""
+        self.logger.debug(f"on_device_info_updated 被调用，device_info={device_info.name if device_info else 'None'}")
         self.refresh_preview(immediate=True)
     
     def on_selection_changed(self):
@@ -1634,7 +1666,7 @@ class RealtimePreviewWidget(QWidget):
         self.status_label.setText(t("status.edited_not_saved"))
     
     def save_edited_xml(self):
-        """保存编辑后的XML到设备信息"""
+        """保存编辑后的XML到设备信息（支持撤销）"""
         # 获取编辑后的XML
         edited_xml = self.preview_edit.toPlainText()
         
@@ -1644,20 +1676,48 @@ class RealtimePreviewWidget(QWidget):
             parser = SVDParser()
             new_device_info = parser.parse_string(edited_xml)
             
-            # 更新状态管理器的设备信息
+            # 更新状态管理器的设备信息（支持撤销）
             if self.state_manager:
-                self.state_manager.device_info = new_device_info
+                # 保存旧的设备信息快照
+                old_snapshot = self.state_manager.get_device_state_snapshot()
                 
-                # 通知设备信息已更新
-                if self.coordinator:
-                    self.coordinator.notify_device_info_updated(new_device_info)
+                # 创建执行函数
+                def execute():
+                    self.state_manager.device_info = new_device_info
+                    
+                    # 通知设备信息已更新
+                    if self.coordinator:
+                        self.coordinator.notify_device_info_updated(new_device_info)
+                    
+                    # 手动触发状态变更，更新树状图
+                    # 通过coordinator获取peripheral_manager来更新
+                    if self.coordinator:
+                        peripheral_manager = self.coordinator.get_peripheral_manager()
+                        if peripheral_manager:
+                            peripheral_manager.update_peripheral_tree()
                 
-                # 手动触发状态变更，更新树状图
-                # 通过coordinator获取peripheral_manager来更新
-                if self.coordinator:
-                    peripheral_manager = self.coordinator.get_peripheral_manager()
-                    if peripheral_manager:
-                        peripheral_manager.update_peripheral_tree()
+                # 创建撤销函数
+                def undo():
+                    self.state_manager.restore_device_state(old_snapshot)
+                    
+                    # 通知设备信息已更新
+                    if self.coordinator:
+                        self.coordinator.notify_device_info_updated(self.state_manager.device_info)
+                    
+                    # 手动触发状态变更，更新树状图
+                    if self.coordinator:
+                        peripheral_manager = self.coordinator.get_peripheral_manager()
+                        if peripheral_manager:
+                            peripheral_manager.update_peripheral_tree()
+                
+                # 创建命令并执行
+                from ...core.command_history import Command
+                command = Command(
+                    execute=execute,
+                    undo=undo,
+                    description=t("cmd.save_edited_xml")
+                )
+                self.state_manager.execute_command(command)
             
             # 更新状态栏
             self.status_label.setText(t("status.xml_saved"))

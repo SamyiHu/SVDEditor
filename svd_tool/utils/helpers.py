@@ -79,7 +79,9 @@ def pretty_xml(xml_string: str, indent: str = "  ") -> str:
     
     except Exception as e:
         # 如果美化失败，返回原始字符串
-        print(f"美化XML失败: {e}")
+        import logging
+        logger = logging.getLogger("helpers")
+        logger.error(f"美化XML失败: {e}")
         return xml_string
 
 

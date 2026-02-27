@@ -23,8 +23,10 @@ class Logger:
         self.logger = logging.getLogger(name)
         self.logger.setLevel(logging.DEBUG)
         
-        # 移除已有的处理器
-        self.logger.handlers.clear()
+        # 只移除当前logger的处理器，不影响其他logger
+        # 注意：这不会清除根logger的处理器（如GuiLogHandler）
+        if self.logger.handlers:
+            self.logger.handlers.clear()
         
         # 创建格式器
         self.formatter = logging.Formatter(
@@ -104,10 +106,13 @@ class Logger:
 # 创建默认日志实例
 default_logger = Logger()
 
+# 日志实例缓存
+_logger_cache: dict[str, Logger] = {}
+
 
 def get_logger(name: str = "svd_tool") -> Logger:
     """
-    获取日志实例
+    获取日志实例（使用缓存，避免重复创建）
     
     Args:
         name: 日志名称
@@ -115,7 +120,9 @@ def get_logger(name: str = "svd_tool") -> Logger:
     Returns:
         日志实例
     """
-    return Logger(name)
+    if name not in _logger_cache:
+        _logger_cache[name] = Logger(name)
+    return _logger_cache[name]
 
 
 def log_function_call(func):

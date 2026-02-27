@@ -17,7 +17,6 @@ class AddressMapWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(220)  # 增加高度确保地址范围完全可见
-        self.setMaximumHeight(260)
         self.peripheral = None
         self.registers = []
         self.register_rects = {}  # 寄存器名 -> QRect

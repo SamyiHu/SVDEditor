@@ -105,17 +105,42 @@ class UIUpdater:
                 else:
                     combo.addItem(fpu_text)
                     combo.setCurrentText(fpu_text)
-            if self.widget_manager.has_widget('desc_edit'):
-                # device_info.description 已经用于ic_desc_edit，这里使用description字段
-                # 但可能没有单独的详细描述字段，暂留空
-                pass
             if self.widget_manager.has_widget('nvic_prio_spin'):
                 self.widget_manager.get_widget('nvic_prio_spin').setValue(device_info.cpu.nvic_prio_bits)
 
             # 更新公司版权信息字段
-            if self.widget_manager.has_widget('company_name_edit'):
+            if self.widget_manager.has_widget('company_name_edit') and self.widget_manager.has_widget('company_checkbox'):
+                # 更新厂商名称字段和复选框状态
+                company_name_edit = self.widget_manager.get_widget('company_name_edit')
+                company_checkbox = self.widget_manager.get_widget('company_checkbox')
+
+                # 如果厂商名称为空或为None，则勾选"不显示"
+                if not device_info.vendor or device_info.vendor.strip() == "":
+                    company_checkbox.setChecked(True)
+                    company_name_edit.clear()
+                    company_name_edit.setEnabled(False)
+                else:
+                    company_checkbox.setChecked(False)
+                    company_name_edit.setText(device_info.vendor)
+                    company_name_edit.setEnabled(True)
+            elif self.widget_manager.has_widget('company_name_edit'):
                 self.widget_manager.get_widget('company_name_edit').setText(device_info.vendor)
-            if self.widget_manager.has_widget('copyright_edit'):
+
+            if self.widget_manager.has_widget('copyright_edit') and self.widget_manager.has_widget('copyright_checkbox'):
+                # 更新版权信息字段和复选框状态
+                copyright_edit = self.widget_manager.get_widget('copyright_edit')
+                copyright_checkbox = self.widget_manager.get_widget('copyright_checkbox')
+
+                # 如果版权信息为空或为None，则勾选"不显示"
+                if not device_info.copyright or device_info.copyright.strip() == "":
+                    copyright_checkbox.setChecked(True)
+                    copyright_edit.clear()
+                    copyright_edit.setEnabled(False)
+                else:
+                    copyright_checkbox.setChecked(False)
+                    copyright_edit.setText(device_info.copyright)
+                    copyright_edit.setEnabled(True)
+            elif self.widget_manager.has_widget('copyright_edit'):
                 self.widget_manager.get_widget('copyright_edit').setText(device_info.copyright)
             if self.widget_manager.has_widget('author_edit') and self.widget_manager.has_widget('author_checkbox'):
                 # 更新作者字段和复选框状态

@@ -270,10 +270,30 @@ class StateManager:
         self.execute_command(command)
     
     def update_peripheral(self, name: str, peripheral: Peripheral):
-        """更新外设"""
-        if name in self.device_info.peripherals:
+        """更新外设（支持撤销）"""
+        if name not in self.device_info.peripherals:
+            return
+        
+        # 保存旧的外设数据
+        old_peripheral = self.device_info.peripherals[name]
+        
+        # 创建执行函数
+        def execute():
             self.device_info.peripherals[name] = peripheral
             self._notify_state_change()
+        
+        # 创建撤销函数
+        def undo():
+            self.device_info.peripherals[name] = old_peripheral
+            self._notify_state_change()
+        
+        # 创建命令并执行
+        command = Command(
+            execute=execute,
+            undo=undo,
+            description=t("cmd.update_peripheral", name=name)
+        )
+        self.execute_command(command)
     
     def rename_peripheral(self, old_name: str, new_name: str):
         """重命名外设（保持位置，支持撤销）"""
@@ -379,15 +399,35 @@ class StateManager:
             self._notify_state_change()
     
     def update_register(self, peripheral_name: str, name: str, register: Register):
-        """更新寄存器"""
-        if (peripheral_name in self.device_info.peripherals and 
-            name in self.device_info.peripherals[peripheral_name].registers):
+        """更新寄存器（支持撤销）"""
+        if not (peripheral_name in self.device_info.peripherals and
+                name in self.device_info.peripherals[peripheral_name].registers):
+            return
+        
+        # 保存旧的寄存器数据
+        old_register = self.device_info.peripherals[peripheral_name].registers[name]
+        
+        # 创建执行函数
+        def execute():
             self.device_info.peripherals[peripheral_name].registers[name] = register
             self._notify_state_change()
+        
+        # 创建撤销函数
+        def undo():
+            self.device_info.peripherals[peripheral_name].registers[name] = old_register
+            self._notify_state_change()
+        
+        # 创建命令并执行
+        command = Command(
+            execute=execute,
+            undo=undo,
+            description=t("cmd.update_register", name=name)
+        )
+        self.execute_command(command)
     
     def delete_register(self, peripheral_name: str, name: str):
         """删除寄存器"""
-        if (peripheral_name in self.device_info.peripherals and 
+        if (peripheral_name in self.device_info.peripherals and
             name in self.device_info.peripherals[peripheral_name].registers):
             del self.device_info.peripherals[peripheral_name].registers[name]
             # 如果删除的是当前选中的寄存器，清除相关选择
@@ -399,28 +439,48 @@ class StateManager:
     
     def add_field(self, peripheral_name: str, register_name: str, field: Field):
         """添加位域"""
-        if (peripheral_name in self.device_info.peripherals and 
+        if (peripheral_name in self.device_info.peripherals and
             register_name in self.device_info.peripherals[peripheral_name].registers):
             self.device_info.peripherals[peripheral_name].registers[register_name].fields[field.name] = field
             self._notify_state_change()
     
     def update_field(self, peripheral_name: str, register_name: str, name: str, field: Field):
-        """更新位域"""
-        if (peripheral_name in self.device_info.peripherals and 
-            register_name in self.device_info.peripherals[peripheral_name].registers and
-            name in self.device_info.peripherals[peripheral_name].registers[register_name].fields):
+        """更新位域（支持撤销）"""
+        if not (peripheral_name in self.device_info.peripherals and
+                register_name in self.device_info.peripherals[peripheral_name].registers and
+                name in self.device_info.peripherals[peripheral_name].registers[register_name].fields):
+            return
+        
+        # 保存旧的位域数据
+        old_field = self.device_info.peripherals[peripheral_name].registers[register_name].fields[name]
+        
+        # 创建执行函数
+        def execute():
             self.device_info.peripherals[peripheral_name].registers[register_name].fields[name] = field
             self._notify_state_change()
+        
+        # 创建撤销函数
+        def undo():
+            self.device_info.peripherals[peripheral_name].registers[register_name].fields[name] = old_field
+            self._notify_state_change()
+        
+        # 创建命令并执行
+        command = Command(
+            execute=execute,
+            undo=undo,
+            description=t("cmd.update_field", name=name)
+        )
+        self.execute_command(command)
     
     def delete_field(self, peripheral_name: str, register_name: str, name: str):
         """删除位域"""
-        if (peripheral_name in self.device_info.peripherals and 
+        if (peripheral_name in self.device_info.peripherals and
             register_name in self.device_info.peripherals[peripheral_name].registers and
             name in self.device_info.peripherals[peripheral_name].registers[register_name].fields):
             del self.device_info.peripherals[peripheral_name].registers[register_name].fields[name]
             # 如果删除的是当前选中的位域，清除相关选择
-            if (self.current_peripheral == peripheral_name and 
-                self.current_register == register_name and 
+            if (self.current_peripheral == peripheral_name and
+                self.current_register == register_name and
                 self.current_field == name):
                 self.current_field = None
                 self._notify_selection_change()
@@ -432,10 +492,30 @@ class StateManager:
         self._notify_state_change()
     
     def update_interrupt(self, name: str, interrupt: Interrupt):
-        """更新中断"""
-        if name in self.device_info.interrupts:
+        """更新中断（支持撤销）"""
+        if name not in self.device_info.interrupts:
+            return
+        
+        # 保存旧的中断数据
+        old_interrupt = self.device_info.interrupts[name]
+        
+        # 创建执行函数
+        def execute():
             self.device_info.interrupts[name] = interrupt
             self._notify_state_change()
+        
+        # 创建撤销函数
+        def undo():
+            self.device_info.interrupts[name] = old_interrupt
+            self._notify_state_change()
+        
+        # 创建命令并执行
+        command = Command(
+            execute=execute,
+            undo=undo,
+            description=t("cmd.update_interrupt", name=name)
+        )
+        self.execute_command(command)
     
     def delete_interrupt(self, name: str):
         """删除中断"""
@@ -592,7 +672,7 @@ class StateManager:
             return True
             
         except Exception as e:
-            print(t("error.sort_peripherals_alphabetically_failed", error=e))
+            self.logger.error(t("error.sort_peripherals_alphabetically_failed", error=e))
             return False
     
     def sort_peripherals_by_address(self) -> bool:
@@ -636,7 +716,7 @@ class StateManager:
             return True
             
         except Exception as e:
-            print(t("error.sort_peripherals_by_address_failed", error=e))
+            self.logger.error(t("error.sort_peripherals_by_address_failed", error=e))
             return False
     
     def sort_registers_by_address(self, peripheral_name: str) -> bool:
@@ -684,7 +764,7 @@ class StateManager:
             return True
             
         except Exception as e:
-            print(t("error.sort_registers_by_address_failed", error=e))
+            self.logger.error(t("error.sort_registers_by_address_failed", error=e))
             return False
     
     def sort_fields_by_bit_offset(self, register_name: str) -> bool:
@@ -737,7 +817,7 @@ class StateManager:
             return True
             
         except Exception as e:
-            print(t("error.sort_fields_by_bit_offset_failed", error=e))
+            self.logger.error(t("error.sort_fields_by_bit_offset_failed", error=e))
             return False
     
     # ===================== 移动功能 =====================
@@ -772,7 +852,7 @@ class StateManager:
             return True
             
         except Exception as e:
-            print(t("error.move_peripheral_up_failed", error=e))
+            self.logger.error(t("error.move_peripheral_up_failed", error=e))
             return False
     
     def move_peripheral_down(self, periph_name: str) -> bool:
@@ -806,5 +886,5 @@ class StateManager:
             return True
             
         except Exception as e:
-            print(t("error.move_peripheral_down_failed", error=e))
+            self.logger.error(t("error.move_peripheral_down_failed", error=e))
             return False

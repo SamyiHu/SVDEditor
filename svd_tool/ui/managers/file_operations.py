@@ -77,7 +77,7 @@ class FileOperations(QObject):
                     self.state_manager._notify_state_change()
 
                     # 更新UI
-                    print(f"[DEBUG] 发射file_loaded信号: {device_info.name if device_info else 'None'}")
+                    self.logger.debug(f"发射file_loaded信号: {device_info.name if device_info else 'None'}")
                     self.file_loaded.emit(device_info)
                     self.layout_manager.update_status(f"已加载: {os.path.basename(file_path)}")
 
@@ -197,21 +197,29 @@ class FileOperations(QObject):
 
     def preview_xml(self):
         """预览XML"""
+        self.logger.debug("preview_xml 被调用")
         try:
             # 首先从UI更新设备信息
             self.update_device_info_from_ui()
-
+            self.logger.debug("update_device_info_from_ui 完成")
+ 
             generator = SVDGenerator(self.state_manager.device_info)
             svd_xml = generator.generate()
-
-            preview_edit = self.layout_manager.get_widget('preview_edit')
-            if preview_edit:
-                preview_edit.setPlainText(pretty_xml(svd_xml))
-
+            self.logger.debug(f"SVD生成完成，长度={len(svd_xml)}")
+ 
+            # 使用预览管理器刷新预览
+            preview_manager = self.layout_manager.main_window.preview_manager
+            if preview_manager:
+                self.logger.debug("调用 preview_manager.refresh_preview(immediate=True)")
+                preview_manager.refresh_preview(immediate=True)
+            else:
+                self.logger.debug("preview_manager 为 None")
+ 
             self.logger.info("XML预览生成成功")
-
+ 
         except Exception as e:
             self.logger.error(f"XML预览失败: {str(e)}")
+            self.logger.exception("预览失败")
             QMessageBox.critical(
                 self.layout_manager.main_window,
                 "预览错误",
@@ -272,7 +280,9 @@ class FileOperations(QObject):
         fpu_combo = self.layout_manager.get_widget('fpu_combo')
         nvic_prio_spin = self.layout_manager.get_widget('nvic_prio_spin')
         company_name_edit = self.layout_manager.get_widget('company_name_edit')
+        company_checkbox = self.layout_manager.get_widget('company_checkbox')
         copyright_edit = self.layout_manager.get_widget('copyright_edit')
+        copyright_checkbox = self.layout_manager.get_widget('copyright_checkbox')
         author_edit = self.layout_manager.get_widget('author_edit')
         license_combo = self.layout_manager.get_widget('license_combo')
 
@@ -297,9 +307,19 @@ class FileOperations(QObject):
             self.state_manager.device_info.cpu.fpu_present = (fpu_combo.currentText() == "是")
         if nvic_prio_spin:
             self.state_manager.device_info.cpu.nvic_prio_bits = nvic_prio_spin.value()
-        if company_name_edit:
+        if company_name_edit and company_checkbox:
+            if company_checkbox.isChecked():
+                self.state_manager.device_info.vendor = ""
+            else:
+                self.state_manager.device_info.vendor = company_name_edit.text()
+        elif company_name_edit:
             self.state_manager.device_info.vendor = company_name_edit.text()
-        if copyright_edit:
+        if copyright_edit and copyright_checkbox:
+            if copyright_checkbox.isChecked():
+                self.state_manager.device_info.copyright = ""
+            else:
+                self.state_manager.device_info.copyright = copyright_edit.text()
+        elif copyright_edit:
             self.state_manager.device_info.copyright = copyright_edit.text()
         if author_edit:
             self.state_manager.device_info.author = author_edit.text()

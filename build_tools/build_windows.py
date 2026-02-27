@@ -41,9 +41,11 @@ def get_architecture():
         else:
             return 'unknown'
 
-def create_spec_file(arch, console=False):
+def create_spec_file(arch, console=False, onefile=False):
     """创建PyInstaller spec文件"""
-    spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
+    if onefile:
+        # 单文件版本
+        spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
 import sys
 sys.setrecursionlimit(5000)
 
@@ -61,7 +63,79 @@ a = Analysis(
     ],
     hiddenimports=[
         'PyQt6.QtCore',
-        'PyQt6.QtGui', 
+        'PyQt6.QtGui',
+        'PyQt6.QtWidgets',
+        'xml.etree.ElementTree',
+        'xml.dom.minidom',
+        'collections',
+        'collections.abc',
+        'dataclasses',
+        'typing',
+        'logging',
+        're',
+        'copy',
+        'sys',
+        'os',
+        'pathlib',
+        'datetime',
+        'enum',
+    ],
+    hookspath=[],
+    hooksconfig={{}},
+    runtime_hooks=[],
+    excludes=['tkinter', 'matplotlib', 'numpy', 'pandas', 'scipy', 'PyQt5', 'PySide2', 'PySide6'],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    name='SVDEditor_{arch}',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console={console},
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon='icon.ico' if os.path.exists('icon.ico') else None,
+)
+'''
+    else:
+        # 目录版本
+        spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
+import sys
+sys.setrecursionlimit(5000)
+
+block_cipher = None
+
+a = Analysis(
+    ['run.py'],
+    pathex=[],
+    binaries=[],
+    datas=[
+        ('config.py', '.'),
+        ('README.md', '.'),
+        ('README_zh.md', '.'),
+        ('LICENSE', '.'),
+    ],
+    hiddenimports=[
+        'PyQt6.QtCore',
+        'PyQt6.QtGui',
         'PyQt6.QtWidgets',
         'xml.etree.ElementTree',
         'xml.dom.minidom',
@@ -126,14 +200,16 @@ coll = COLLECT(
     
     return spec_filename
 
-def build_for_architecture(arch, console=False):
+def build_for_architecture(arch, console=False, onefile=False):
     """为特定架构构建"""
     print(f"\n{'='*60}")
     print(f"构建 {arch} 版本")
+    print(f"模式: {'单文件' if onefile else '目录'}")
+    print(f"控制台: {'显示' if console else '隐藏'}")
     print(f"{'='*60}")
     
     # 创建spec文件
-    spec_file = create_spec_file(arch, console)
+    spec_file = create_spec_file(arch, console, onefile)
     
     # 构建命令
     cmd = ['pyinstaller', '--clean', spec_file]
@@ -149,19 +225,37 @@ def build_for_architecture(arch, console=False):
             print(result.stderr)
         
         # 检查输出目录
-        dist_dir = Path('dist') / f'SVDEditor_{arch}'
-        if dist_dir.exists():
-            print(f"\n构建成功！输出目录: {dist_dir}")
-            
-            # 创建ZIP压缩包
-            zip_name = f'SVDEditor_{arch}.zip'
-            shutil.make_archive(f'SVDEditor_{arch}', 'zip', 'dist', f'SVDEditor_{arch}')
-            print(f"已创建压缩包: {zip_name}")
-            
-            return True
+        if onefile:
+            # 单文件版本
+            exe_path = Path('dist') / f'SVDEditor_{arch}.exe'
+            if exe_path.exists():
+                print(f"\n构建成功！输出文件: {exe_path}")
+                print(f"文件大小: {exe_path.stat().st_size / 1024 / 1024:.2f} MB")
+                
+                # 创建ZIP压缩包
+                zip_name = f'SVDEditor_{arch}.zip'
+                shutil.make_archive(f'SVDEditor_{arch}', 'zip', 'dist', f'SVDEditor_{arch}.exe')
+                print(f"已创建压缩包: {zip_name}")
+                
+                return True
+            else:
+                print(f"\n错误: 输出文件不存在: {exe_path}")
+                return False
         else:
-            print(f"\n错误: 输出目录不存在: {dist_dir}")
-            return False
+            # 目录版本
+            dist_dir = Path('dist') / f'SVDEditor_{arch}'
+            if dist_dir.exists():
+                print(f"\n构建成功！输出目录: {dist_dir}")
+                
+                # 创建ZIP压缩包
+                zip_name = f'SVDEditor_{arch}.zip'
+                shutil.make_archive(f'SVDEditor_{arch}', 'zip', 'dist', f'SVDEditor_{arch}')
+                print(f"已创建压缩包: {zip_name}")
+                
+                return True
+            else:
+                print(f"\n错误: 输出目录不存在: {dist_dir}")
+                return False
             
     except subprocess.CalledProcessError as e:
         print(f"\n构建失败，退出码: {e.returncode}")
@@ -173,6 +267,23 @@ def build_for_architecture(arch, console=False):
 
 def main():
     """主函数"""
+    import argparse
+    
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='SVD Editor Windows打包工具')
+    parser.add_argument('--arch', type=str, choices=['32bit', '64bit', 'auto'], default=None,
+                        help='目标架构 (32bit/64bit/auto)')
+    parser.add_argument('--onefile', action='store_true', default=None,
+                        help='构建单文件版本')
+    parser.add_argument('--onedir', action='store_true', default=None,
+                        help='构建目录版本')
+    parser.add_argument('--console', action='store_true', default=None,
+                        help='构建调试版本 (显示控制台)')
+    parser.add_argument('--all', action='store_true', default=None,
+                        help='构建所有版本')
+    
+    args = parser.parse_args()
+    
     print("SVD Editor Windows打包工具")
     print("="*60)
     
@@ -185,105 +296,152 @@ def main():
     print(f"当前Python架构: {current_arch}")
     print(f"注意: 使用32位Python构建32位可执行文件，64位Python构建64位可执行文件")
     
-    # 询问构建选项
-    print("\n构建选项:")
-    print("1. 构建当前架构版本 (自动检测)")
-    print("2. 构建32位版本 (需要32位Python)")
-    print("3. 构建64位版本 (需要64位Python)")
-    print("4. 构建所有可用版本")
-    print("5. 构建调试版本 (显示控制台)")
-    
-    choice = input("\n请选择 (1-5): ").strip()
-    
-    # 清理之前的构建
-    if os.path.exists('build'):
-        shutil.rmtree('build')
-    if os.path.exists('dist'):
-        shutil.rmtree('dist')
-    
-    success = False
-    
-    if choice == '1':
-        # 构建当前架构
-        print(f"\n构建 {current_arch} 版本...")
-        success = build_for_architecture(current_arch)
+    # 如果没有提供命令行参数，使用交互式输入
+    if args.arch is None and args.onefile is None and args.onedir is None and args.console is None and args.all is None:
+        # 询问构建选项
+        print("\n构建选项:")
+        print("1. 构建当前架构版本 (自动检测)")
+        print("2. 构建32位版本 (需要32位Python)")
+        print("3. 构建64位版本 (需要64位Python)")
+        print("4. 构建所有可用版本")
+        print("5. 构建调试版本 (显示控制台)")
         
-    elif choice == '2':
-        # 构建32位版本
-        print(f"\n构建 32位 版本...")
-        if current_arch != '32bit':
-            print("警告: 当前Python不是32位，构建可能失败")
-            print("建议: 请使用32位Python运行此脚本以构建32位可执行文件")
-            confirm = input("继续构建? (y/n): ").lower()
-            if confirm != 'y':
-                return
-        success = build_for_architecture('32bit')
+        choice = input("\n请选择 (1-5): ").strip()
         
-    elif choice == '3':
-        # 构建64位版本
-        print(f"\n构建 64位 版本...")
-        if current_arch != '64bit':
-            print("警告: 当前Python不是64位，构建可能失败")
-            print("建议: 请使用64位Python运行此脚本以构建64位可执行文件")
-            confirm = input("继续构建? (y/n): ").lower()
-            if confirm != 'y':
-                return
-        success = build_for_architecture('64bit')
+        # 清理之前的构建
+        if os.path.exists('build'):
+            shutil.rmtree('build')
+        if os.path.exists('dist'):
+            shutil.rmtree('dist')
         
-    elif choice == '4':
-        # 构建所有版本
-        print(f"\n构建所有可用版本...")
-        successes = []
+        success = False
         
-        # 询问是否构建32位版本
-        build_32bit = False
-        if current_arch == '32bit':
-            build_32bit = True
-            print("当前是32位Python，将构建32位版本")
+        if choice == '1':
+            # 构建当前架构
+            print(f"\n构建 {current_arch} 版本...")
+            success = build_for_architecture(current_arch)
+            
+        elif choice == '2':
+            # 构建32位版本
+            print(f"\n构建 32位 版本...")
+            if current_arch != '32bit':
+                print("警告: 当前Python不是32位，构建可能失败")
+                print("建议: 请使用32位Python运行此脚本以构建32位可执行文件")
+                confirm = input("继续构建? (y/n): ").lower()
+                if confirm != 'y':
+                    return
+            success = build_for_architecture('32bit')
+            
+        elif choice == '3':
+            # 构建64位版本
+            print(f"\n构建 64位 版本...")
+            if current_arch != '64bit':
+                print("警告: 当前Python不是64位，构建可能失败")
+                print("建议: 请使用64位Python运行此脚本以构建64位可执行文件")
+                confirm = input("继续构建? (y/n): ").lower()
+                if confirm != 'y':
+                    return
+            success = build_for_architecture('64bit')
+            
+        elif choice == '4':
+            # 构建所有版本
+            print(f"\n构建所有可用版本...")
+            successes = []
+            
+            # 询问是否构建32位版本
+            build_32bit = False
+            if current_arch == '32bit':
+                build_32bit = True
+                print("当前是32位Python，将构建32位版本")
+            else:
+                answer = input("构建32位版本? (当前Python不是32位，构建可能失败) (y/n): ").lower()
+                build_32bit = (answer == 'y')
+            
+            if build_32bit:
+                successes.append(build_for_architecture('32bit'))
+            
+            # 询问是否构建64位版本
+            build_64bit = False
+            if current_arch == '64bit':
+                build_64bit = True
+                print("当前是64位Python，将构建64位版本")
+            else:
+                answer = input("构建64位版本? (当前Python不是64位，构建可能失败) (y/n): ").lower()
+                build_64bit = (answer == 'y')
+            
+            if build_64bit:
+                successes.append(build_for_architecture('64bit'))
+            
+            success = all(successes) if successes else False
+            
+        elif choice == '5':
+            # 构建调试版本
+            print(f"\n构建调试版本 (显示控制台)...")
+            print(f"当前架构: {current_arch}")
+            debug_arch = input(f"请输入目标架构 (32bit/64bit, 默认 {current_arch}): ").strip()
+            if not debug_arch:
+                debug_arch = current_arch
+            
+            if debug_arch not in ['32bit', '64bit']:
+                print(f"无效架构 '{debug_arch}'，使用默认 {current_arch}")
+                debug_arch = current_arch
+            
+            if debug_arch != current_arch:
+                print(f"警告: 目标架构 ({debug_arch}) 与当前Python架构 ({current_arch}) 不匹配，构建可能失败")
+                confirm = input("继续构建? (y/n): ").lower()
+                if confirm != 'y':
+                    return
+            
+            success = build_for_architecture(debug_arch, console=True)
+            
         else:
-            answer = input("构建32位版本? (当前Python不是32位，构建可能失败) (y/n): ").lower()
-            build_32bit = (answer == 'y')
-        
-        if build_32bit:
-            successes.append(build_for_architecture('32bit'))
-        
-        # 询问是否构建64位版本
-        build_64bit = False
-        if current_arch == '64bit':
-            build_64bit = True
-            print("当前是64位Python，将构建64位版本")
-        else:
-            answer = input("构建64位版本? (当前Python不是64位，构建可能失败) (y/n): ").lower()
-            build_64bit = (answer == 'y')
-        
-        if build_64bit:
-            successes.append(build_for_architecture('64bit'))
-        
-        success = all(successes) if successes else False
-        
-    elif choice == '5':
-        # 构建调试版本
-        print(f"\n构建调试版本 (显示控制台)...")
-        print(f"当前架构: {current_arch}")
-        debug_arch = input(f"请输入目标架构 (32bit/64bit, 默认 {current_arch}): ").strip()
-        if not debug_arch:
-            debug_arch = current_arch
-        
-        if debug_arch not in ['32bit', '64bit']:
-            print(f"无效架构 '{debug_arch}'，使用默认 {current_arch}")
-            debug_arch = current_arch
-        
-        if debug_arch != current_arch:
-            print(f"警告: 目标架构 ({debug_arch}) 与当前Python架构 ({current_arch}) 不匹配，构建可能失败")
-            confirm = input("继续构建? (y/n): ").lower()
-            if confirm != 'y':
-                return
-        
-        success = build_for_architecture(debug_arch, console=True)
-        
+            print("无效选择")
+            return
     else:
-        print("无效选择")
-        return
+        # 使用命令行参数
+        target_arch = args.arch if args.arch != 'auto' else current_arch
+        
+        # 清理之前的构建
+        if os.path.exists('build'):
+            shutil.rmtree('build')
+        if os.path.exists('dist'):
+            shutil.rmtree('dist')
+        
+        success = False
+        
+        if args.all:
+            # 构建所有版本
+            print(f"\n构建所有可用版本 (架构: {target_arch})...")
+            successes = []
+            
+            # 构建单文件版本
+            successes.append(build_for_architecture(target_arch, console=False, onefile=True))
+            
+            # 构建目录版本
+            successes.append(build_for_architecture(target_arch, console=False, onefile=False))
+            
+            success = all(successes) if successes else False
+            
+        elif args.console:
+            # 调试版本
+            onefile = args.onefile if args.onefile is not None else True
+            print(f"\n构建调试版本 (架构: {target_arch}, 单文件: {onefile})...")
+            success = build_for_architecture(target_arch, console=True, onefile=onefile)
+            
+        elif args.onefile:
+            # 单文件版本
+            print(f"\n构建单文件版本 (架构: {target_arch})...")
+            success = build_for_architecture(target_arch, console=False, onefile=True)
+            
+        elif args.onedir:
+            # 目录版本
+            print(f"\n构建目录版本 (架构: {target_arch})...")
+            success = build_for_architecture(target_arch, console=False, onefile=False)
+            
+        else:
+            # 默认单文件版本
+            print(f"\n构建单文件版本 (架构: {target_arch})...")
+            success = build_for_architecture(target_arch, console=False, onefile=True)
     
     # 清理临时文件
     spec_files = [f for f in os.listdir('.') if f.endswith('.spec')]

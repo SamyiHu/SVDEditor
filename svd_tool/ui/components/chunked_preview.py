@@ -146,16 +146,6 @@ class ChunkedPreviewWidget(QWidget):
         
         toolbar.addStretch()
         
-        # 自动刷新开关
-        self.auto_refresh_label = QLabel(t("label.auto_refresh") + ":")
-        toolbar.addWidget(self.auto_refresh_label)
-        
-        self.auto_refresh_checkbox = QPushButton(t("button.enabled"))
-        self.auto_refresh_checkbox.setCheckable(True)
-        self.auto_refresh_checkbox.setChecked(True)
-        self.auto_refresh_checkbox.clicked.connect(self.toggle_auto_refresh)
-        toolbar.addWidget(self.auto_refresh_checkbox)
-        
         toolbar.addStretch()
         
         # 刷新按钮
@@ -245,25 +235,15 @@ class ChunkedPreviewWidget(QWidget):
         self.logger.debug(f"加载模式改变: {self.load_mode}")
         self.refresh_preview()
     
-    def toggle_auto_refresh(self, checked: bool):
-        """切换自动刷新"""
-        self.auto_refresh_checkbox.setText(t("button.enabled") if checked else t("button.disabled"))
-        self.logger.debug(f"自动刷新切换: {checked}")
-        if checked:
-            self.refresh_preview()
-    
     def refresh_preview(self, immediate: bool = False):
         """刷新预览"""
-        self.logger.debug(f"refresh_preview called, immediate={immediate}, auto_refresh={self.auto_refresh_checkbox.isChecked()}")
-        if self.auto_refresh_checkbox.isChecked():
-            if immediate:
-                self.logger.debug("立即刷新预览")
-                self._update_preview()
-            else:
-                self.logger.debug("使用防抖刷新预览")
-                self.update_timer.start(self.update_delay)
+        self.logger.debug(f"refresh_preview called, immediate={immediate}")
+        if immediate:
+            self.logger.debug("立即刷新预览")
+            self._update_preview()
         else:
-            self.logger.debug("自动刷新已关闭，不刷新")
+            self.logger.debug("使用防抖刷新预览")
+            self.update_timer.start(self.update_delay)
     
     def _update_preview(self):
         """更新预览内容（内部方法）"""

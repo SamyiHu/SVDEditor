@@ -1,9 +1,9 @@
 # svd_tool/ui/tree_manager.py
 from PyQt6.QtWidgets import (
-    QTreeWidget, QTreeWidgetItem, QMenu, QHeaderView
+    QTreeWidget, QTreeWidgetItem, QMenu, QHeaderView, QLabel, QWidget
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QMimeData
-from PyQt6.QtGui import QColor, QBrush, QFont, QDrag
+from PyQt6.QtCore import Qt, pyqtSignal, QMimeData, QPoint
+from PyQt6.QtGui import QColor, QBrush, QFont, QDrag, QPalette
 
 from ..core.data_model import DeviceInfo, Peripheral, Register, Field
 from ..core.constants import NODE_TYPES, COLORS
@@ -16,6 +16,10 @@ class TreeManager:
     def __init__(self):
         self.highlighted_items = []
         self.drag_start_pos = None
+        self.placeholder_item = None  # 占位符项
+        self.placeholder_tree = None  # 占位符所属的树控件
+        self.placeholder_original_text = None  # 占位符的原始文本
+        self.placeholder_original_detail = None  # 占位符的原始详细信息
     
     def create_tree_widget(self) -> QTreeWidget:
         """创建树控件"""
@@ -115,11 +119,10 @@ class TreeManager:
         item.setData(0, Qt.ItemDataRole.UserRole, NODE_TYPES["PERIPHERAL"])
         item.setData(0, Qt.ItemDataRole.UserRole + 1, peripheral.name)
 
-        # 外设可以拖动，并且可以接受同级（外设）的放置
+        # 外设可以拖动，但不能接受其他外设的放置（防止外设嵌套）
         item.setFlags(
             item.flags() |
-            Qt.ItemFlag.ItemIsDragEnabled |
-            Qt.ItemFlag.ItemIsDropEnabled
+            Qt.ItemFlag.ItemIsDragEnabled
         )
         
         return item
@@ -182,6 +185,120 @@ class TreeManager:
             item.setBackground(1, QBrush(QColor(255, 255, 255)))
         
         self.highlighted_items.clear()
+    
+    def show_insert_indicator(self, tree: QTreeWidget, target_item: QTreeWidgetItem, position: str = "below"):
+        """显示插入指示器 - 使用占位符挤开其他项
+        
+        Args:
+            tree: 树控件
+            target_item: 目标项
+            position: 插入位置 ("above" 或 "below")
+        """
+        # 如果占位符已经存在，先清除
+        if self.placeholder_item:
+            self.clear_insert_indicator(tree)
+        
+        # 创建占位符项
+        placeholder = QTreeWidgetItem()
+        placeholder.setText(0, "┌──────────────┐")
+        placeholder.setText(1, "│  放置到这里  │")
+        
+        # 设置样式（半透明）
+        placeholder.setForeground(0, QBrush(QColor(100, 100, 100, 150)))  # 灰色文字
+        placeholder.setForeground(1, QBrush(QColor(100, 100, 100, 150)))
+        placeholder.setBackground(0, QBrush(QColor(200, 200, 200, 100)))  # 浅灰色背景
+        placeholder.setBackground(1, QBrush(QColor(200, 200, 200, 100)))
+        # 设置flags：只读，不可选择，不接受拖放
+        placeholder.setFlags(Qt.ItemFlag.ItemIsEnabled | ~Qt.ItemFlag.ItemIsDropEnabled)
+        
+        # 获取目标项的索引
+        parent = target_item.parent()
+        if parent is None:
+            # 顶级项
+            index = tree.indexOfTopLevelItem(target_item)
+            if position == "above":
+                tree.insertTopLevelItem(index, placeholder)
+            else:  # below
+                tree.insertTopLevelItem(index + 1, placeholder)
+        else:
+            # 子项（外设不应该有子项，但为了完整性）
+            index = parent.indexOfChild(target_item)
+            if position == "above":
+                parent.insertChild(index, placeholder)
+            else:  # below
+                parent.insertChild(index + 1, placeholder)
+        
+        # 保存占位符
+        self.placeholder_item = placeholder
+        self.placeholder_tree = tree
+    
+    def turn_item_to_placeholder(self, item: QTreeWidgetItem):
+        """把项变成占位符
+        
+        Args:
+            item: 要变成占位符的项
+        """
+        # 保存原始文本
+        self.placeholder_original_text = item.text(0)
+        self.placeholder_original_detail = item.text(1)
+        
+        # 修改为占位符样式
+        item.setText(0, "┌──────────────┐")
+        item.setText(1, "│  放置到这里  │")
+        item.setForeground(0, QBrush(QColor(100, 100, 100, 150)))  # 灰色文字
+        item.setForeground(1, QBrush(QColor(100, 100, 100, 150)))
+        item.setBackground(0, QBrush(QColor(200, 200, 200, 100)))  # 浅灰色背景
+        item.setBackground(1, QBrush(QColor(200, 200, 200, 100)))
+        item.setFlags(Qt.ItemFlag.ItemIsEnabled | ~Qt.ItemFlag.ItemIsDropEnabled)
+        
+        # 保存占位符
+        self.placeholder_item = item
+    
+    def restore_placeholder_to_item(self, item: QTreeWidgetItem):
+        """把占位符恢复成原来的项
+        
+        Args:
+            item: 要恢复的占位符项
+        """
+        # 恢复原始文本
+        if self.placeholder_original_text is not None:
+            item.setText(0, self.placeholder_original_text)
+        if self.placeholder_original_detail is not None:
+            item.setText(1, self.placeholder_original_detail)
+        
+        # 恢复原始样式
+        item.setForeground(0, QBrush(QColor(0, 0, 0)))  # 黑色文字
+        item.setForeground(1, QBrush(QColor(0, 0, 0)))
+        item.setBackground(0, QBrush(QColor(255, 255, 255)))  # 白色背景
+        item.setBackground(1, QBrush(QColor(255, 255, 255)))
+        # 恢复原始flags：允许拖动，不允许放置
+        item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsDragEnabled)
+        
+        # 清除占位符信息
+        self.placeholder_item = None
+        self.placeholder_original_text = None
+        self.placeholder_original_detail = None
+    
+    def clear_insert_indicator(self, tree: QTreeWidget):
+        """清除插入指示器"""
+        if self.placeholder_item:
+            # 获取占位符的父级
+            parent = self.placeholder_item.parent()
+            
+            # 获取占位符的索引
+            if parent is None:
+                # 顶级项
+                index = tree.indexOfTopLevelItem(self.placeholder_item)
+                if index >= 0:
+                    tree.takeTopLevelItem(index)
+            else:
+                # 子项
+                index = parent.indexOfChild(self.placeholder_item)
+                if index >= 0:
+                    parent.takeChild(index)
+            
+            self.placeholder_item = None
+            self.placeholder_tree = None
     
     def create_context_menu(self, item: QTreeWidgetItem) -> QMenu:
         """创建右键菜单"""

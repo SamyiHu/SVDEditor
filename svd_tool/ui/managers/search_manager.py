@@ -261,25 +261,59 @@ class SearchManager(QObject):
             table.clearSelection()
     
     def perform_search(self, search_text: str):
-        """执行搜索（整合树和表格搜索）"""
+        """执行搜索（整合树和表格搜索，支持搜索类型选择）"""
         if not search_text:
             self.clear_search_highlights()
             return
+        
+        # 获取搜索类型
+        search_type_combo = self.get_widget('search_type_combo')
+        search_type = search_type_combo.currentData() if search_type_combo else 'all'
         
         # 清除之前的高亮和结果
         self.clear_search_highlights()
         self.search_results.clear()
         self.current_search_index = -1
         
-        # 搜索外设树
-        periph_tree = self.get_widget('periph_tree')
-        if periph_tree:
-            self.search_in_tree(periph_tree, search_text, 'periph')
-        
-        # 搜索中断表格
-        irq_table = self.get_widget('irq_table')
-        if irq_table:
-            self.search_in_table(irq_table, search_text, 'irq')
+        # 根据搜索类型决定搜索范围
+        if search_type == 'all':
+            # 搜索全部
+            periph_tree = self.get_widget('periph_tree')
+            if periph_tree:
+                self.search_in_tree(periph_tree, search_text, 'periph')
+            
+            irq_table = self.get_widget('irq_table')
+            if irq_table:
+                self.search_in_table(irq_table, search_text, 'irq')
+        elif search_type == 'peripheral':
+            # 只搜索外设
+            periph_tree = self.get_widget('periph_tree')
+            if periph_tree:
+                self.search_in_tree(periph_tree, search_text, 'periph')
+        elif search_type == 'register':
+            # 只搜索寄存器
+            periph_tree = self.get_widget('periph_tree')
+            if periph_tree:
+                self.search_in_tree(periph_tree, search_text, 'register')
+        elif search_type == 'field':
+            # 只搜索位域
+            periph_tree = self.get_widget('periph_tree')
+            if periph_tree:
+                self.search_in_tree(periph_tree, search_text, 'field')
+        elif search_type == 'interrupt':
+            # 只搜索中断
+            irq_table = self.get_widget('irq_table')
+            if irq_table:
+                self.search_in_table(irq_table, search_text, 'irq')
+        else:
+            # 默认搜索全部
+            periph_tree = self.get_widget('periph_tree')
+            if periph_tree:
+                self.search_in_tree(periph_tree, search_text, 'periph')
+            
+            irq_table = self.get_widget('irq_table')
+            if irq_table:
+                self.search_in_table(irq_table, search_text, 'irq')
         
         # 更新搜索计数
         self._update_search_count()

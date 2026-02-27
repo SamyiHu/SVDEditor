@@ -41,6 +41,7 @@ from .components.toolbar import ToolBarBuilder
 from .components.preview_manager import PreviewManager
 from .managers.file_operations import FileOperations
 from .managers.device_info_manager import DeviceInfoManager
+from .managers.search_manager import SearchManager
 from .coordinator import Coordinator
 from ..i18n.i18n import I18nManager, get_i18n_manager, set_i18n_manager, t
 
@@ -56,7 +57,14 @@ class MainWindowRefactored(QMainWindow):
     selection_changed = pyqtSignal(str, str)  # (item_type, item_name)
     
     def __init__(self):
+        import sys
         super().__init__()
+        # 初始化日志（必须在其他组件之前）
+        self.logger = Logger("svd_tool")
+        # 在调用父类构造函数之后设置窗口属性，防止窗口在初始化时显示
+        self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+        self.logger.debug(f"__init__开始，窗口大小: {self.size()}")
+        self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, False)
         
         # 初始化协调器
         self.coordinator = Coordinator()
@@ -74,7 +82,6 @@ class MainWindowRefactored(QMainWindow):
         self.command_history = CommandHistory()
         self.tree_manager = TreeManager()
         self.dialog_factory = DialogFactory(self)
-        self.logger = Logger("svd_tool")
         
         # 初始化文件操作管理器
         self.file_operations = FileOperations(self.state_manager, self.layout_manager)
@@ -82,6 +89,9 @@ class MainWindowRefactored(QMainWindow):
         
         # 初始化预览管理器
         self.preview_manager = PreviewManager(self, self.state_manager, self.coordinator)
+        
+        # 初始化搜索管理器
+        self.search_manager = SearchManager(coordinator=self.coordinator)
         
         # 预览窗口（延迟创建，保留兼容性）
         self.preview_window = None
@@ -93,16 +103,14 @@ class MainWindowRefactored(QMainWindow):
         self.coordinator.register_component('device_info_manager', self.device_info_manager)
         self.coordinator.register_component('file_operations', self.file_operations)
         self.coordinator.register_component('preview_manager', self.preview_manager)
+        self.coordinator.register_component('search_manager', self.search_manager)
         
         # GUI 日志处理器
         self._gui_log_handler = None
         self.auto_save_error = True
         
-        # 搜索相关
-        self.search_results: List[Dict[str, Any]] = []
-        self.current_search_index: int = -1
-        
         self.init_ui()
+        self.logger.debug(f"init_ui完成，窗口大小: {self.size()}")
         self.init_data()
         self.setup_signals()
         
@@ -111,41 +119,42 @@ class MainWindowRefactored(QMainWindow):
         
         # 应用样式
         self.apply_styles()
+        self.logger.debug(f"__init__完成，窗口大小: {self.size()}")
     
     def init_ui(self):
         """初始化UI"""
-        import sys
-        print(f"[DEBUG] init_ui开始，layout_manager={self.layout_manager}", file=sys.stderr)
+        self.logger.debug(f"init_ui开始，layout_manager={self.layout_manager}，窗口大小: {self.size()}")
         # 使用布局管理器创建UI
         widgets = self.layout_manager.create_layout()
-        print(f"[DEBUG] create_layout返回，widgets keys={list(widgets.keys())}", file=sys.stderr)
+        self.logger.debug(f"create_layout返回，widgets keys={list(widgets.keys())}")
         
-        # 创建各个标签页
+        # 获取主分割器和标签页
+        main_splitter = widgets.get('main_splitter')
         tab_widget = widgets.get('tab_widget')
-        print(f"[DEBUG] 获取tab_widget: {tab_widget}", file=sys.stderr)
-        print(f"[DEBUG] tab_widget is None: {tab_widget is None}", file=sys.stderr)
+        self.logger.debug(f"获取tab_widget: {tab_widget}")
+        self.logger.debug(f"获取main_splitter: {main_splitter}")
+        self.logger.debug(f"tab_widget is None: {tab_widget is None}")
         if tab_widget is not None:
             try:
-                print(f"[DEBUG] 创建基本标签页", file=sys.stderr)
+                self.logger.debug("创建基本标签页")
                 self.layout_manager.create_basic_info_tab(tab_widget)
-                print(f"[DEBUG] 创建外设标签页", file=sys.stderr)
+                self.logger.debug("创建外设标签页")
                 self.layout_manager.create_peripheral_tab(tab_widget)
-                print(f"[DEBUG] 创建中断标签页", file=sys.stderr)
+                self.logger.debug("创建中断标签页")
                 self.layout_manager.create_interrupt_tab(tab_widget)
                 # 设置预览管理器（支持多种显示模式）
-                print(f"[DEBUG] 设置预览管理器", file=sys.stderr)
-                self.preview_manager.setup_preview_modes(tab_widget)
-                print(f"[DEBUG] 预览管理器设置完成", file=sys.stderr)
+                self.logger.debug("设置预览管理器")
+                self.preview_manager.setup_preview_modes(tab_widget, main_splitter)
+                self.logger.debug("预览管理器设置完成")
             except Exception as e:
-                print(f"[DEBUG] 创建标签页时发生异常: {e}", file=sys.stderr)
-                import traceback
-                traceback.print_exc(file=sys.stderr)
+                self.logger.error(f"创建标签页时发生异常: {e}")
+                self.logger.exception("Traceback:")
             
             # 设置默认标签页
             tab_widget.setCurrentIndex(0)
-            print(f"[DEBUG] 标签页数量: {tab_widget.count()}", file=sys.stderr)
+            self.logger.debug(f"标签页数量: {tab_widget.count()}")
         else:
-            print(f"[DEBUG] tab_widget 为 None，无法创建标签页", file=sys.stderr)
+            self.logger.debug("tab_widget 为 None，无法创建标签页")
         
         # 连接外设管理器的信号
         self.peripheral_manager.peripheral_added.connect(self.on_peripheral_added)
@@ -157,9 +166,9 @@ class MainWindowRefactored(QMainWindow):
         self.peripheral_manager.connect_ui_signals()
         
         # 创建日志面板（默认隐藏）
-        print(f"[DEBUG] 创建日志面板", file=sys.stderr)
+        self.logger.debug(f"创建日志面板，窗口大小: {self.size()}")
         self.create_log_panel()
-        print(f"[DEBUG] init_ui完成", file=sys.stderr)
+        self.logger.debug(f"init_ui完成，窗口大小: {self.size()}")
         
         # 初始化中断表格（如果有数据）
         self._update_interrupt_table()
@@ -171,18 +180,8 @@ class MainWindowRefactored(QMainWindow):
     
     def setup_signals(self):
         """设置信号连接"""
-        # 连接搜索功能
-        search_edit = self.layout_manager.get_widget('search_edit')
-        if search_edit:
-            search_edit.textChanged.connect(self.on_search_text_changed)
-        
-        search_prev_btn = self.layout_manager.get_widget('search_prev_btn')
-        if search_prev_btn:
-            search_prev_btn.clicked.connect(self.goto_prev_search)
-        
-        search_next_btn = self.layout_manager.get_widget('search_next_btn')
-        if search_next_btn:
-            search_next_btn.clicked.connect(self.goto_next_search)
+        # 连接搜索功能（使用search_manager）
+        self.search_manager.connect_search_signals()
         
         # 连接其他按钮
         generate_btn = self.layout_manager.get_widget('generate_btn')
@@ -205,25 +204,24 @@ class MainWindowRefactored(QMainWindow):
         # 连接可视化控件信号
         visualization_widget = self.layout_manager.get_widget('visualization_widget')
         if visualization_widget:
-            import sys
-            print(f"[DEBUG] visualization_widget type: {type(visualization_widget)}", file=sys.stderr)
-            print(f"[DEBUG] visualization_widget has jump_to_peripheral: {hasattr(visualization_widget, 'jump_to_peripheral')}", file=sys.stderr)
-            print(f"[DEBUG] on_jump_to_peripheral method: {self.on_jump_to_peripheral}", file=sys.stderr)
-            print(f"[DEBUG] visualization_widget.jump_to_peripheral: {visualization_widget.jump_to_peripheral}", file=sys.stderr)
+            self.logger.debug(f"visualization_widget type: {type(visualization_widget)}")
+            self.logger.debug(f"visualization_widget has jump_to_peripheral: {hasattr(visualization_widget, 'jump_to_peripheral')}")
+            self.logger.debug(f"on_jump_to_peripheral method: {self.on_jump_to_peripheral}")
+            self.logger.debug(f"visualization_widget.jump_to_peripheral: {visualization_widget.jump_to_peripheral}")
             
             # 设置 main_window 引用
             visualization_widget.main_window = self
-            print(f"[DEBUG] Set visualization_widget.main_window", file=sys.stderr)
+            self.logger.debug("Set visualization_widget.main_window")
             
             visualization_widget.bit_field.field_clicked.connect(self.on_field_clicked)
             visualization_widget.address_map.register_clicked.connect(self.on_register_clicked)
             if hasattr(visualization_widget, 'jump_to_peripheral'):
-                print(f"[DEBUG] Connecting jump_to_peripheral signal...", file=sys.stderr)
+                self.logger.debug("Connecting jump_to_peripheral signal...")
                 visualization_widget.jump_to_peripheral.connect(self.on_jump_to_peripheral)
-                print(f"[DEBUG] jump_to_peripheral signal connected", file=sys.stderr)
-                print(f"[DEBUG] Signal receivers: {visualization_widget.jump_to_peripheral}", file=sys.stderr)
+                self.logger.debug("jump_to_peripheral signal connected")
+                self.logger.debug(f"Signal receivers: {visualization_widget.jump_to_peripheral}")
             else:
-                print(f"[DEBUG] jump_to_peripheral signal NOT found", file=sys.stderr)
+                self.logger.debug("jump_to_peripheral signal NOT found")
         
         # 连接中断表格右键菜单和选择变化
         irq_table = self.layout_manager.get_widget('irq_table')
@@ -297,9 +295,8 @@ class MainWindowRefactored(QMainWindow):
 
     def open_preview_window(self):
         """打开预览窗口（使用预览管理器）"""
-        # 使用预览管理器切换到停靠窗口模式
-        from .components.preview_manager import PreviewMode
-        self.preview_manager.set_mode(PreviewMode.DOCK)
+        # 只唤起预览窗口，不改变当前的布局模式
+        # 布局模式应该通过预览窗口的工具栏来切换
         self.preview_manager.set_preview_visible(True)
         self.logger.info("预览窗口已打开")
     
@@ -444,7 +441,9 @@ class MainWindowRefactored(QMainWindow):
                     # 显示寄存器
                     if register in periph.registers:
                         reg = periph.registers[register]
-                        visualization_widget.show_register(reg)
+                        # 如果是继承外设，传递源外设名称
+                        source_peripheral_name = periph.derived_from if periph.derived_from else None
+                        visualization_widget.show_register(reg, source_peripheral_name)
                         
                         if field:
                             # 显示位域
@@ -673,246 +672,13 @@ class MainWindowRefactored(QMainWindow):
     
     def on_jump_to_peripheral(self, peripheral_name: str):
         """跳转到外设事件处理（用于继承外设的跳转）"""
-        import sys
-        print(f"[DEBUG] ===== on_jump_to_peripheral called with: {peripheral_name} =====", file=sys.stderr)
+        self.logger.debug(f"===== on_jump_to_peripheral called with: {peripheral_name} =====")
         # 更新状态管理器的选择状态
         self.state_manager.set_selection(peripheral=peripheral_name)
         
         # 更新可视化控件
         self.update_visualization(peripheral_name, '', '')
-        print(f"[DEBUG] ===== on_jump_to_peripheral completed =====", file=sys.stderr)
-    
-    # ===================== 搜索功能 =====================
-    def on_search_text_changed(self, text: str):
-        """搜索文本变更"""
-        if not text.strip():
-            self.clear_search_highlights()
-            return
-        
-        self.perform_search(text)
-    
-    def perform_search(self, search_text: str):
-        """执行搜索"""
-        # 清空之前的结果
-        self.search_results.clear()
-        self.current_search_index = -1
-        
-        search_text_lower = search_text.lower()
-        
-        # 搜索外设树
-        periph_tree = self.layout_manager.get_widget('periph_tree')
-        if periph_tree:
-            self.search_in_tree(periph_tree, search_text_lower, 'periph')
-        
-        # 搜索中断表格
-        irq_table = self.layout_manager.get_widget('irq_table')
-        if irq_table:
-            self.search_in_table(irq_table, search_text_lower, 'irq')
-        
-        # 更新UI
-        self.update_search_ui()
-    
-    def search_in_tree(self, tree: QTreeWidget, search_text: str, tree_type: str):
-        """在树中搜索"""
-        for i in range(tree.topLevelItemCount()):
-            item = tree.topLevelItem(i)
-            self._search_tree_item(item, search_text, tree_type)
-    
-    def _search_tree_item(self, item: QTreeWidgetItem, search_text: str, tree_type: str):
-        """递归搜索树项"""
-        # 检查当前项
-        for col in range(item.columnCount()):
-            if search_text in item.text(col).lower():
-                self.search_results.append({"tree": tree_type, "item": item})
-                break
-        
-        # 递归搜索子项
-        for i in range(item.childCount()):
-            child = item.child(i)
-            self._search_tree_item(child, search_text, tree_type)
-    
-    def search_in_table(self, table: QTableWidget, search_text: str, table_type: str):
-        """在表格中搜索"""
-        for row in range(table.rowCount()):
-            for col in range(table.columnCount()):
-                item = table.item(row, col)
-                if item and search_text in item.text().lower():
-                    self.search_results.append({"table": table_type, "row": row, "col": col})
-    
-    def clear_search_highlights(self):
-        """清除搜索高亮"""
-        # 清除外设树高亮
-        periph_tree = self.layout_manager.get_widget('periph_tree')
-        if periph_tree:
-            self._clear_tree_highlights(periph_tree)
-        
-        # 清除中断表格高亮
-        irq_table = self.layout_manager.get_widget('irq_table')
-        if irq_table:
-            self._clear_table_highlights(irq_table)
-        
-        # 清空结果
-        self.search_results.clear()
-        self.current_search_index = -1
-        self.update_search_ui()
-    
-    def _clear_tree_highlights(self, tree: QTreeWidget):
-        """清除树高亮"""
-        for i in range(tree.topLevelItemCount()):
-            item = tree.topLevelItem(i)
-            self._clear_tree_item_highlights(item)
-    
-    def _clear_tree_item_highlights(self, item: QTreeWidgetItem):
-        """递归清除树项高亮"""
-        for col in range(item.columnCount()):
-            item.setBackground(col, QColor(255, 255, 255))  # 白色背景
-        
-        for i in range(item.childCount()):
-            child = item.child(i)
-            self._clear_tree_item_highlights(child)
-    
-    def _clear_table_highlights(self, table: QTableWidget):
-        """清除表格高亮"""
-        for row in range(table.rowCount()):
-            for col in range(table.columnCount()):
-                item = table.item(row, col)
-                if item:
-                    item.setBackground(QColor(255, 255, 255))  # 白色背景
-    
-    def update_search_ui(self):
-        """更新搜索UI"""
-        count = len(self.search_results)
-        
-        search_count_label = self.layout_manager.get_widget('search_count_label')
-        if search_count_label:
-            if count > 0:
-                search_count_label.setText(t("search.found", count=count))
-            else:
-                search_count_label.setText("")
-        
-        search_prev_btn = self.layout_manager.get_widget('search_prev_btn')
-        search_next_btn = self.layout_manager.get_widget('search_next_btn')
-        
-        if search_prev_btn and search_next_btn:
-            has_results = count > 0
-            search_prev_btn.setEnabled(has_results)
-            search_next_btn.setEnabled(has_results)
-    
-    def goto_prev_search(self):
-        """跳转到上一个搜索结果"""
-        if not self.search_results:
-            return
-        
-        self.current_search_index -= 1
-        if self.current_search_index < 0:
-            self.current_search_index = len(self.search_results) - 1
-        
-        self.goto_search_result(self.current_search_index)
-    
-    def goto_next_search(self):
-        """跳转到下一个搜索结果"""
-        if not self.search_results:
-            return
-        
-        self.current_search_index += 1
-        if self.current_search_index >= len(self.search_results):
-            self.current_search_index = 0
-        
-        self.goto_search_result(self.current_search_index)
-    
-    def highlight_current_search(self):
-        """高亮当前搜索结果（与老版本一致）"""
-        if not self.search_results or self.current_search_index < 0:
-            return
-        
-        # 清除之前的高亮
-        self.tree_manager.clear_highlights()
-        
-        # 清除中断表格的高亮
-        irq_table = self.layout_manager.get_widget('irq_table')
-        if irq_table:
-            for row in range(irq_table.rowCount()):
-                for col in range(irq_table.columnCount()):
-                    item = irq_table.item(row, col)
-                    if item:
-                        item.setBackground(QColor(255, 255, 255))
-        
-        # 获取当前结果
-        entry = self.search_results[self.current_search_index]
-        
-        # 高亮当前结果
-        if 'tree' in entry:
-            tree_type = entry['tree']
-            item = entry['item']
-            
-            if tree_type == 'periph':
-                # 切换到外设标签页
-                tab_widget = self.layout_manager.get_widget('tab_widget')
-                if tab_widget:
-                    tab_widget.setCurrentIndex(1)  # 外设标签页索引
-                
-                # 高亮并展开父节点
-                self.tree_manager.highlight_item(item)
-                parent = item.parent()
-                while parent:
-                    parent.setExpanded(True)
-                    parent = parent.parent()
-        
-        elif 'table' in entry:
-            table_type = entry['table']
-            row = entry['row']
-            col = entry.get('col', 0)
-            
-            if table_type == 'irq':
-                # 切换到中断标签页
-                tab_widget = self.layout_manager.get_widget('tab_widget')
-                if tab_widget:
-                    tab_widget.setCurrentIndex(2)  # 中断标签页索引
-                
-                # 高亮表格行
-                table = self.layout_manager.get_widget('irq_table')
-                if table:
-                    for c in range(table.columnCount()):
-                        item = table.item(row, c)
-                        if item:
-                            item.setBackground(QColor(255, 255, 0))  # 黄色高亮
-    
-    def goto_search_result(self, index: int):
-        """跳转到指定搜索结果"""
-        if index < 0 or index >= len(self.search_results):
-            return
-        
-        self.current_search_index = index
-        entry = self.search_results[index]
-        
-        if 'tree' in entry:
-            tree_type = entry['tree']
-            item = entry['item']
-            
-            if tree_type == 'periph':
-                tree = self.layout_manager.get_widget('periph_tree')
-                if tree:
-                    tree.scrollToItem(item)
-                    tree.setCurrentItem(item)
-                    item.setExpanded(True)
-        
-        elif 'table' in entry:
-            table_type = entry['table']
-            row = entry['row']
-            
-            if table_type == 'irq':
-                table = self.layout_manager.get_widget('irq_table')
-                if table:
-                    table.scrollToItem(table.item(row, 0))
-                    table.selectRow(row)
-        
-        # 高亮当前搜索结果
-        self.highlight_current_search()
-        
-        # 更新搜索计数
-        search_count_label = self.layout_manager.get_widget('search_count_label')
-        if search_count_label:
-            search_count_label.setText(f"{index + 1}/{len(self.search_results)}")
+        self.logger.debug("===== on_jump_to_peripheral completed =====")
     
     # ===================== 文件操作 =====================
     def new_file(self):
@@ -969,9 +735,12 @@ class MainWindowRefactored(QMainWindow):
                     self.state_manager.clear_selection()
                     self.command_history.clear()
                     
+                    # 通知状态变更（触发预览更新）
+                    self.state_manager._notify_state_change()
+                    
                     # 发射文件加载信号（触发实时预览刷新）
                     if hasattr(self, 'coordinator') and self.coordinator:
-                        print(f"[DEBUG] 调用coordinator.emit_event(device_info_updated)")
+                        self.logger.debug("调用coordinator.emit_event(device_info_updated)")
                         self.coordinator.emit_event("device_info_updated", device_info)
                     
                     # 更新UI
@@ -1125,11 +894,77 @@ class MainWindowRefactored(QMainWindow):
         if periph_tree:
             periph_tree.setDragEnabled(True)
             periph_tree.setAcceptDrops(True)
-            periph_tree.setDropIndicatorShown(True)
+            periph_tree.setDropIndicatorShown(True)  # 启用默认drop indicator
             periph_tree.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
             
             # 设置自定义拖放事件处理
+            periph_tree.dragEnterEvent = self.custom_drag_enter_event
+            periph_tree.dragMoveEvent = self.custom_drag_move_event
             periph_tree.dropEvent = self.custom_drop_event
+    
+    def custom_drag_enter_event(self, event):
+        """自定义拖拽进入事件 - 只允许外设之间的同级拖放"""
+        periph_tree = self.layout_manager.get_widget('periph_tree')
+        if not periph_tree:
+            event.ignore()
+            return
+        
+        # 获取源项目
+        source_item = periph_tree.currentItem()
+        if not source_item:
+            event.ignore()
+            return
+        
+        # 只允许外设拖放
+        source_type = self.tree_manager.get_item_type(source_item)
+        if source_type != "peripheral":
+            event.ignore()
+            return
+        
+        # 允许拖放
+        event.accept()
+    
+    def custom_drag_move_event(self, event):
+        """自定义拖拽移动事件 - 实时验证拖放目标"""
+        periph_tree = self.layout_manager.get_widget('periph_tree')
+        if not periph_tree:
+            event.ignore()
+            return
+        
+        # 获取源项目
+        source_item = periph_tree.currentItem()
+        if not source_item:
+            event.ignore()
+            return
+        
+        # 只允许外设拖放
+        source_type = self.tree_manager.get_item_type(source_item)
+        if source_type != "peripheral":
+            event.ignore()
+            return
+        
+        # 获取目标位置
+        target_index = periph_tree.indexAt(event.position().toPoint())
+        if not target_index.isValid():
+            # 拖到空白区域，允许
+            event.accept()
+            return
+        
+        target_item = periph_tree.itemFromIndex(target_index)
+        if not target_item:
+            event.ignore()
+            return
+        
+        # 检查目标项目类型
+        target_type = self.tree_manager.get_item_type(target_item)
+        
+        # 只允许拖到外设节点上（同级拖放）
+        if target_type != "peripheral":
+            event.ignore()
+            return
+        
+        # 允许拖放
+        event.accept()
     
     def custom_drop_event(self, event):
         """自定义拖放事件处理 - 只允许外设之间的同级拖放"""
@@ -1152,10 +987,18 @@ class MainWindowRefactored(QMainWindow):
         # 只允许外设拖放
         if source_type != "peripheral":
             event.ignore()
-            return  # 不显示警告，直接忽略
-            
-        # 简单验证：只允许外设之间的同级拖放
-        # 让Qt执行默认的拖放逻辑，然后我们再验证和修正
+            return
+        
+        # 获取目标位置
+        target_index = periph_tree.indexAt(event.position().toPoint())
+        if target_index.isValid():
+            target_item = periph_tree.itemFromIndex(target_index)
+            if target_item:
+                target_type = self.tree_manager.get_item_type(target_item)
+                # 只允许拖到外设节点上（同级拖放）
+                if target_type != "peripheral":
+                    event.ignore()
+                    return
         
         # 执行拖放
         from PyQt6.QtWidgets import QTreeWidget
@@ -1227,7 +1070,7 @@ class MainWindowRefactored(QMainWindow):
                 QTimer.singleShot(50, lambda: self.peripheral_manager._select_peripheral_in_tree(moved_periph_name))
         
         except Exception as e:
-            print(f"拖放后验证出错: {e}")
+            self.logger.error(f"拖放后验证出错: {e}")
             # 出错时恢复
             self.peripheral_manager.update_peripheral_tree()
     
@@ -2068,6 +1911,12 @@ class MainWindowRefactored(QMainWindow):
         self.show_debug_checkbox.stateChanged.connect(self.on_debug_log_checkbox_changed)
         toolbar.addWidget(self.show_debug_checkbox)
         
+        # 添加"禁用调试日志"复选框
+        self.disable_debug_checkbox = QCheckBox("禁用调试日志")
+        self.disable_debug_checkbox.setChecked(False)  # 默认不禁用调试日志
+        self.disable_debug_checkbox.stateChanged.connect(self.on_disable_debug_checkbox_changed)
+        toolbar.addWidget(self.disable_debug_checkbox)
+        
         container_layout.addLayout(toolbar)
         container_layout.addWidget(self.log_text)
         self.log_dock.setWidget(container)
@@ -2083,7 +1932,8 @@ class MainWindowRefactored(QMainWindow):
                 super().__init__()
                 self.emitter = emitter
                 self.owner = owner
-                self.setLevel(logging.DEBUG)
+                # 初始级别设置为INFO，避免大量DEBUG日志阻塞UI线程
+                self.setLevel(logging.INFO)
 
             def emit(self, record):
                 try:
@@ -2111,7 +1961,9 @@ class MainWindowRefactored(QMainWindow):
                     pass  # 日志显示失败不影响主流程
 
         self._gui_log_handler = GuiLogHandler(self._log_emitter, self)
-        self.logger.logger.addHandler(self._gui_log_handler)
+        # 将GUI日志处理器添加到根logger，这样所有logger的日志都会显示在日志面板中
+        root_logger = logging.getLogger()
+        root_logger.addHandler(self._gui_log_handler)
         
         # 创建日志面板后，在init_ui中调用
         self.logger.info("日志面板已创建")
@@ -2138,6 +1990,17 @@ class MainWindowRefactored(QMainWindow):
                 self._gui_log_handler.setLevel(logging.INFO)
         # 更新状态显示
         status_msg = "Debug日志已启用" if show_debug else "Debug日志已禁用"
+        self.layout_manager.update_status(status_msg)
+        self.logger.info(status_msg)
+
+    def on_disable_debug_checkbox_changed(self, state):
+        """处理禁用调试日志复选框状态变化"""
+        from svd_tool.utils.debug_logger import set_debug_enabled
+        disable_debug = (state == Qt.CheckState.Checked.value)
+        # 更新调试日志开关
+        set_debug_enabled(not disable_debug)
+        # 更新状态显示
+        status_msg = "调试日志已禁用" if disable_debug else "调试日志已启用"
         self.layout_manager.update_status(status_msg)
         self.logger.info(status_msg)
 

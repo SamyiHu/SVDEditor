@@ -8,6 +8,9 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from .address_map_widget import AddressMapWidget
 from .bit_field_widget import BitFieldWidget
 from svd_tool.core.data_model import Peripheral
+from svd_tool.utils.logger import get_logger
+
+logger = get_logger("visualization_widget")
 
 
 class VisualizationWidget(QWidget):
@@ -37,62 +40,59 @@ class VisualizationWidget(QWidget):
     
     def _on_jump_to_source_peripheral(self, source_peripheral_name: str):
         """跳转到源外设"""
-        import sys
-        print(f"[DEBUG] _on_jump_to_source_peripheral called with: {source_peripheral_name}", file=sys.stderr)
-        print(f"[DEBUG] hasattr(self, 'main_window'): {hasattr(self, 'main_window')}", file=sys.stderr)
-        print(f"[DEBUG] self.main_window: {getattr(self, 'main_window', None)}", file=sys.stderr)
-        print(f"[DEBUG] self.tree_widget: {self.tree_widget}", file=sys.stderr)
+        logger.debug(f"_on_jump_to_source_peripheral called with: {source_peripheral_name}")
+        logger.debug(f"hasattr(self, 'main_window'): {hasattr(self, 'main_window')}")
+        logger.debug(f"self.main_window: {getattr(self, 'main_window', None)}")
+        logger.debug(f"self.tree_widget: {self.tree_widget}")
         
         # 直接调用主窗口的 on_jump_to_peripheral 方法（主要方案）
         if hasattr(self, 'main_window') and self.main_window:
-            print(f"[DEBUG] Calling main_window.on_jump_to_peripheral directly", file=sys.stderr)
-            print(f"[DEBUG] hasattr(self.main_window, 'on_jump_to_peripheral'): {hasattr(self.main_window, 'on_jump_to_peripheral')}", file=sys.stderr)
-            print(f"[DEBUG] self.main_window.on_jump_to_peripheral: {getattr(self.main_window, 'on_jump_to_peripheral', None)}", file=sys.stderr)
+            logger.debug("Calling main_window.on_jump_to_peripheral directly")
+            logger.debug(f"hasattr(self.main_window, 'on_jump_to_peripheral'): {hasattr(self.main_window, 'on_jump_to_peripheral')}")
+            logger.debug(f"self.main_window.on_jump_to_peripheral: {getattr(self.main_window, 'on_jump_to_peripheral', None)}")
             try:
                 self.main_window.on_jump_to_peripheral(source_peripheral_name)
-                print(f"[DEBUG] main_window.on_jump_to_peripheral called", file=sys.stderr)
+                logger.debug("main_window.on_jump_to_peripheral called")
             except Exception as e:
-                print(f"[DEBUG] Error calling main_window.on_jump_to_peripheral: {e}", file=sys.stderr)
-                import traceback
-                traceback.print_exc(file=sys.stderr)
+                logger.error(f"Error calling main_window.on_jump_to_peripheral: {e}")
+                logger.exception("Traceback:")
         else:
-            print(f"[DEBUG] main_window not available", file=sys.stderr)
+            logger.debug("main_window not available")
         
         # 同步树状图选择状态（无论state_manager是否可用）
         # 注意：需要在调用main_window.on_jump_to_peripheral之后，因为update_visualization会设置tree_widget
         if self.tree_widget:
-            print(f"[DEBUG] Tree widget available, trying to find peripheral: {source_peripheral_name}", file=sys.stderr)
+            logger.debug(f"Tree widget available, trying to find peripheral: {source_peripheral_name}")
             # 查找外设项
             found = False
             for i in range(self.tree_widget.topLevelItemCount()):
                 item = self.tree_widget.topLevelItem(i)
                 item_text = item.text(0)
-                print(f"[DEBUG] Checking item {i}: {item_text}", file=sys.stderr)
+                logger.debug(f"Checking item {i}: {item_text}")
                 if item_text == source_peripheral_name:
                     self.tree_widget.setCurrentItem(item)
                     self.tree_widget.scrollToItem(item)
-                    print(f"[DEBUG] Tree widget selection updated to: {source_peripheral_name}", file=sys.stderr)
+                    logger.debug(f"Tree widget selection updated to: {source_peripheral_name}")
                     found = True
                     break
             if not found:
-                print(f"[DEBUG] Peripheral {source_peripheral_name} not found in tree widget", file=sys.stderr)
+                logger.debug(f"Peripheral {source_peripheral_name} not found in tree widget")
         else:
-            print(f"[DEBUG] Tree widget not available", file=sys.stderr)
+            logger.debug("Tree widget not available")
         
         # 直接调用主窗口的 on_jump_to_peripheral 方法（主要方案）
         if hasattr(self, 'main_window') and self.main_window:
-            print(f"[DEBUG] Calling main_window.on_jump_to_peripheral directly", file=sys.stderr)
-            print(f"[DEBUG] hasattr(self.main_window, 'on_jump_to_peripheral'): {hasattr(self.main_window, 'on_jump_to_peripheral')}", file=sys.stderr)
-            print(f"[DEBUG] self.main_window.on_jump_to_peripheral: {getattr(self.main_window, 'on_jump_to_peripheral', None)}", file=sys.stderr)
+            logger.debug("Calling main_window.on_jump_to_peripheral directly")
+            logger.debug(f"hasattr(self.main_window, 'on_jump_to_peripheral'): {hasattr(self.main_window, 'on_jump_to_peripheral')}")
+            logger.debug(f"self.main_window.on_jump_to_peripheral: {getattr(self.main_window, 'on_jump_to_peripheral', None)}")
             try:
                 self.main_window.on_jump_to_peripheral(source_peripheral_name)
-                print(f"[DEBUG] main_window.on_jump_to_peripheral called", file=sys.stderr)
+                logger.debug("main_window.on_jump_to_peripheral called")
             except Exception as e:
-                print(f"[DEBUG] Error calling main_window.on_jump_to_peripheral: {e}", file=sys.stderr)
-                import traceback
-                traceback.print_exc(file=sys.stderr)
+                logger.error(f"Error calling main_window.on_jump_to_peripheral: {e}")
+                logger.exception("Traceback:")
         else:
-            print(f"[DEBUG] main_window not available", file=sys.stderr)
+            logger.debug("main_window not available")
         
         # 如果state_manager可用，也更新状态管理器的选择状态
         if self.state_manager:
@@ -100,9 +100,9 @@ class VisualizationWidget(QWidget):
             self.state_manager.set_selection(peripheral=source_peripheral_name)
             
             # 发射信号，通知主窗口更新可视化控件
-            print(f"[DEBUG] Emitting jump_to_peripheral signal with: {source_peripheral_name}", file=sys.stderr)
+            logger.debug(f"Emitting jump_to_peripheral signal with: {source_peripheral_name}")
             self.jump_to_peripheral.emit(source_peripheral_name)
-            print(f"[DEBUG] jump_to_peripheral signal emitted", file=sys.stderr)
+            logger.debug("jump_to_peripheral signal emitted")
         
     def show_peripheral(self, peripheral):
         """显示外设可视化"""
@@ -172,6 +172,11 @@ class VisualizationWidget(QWidget):
             source_peripheral_name: 源外设名称（用于继承外设）
         """
         self.current_register = register
+        
+        # 如果没有传递source_peripheral_name，但当前外设是继承外设，使用derived_from
+        if source_peripheral_name is None and self.current_peripheral and self.current_peripheral.derived_from:
+            source_peripheral_name = self.current_peripheral.derived_from
+        
         self.bit_field.set_register(register, source_peripheral_name)
         
     def show_peripheral_and_register(self, peripheral, register):
