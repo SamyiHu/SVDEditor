@@ -1,10 +1,12 @@
 # svd_tool/core/svd_generator.py
+import re
 from typing import Dict, Any, Optional
 from xml.etree import ElementTree as ET
 from xml.dom import minidom
 
 from .data_model import DeviceInfo
 from .constants import SVD_VERSIONS
+from ..utils.logger import Logger
 
 
 class SVDGenerator:
@@ -13,6 +15,7 @@ class SVDGenerator:
     def __init__(self, device_info: DeviceInfo):
         self.device_info = device_info
         self.indent = "  "
+        self.logger = Logger("svd_generator")
     
     def generate(self, pretty_print: bool = True) -> str:
         """生成SVD XML字符串"""
@@ -192,6 +195,10 @@ class SVDGenerator:
         
         ET.SubElement(reg_elem, "resetValue").text = register.reset_value or "0x00000000"
         
+        # 复位掩码
+        if register.reset_mask and register.reset_mask != "0xFFFFFFFF":
+            ET.SubElement(reg_elem, "resetMask").text = register.reset_mask
+        
         # 添加位域
         if register.fields:
             fields_elem = ET.SubElement(reg_elem, "fields")
@@ -227,6 +234,18 @@ class SVDGenerator:
         # 添加复位值
         if field.reset_value and field.reset_value != "0x0":
             ET.SubElement(field_elem, "resetValue").text = field.reset_value
+        
+        # 添加枚举值
+        if hasattr(field, 'enumerated_values') and field.enumerated_values:
+            enum_elem = ET.SubElement(field_elem, "enumeratedValues")
+            for enum_val in field.enumerated_values:
+                ev_elem = ET.SubElement(enum_elem, "enumeratedValue")
+                if "name" in enum_val:
+                    ET.SubElement(ev_elem, "name").text = enum_val["name"]
+                if "description" in enum_val:
+                    ET.SubElement(ev_elem, "description").text = enum_val["description"]
+                if "value" in enum_val:
+                    ET.SubElement(ev_elem, "value").text = enum_val["value"]
         
         return field_elem
     
@@ -280,7 +299,6 @@ class SVDGenerator:
                     # 找到device标签行
                     if 'schemaVersion="' in stripped and 'xmlns:xs="' in stripped:
                         # 提取属性
-                        import re
                         schema_match = re.search(r'schemaVersion="([^"]+)"', stripped)
                         xmlns_match = re.search(r'xmlns:xs="([^"]+)"', stripped)
                         schema_location_match = re.search(r'xs:noNamespaceSchemaLocation="([^"]+)"', stripped)
@@ -291,7 +309,11 @@ class SVDGenerator:
                             schema_location = schema_location_match.group(1)
                             
                             # 按照标准格式重写device标签
-                            formatted_line = f'  <device schemaVersion="{schema_version}"\n    xmlns:xs="{xmlns}"\n    xs:noNamespaceSchemaLocation="{schema_location}">'
+                            formatted_line = (
+                                f'  <device schemaVersion="{schema_version}"\n'
+                                f'    xmlns:xs="{xmlns}"\n'
+                                f'    xs:noNamespaceSchemaLocation="{schema_location}">'
+                            )
                             formatted_lines.append(formatted_line)
                         else:
                             formatted_lines.append(line)
@@ -309,5 +331,5 @@ class SVDGenerator:
             
         except Exception as e:
             # 如果美化失败，返回原始字符串
-            print(f"美化XML失败: {e}")
+            self.logger.error(f"美化XML失败: {e}")
             return xml_bytes.decode('utf-8')

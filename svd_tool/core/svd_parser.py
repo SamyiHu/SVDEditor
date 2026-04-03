@@ -13,6 +13,14 @@ from ..utils.logger import Logger
 class SVDParser:
     """SVD文件解析器"""
     
+    @staticmethod
+    def _get_direct_child(parent_node, tag_name: str):
+        """获取直接子节点中指定标签名的第一个元素（非递归）"""
+        for child in parent_node.childNodes:
+            if child.nodeType == child.ELEMENT_NODE and child.tagName == tag_name:
+                return child
+        return None
+    
     def __init__(self):
         self.device_info = DeviceInfo()
         self.warnings: List[str] = []
@@ -86,6 +94,9 @@ class SVDParser:
         self.stats = {k: 0 for k in self.stats.keys()}
         self.warnings.clear()
         
+        # 重置设备信息（避免多次解析数据合并）
+        self.device_info = DeviceInfo()
+        
         # 获取根节点
         root = dom.documentElement
         
@@ -101,6 +112,9 @@ class SVDParser:
         # 解析外设
         self._parse_peripherals(root)
         
+        # 解析外设继承关系
+        self._resolve_inheritance()
+        
         # 收集所有中断到设备信息
         self._collect_interrupts_to_device()
         
@@ -108,20 +122,20 @@ class SVDParser:
     
     def _parse_device_info(self, device_node):
         """解析设备信息"""
-        # 设备名称
-        name_nodes = device_node.getElementsByTagName("name")
-        if name_nodes and name_nodes[0].firstChild:
-            self.device_info.name = name_nodes[0].firstChild.data.strip()
+        # 设备名称 - 使用直接子节点搜索
+        name_node = self._get_direct_child(device_node, "name")
+        if name_node and name_node.firstChild:
+            self.device_info.name = name_node.firstChild.data.strip()
         
         # 设备版本
-        version_nodes = device_node.getElementsByTagName("version")
-        if version_nodes and version_nodes[0].firstChild:
-            self.device_info.version = version_nodes[0].firstChild.data.strip()
+        version_node = self._get_direct_child(device_node, "version")
+        if version_node and version_node.firstChild:
+            self.device_info.version = version_node.firstChild.data.strip()
         
         # 设备描述
-        desc_nodes = device_node.getElementsByTagName("description")
-        if desc_nodes and desc_nodes[0].firstChild:
-            self.device_info.description = desc_nodes[0].firstChild.data.strip()
+        desc_node = self._get_direct_child(device_node, "description")
+        if desc_node and desc_node.firstChild:
+            self.device_info.description = desc_node.firstChild.data.strip()
         
         # SVD版本
         if device_node.hasAttribute("schemaVersion"):
@@ -183,37 +197,37 @@ class SVDParser:
         self.logger.debug(f"CPU信息: {self.device_info.cpu.name} {self.device_info.cpu.revision}")
     
     def _parse_standard_fields(self, device_node):
-        """解析标准字段"""
+        """解析标准字段 - 使用直接子节点搜索避免匹配到嵌套的同名标签"""
         # 地址单元位数
-        addr_unit_nodes = device_node.getElementsByTagName("addressUnitBits")
-        if addr_unit_nodes and addr_unit_nodes[0].firstChild:
+        addr_unit_node = self._get_direct_child(device_node, "addressUnitBits")
+        if addr_unit_node and addr_unit_node.firstChild:
             try:
-                self.device_info.address_unit_bits = int(addr_unit_nodes[0].firstChild.data.strip())
+                self.device_info.address_unit_bits = int(addr_unit_node.firstChild.data.strip())
             except ValueError:
-                self.warnings.append(f"地址单元位数解析失败: {addr_unit_nodes[0].firstChild.data}")
+                self.warnings.append(f"地址单元位数解析失败: {addr_unit_node.firstChild.data}")
         
         # 数据宽度
-        width_nodes = device_node.getElementsByTagName("width")
-        if width_nodes and width_nodes[0].firstChild:
+        width_node = self._get_direct_child(device_node, "width")
+        if width_node and width_node.firstChild:
             try:
-                self.device_info.width = int(width_nodes[0].firstChild.data.strip())
+                self.device_info.width = int(width_node.firstChild.data.strip())
             except ValueError:
-                self.warnings.append(f"数据宽度解析失败: {width_nodes[0].firstChild.data}")
+                self.warnings.append(f"数据宽度解析失败: {width_node.firstChild.data}")
         
         # 大小
-        size_nodes = device_node.getElementsByTagName("size")
-        if size_nodes and size_nodes[0].firstChild:
-            self.device_info.size = size_nodes[0].firstChild.data.strip()
+        size_node = self._get_direct_child(device_node, "size")
+        if size_node and size_node.firstChild:
+            self.device_info.size = size_node.firstChild.data.strip()
         
         # 复位值
-        reset_value_nodes = device_node.getElementsByTagName("resetValue")
-        if reset_value_nodes and reset_value_nodes[0].firstChild:
-            self.device_info.reset_value = reset_value_nodes[0].firstChild.data.strip()
+        reset_value_node = self._get_direct_child(device_node, "resetValue")
+        if reset_value_node and reset_value_node.firstChild:
+            self.device_info.reset_value = reset_value_node.firstChild.data.strip()
         
         # 复位掩码
-        reset_mask_nodes = device_node.getElementsByTagName("resetMask")
-        if reset_mask_nodes and reset_mask_nodes[0].firstChild:
-            self.device_info.reset_mask = reset_mask_nodes[0].firstChild.data.strip()
+        reset_mask_node = self._get_direct_child(device_node, "resetMask")
+        if reset_mask_node and reset_mask_node.firstChild:
+            self.device_info.reset_mask = reset_mask_node.firstChild.data.strip()
     
     def _parse_peripherals(self, device_node):
         """解析所有外设"""
@@ -271,13 +285,7 @@ class SVDParser:
         # 创建外设对象
         peripheral = Peripheral(name=name, base_address=base_address)
         
-        # 记录外设的XML起始行号
-        peripheral.xml_start_line = self.current_line
-        
-        # 更新行号（外设节点本身）
-        self.current_line += 1
-        
-        # 描述
+        # 描述 - 只查找直接子节点
         peripheral.description = ""  # 默认值
         for child in periph_node.childNodes:
             if child.nodeType == child.ELEMENT_NODE and child.tagName == "description":
@@ -289,29 +297,13 @@ class SVDParser:
         if not peripheral.description:
             peripheral.description = peripheral.name
         
-        # 记录外设的XML结束行号
-        peripheral.xml_end_line = self.current_line
-        
-        # 显示名称
-        peripheral.display_name = ""  # 默认值
-    
-        # 只查找直接的 displayName 子节点
+        # 显示名称 - 只查找直接子节点
+        peripheral.display_name = ""
         for child in periph_node.childNodes:
             if child.nodeType == child.ELEMENT_NODE and child.tagName == "displayName":
                 if child.firstChild:
                     peripheral.display_name = child.firstChild.data.strip()
-                break  # 找到第一个直接子节点就停止
-        
-        # 或者使用更精确的方法：
-        display_name = None
-        for child in periph_node.childNodes:
-            if child.nodeType == child.ELEMENT_NODE and child.tagName == "displayName":
-                if child.firstChild:
-                    display_name = child.firstChild.data.strip()
                 break
-    
-        # 如果没有找到，保持为空
-        peripheral.display_name = display_name if display_name else ""
         
         # 组名
         group_nodes = periph_node.getElementsByTagName("groupName")
@@ -392,11 +384,6 @@ class SVDParser:
         # 创建寄存器对象
         register = Register(name=name, offset=offset)
         
-        # 记录寄存器的XML起始行号
-        register.xml_start_line = self.current_line
-        
-        # 更新行号
-        self.current_line += 1
         
         # ----- 关键修复：回归简单直接的解析方式 -----
         
@@ -548,10 +535,88 @@ class SVDParser:
         # 枚举值 (如果存在)
         enum_nodes = field_node.getElementsByTagName("enumeratedValues")
         if enum_nodes:
-            # 这里可以解析枚举值，但为了简化，我们先跳过
-            pass
+            field.enumerated_values = self._parse_enumerated_values(enum_nodes[0])
         
         return field
+    
+    def _parse_enumerated_values(self, enum_values_node) -> List[Dict[str, str]]:
+        """解析枚举值"""
+        result = []
+        enum_value_nodes = enum_values_node.getElementsByTagName("enumeratedValue")
+        for ev_node in enum_value_nodes:
+            try:
+                enum_entry = {}
+                name_nodes = ev_node.getElementsByTagName("name")
+                if name_nodes and name_nodes[0].firstChild:
+                    enum_entry["name"] = name_nodes[0].firstChild.data.strip()
+                else:
+                    continue
+                
+                desc_nodes = ev_node.getElementsByTagName("description")
+                if desc_nodes and desc_nodes[0].firstChild:
+                    enum_entry["description"] = desc_nodes[0].firstChild.data.strip()
+                
+                value_nodes = ev_node.getElementsByTagName("value")
+                if value_nodes and value_nodes[0].firstChild:
+                    enum_entry["value"] = value_nodes[0].firstChild.data.strip()
+                
+                result.append(enum_entry)
+            except Exception as e:
+                self.warnings.append(f"解析枚举值失败: {str(e)}")
+        return result
+    
+    def _resolve_inheritance(self):
+        """解析外设继承关系（derivedFrom）"""
+        # 需要多次迭代，因为继承链可能有多层
+        max_iterations = 10  # 防止无限循环
+        for _ in range(max_iterations):
+            resolved_any = False
+            for name, peripheral in list(self.device_info.peripherals.items()):
+                if peripheral.derived_from:
+                    parent_name = peripheral.derived_from
+                    if parent_name in self.device_info.peripherals:
+                        parent = self.device_info.peripherals[parent_name]
+                        # 只继承当前为空的字段（即外设自身未定义的内容）
+                        if not peripheral.registers and parent.registers:
+                            peripheral.registers = {
+                                reg_name: Register(
+                                    name=reg.name,
+                                    offset=reg.offset,
+                                    description=reg.description,
+                                    display_name=reg.display_name,
+                                    size=reg.size,
+                                    access=reg.access,
+                                    reset_value=reg.reset_value,
+                                    reset_mask=reg.reset_mask,
+                                    fields={
+                                        f_name: Field(
+                                            name=f.name,
+                                            description=f.description,
+                                            display_name=f.display_name,
+                                            bit_offset=f.bit_offset,
+                                            bit_width=f.bit_width,
+                                            access=f.access,
+                                            reset_value=f.reset_value,
+                                            enumerated_values=list(f.enumerated_values)
+                                        ) for f_name, f in reg.fields.items()
+                                    }
+                                ) for reg_name, reg in parent.registers.items()
+                            }
+                            resolved_any = True
+                        if not peripheral.interrupts and parent.interrupts:
+                            peripheral.interrupts = list(parent.interrupts)
+                            resolved_any = True
+                        if not peripheral.description or peripheral.description == peripheral.name:
+                            if parent.description and parent.description != parent.name:
+                                peripheral.description = parent.description
+                    else:
+                        self.warnings.append(
+                            f"外设 {name} 的继承源 {parent_name} 不存在"
+                        )
+                    # 继承完成后清除 derived_from 标记（不再需要）
+                    # 保留原始值以便生成器可以重新输出
+            if not resolved_any:
+                break
     
     def _parse_interrupts_for_peripheral(self, periph_node, peripheral: Peripheral):
         """为外设解析中断"""

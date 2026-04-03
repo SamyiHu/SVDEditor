@@ -12,20 +12,17 @@
   "menu.tools.validate": "Validate Data",
   "menu.tools.generate": "Generate SVD",
   "menu.help.about": "About",
-  
   "menu.file.new": "New",
   "menu.file.open": "Open",
   "menu.file.save": "Save",
   "menu.file.save_as": "Save As",
   "menu.file.export": "Export",
   "menu.file.exit": "Exit",
-  
   "menu.edit.undo": "Undo",
   "menu.edit.redo": "Redo",
   "menu.edit.cut": "Cut",
   "menu.edit.copy": "Copy",
   "menu.edit.paste": "Paste",
-  
   "button.add": "Add",
   "button.edit": "Edit",
   "button.save": "Save",
@@ -33,56 +30,48 @@
   "button.ok": "OK",
   "button.yes": "Yes",
   "button.no": "No",
-  
+  "button.clear": "Clear",
+  "button.next": "Next",
+  "button.previous": "Previous",
   "button.add_peripheral": "Add Peripheral",
   "button.add_register": "Add Register",
   "button.add_field": "Add Field",
   "button.add_interrupt": "Add Interrupt",
-  
   "button.delete": "Delete",
   "button.move_up": "Move Up",
   "button.move_down": "Move Down",
   "button.sort": "Sort",
-  
   "button.generate": "Generate",
   "button.preview": "Preview",
   "button.enabled": "Enabled",
   "button.disabled": "Disabled",
   "button.refresh": "Refresh",
   "button.jump_to_selection": "Jump to Selection",
-  
   "tab.basic_info": "Basic Info",
   "tab.peripherals": "Peripherals",
   "tab.interrupts": "Interrupts",
   "tab.preview": "Preview",
-  
   "message.success": "Success",
   "message.warning": "Warning",
   "message.error": "Error",
   "message.info": "Information",
-  
   "message.file_loaded": "File loaded",
   "message.file_saved": "File saved",
   "message.file_load_failed": "File load failed",
   "message.file_save_failed": "File save failed",
-  
   "msg.validation_passed": "Validation passed",
   "msg.validation_failed": "Validation failed",
-  
   "message.confirm_delete": "Are you sure you want to delete?",
   "message.confirm_exit": "Are you sure you want to exit?",
   "message.unsaved_changes": "There are unsaved changes",
-  
   "error.file_not_found": "File not found",
   "error.invalid_format": "Invalid format",
   "error.validation_failed": "Validation failed",
   "error.parse_failed": "Parse failed",
   "error.generate_failed": "Generation failed",
-  
   "tip.select_item": "Please select an item",
   "tip.drag_drop": "Drag and drop to reorder",
   "tip.search": "Enter search text",
-  
   "msg.parse_warning": "Parse Warning",
   "msg.load_error": "Load Error",
   "msg.save_success": "Save Success",
@@ -93,12 +82,12 @@
   "msg.sort_error": "Sort Error",
   "msg.confirm_delete": "Confirm Delete",
   "msg.confirm_batch_delete": "Confirm Batch Delete",
+  "msg.validation_error": "Validation Error",
   "msg.log_panel_not_created": "Log panel not created",
   "msg.log_content_empty": "Log content is empty",
   "msg.log_save_success": "Log saved successfully",
   "msg.log_save_error": "Error saving log",
   "msg.create_log_panel_error": "Failed to create log panel",
-  
   "msg.drag_drop_invalid_structure": "Drag and drop operation resulted in invalid tree structure, restored",
   "msg.select_peripheral_first": "Please select a peripheral first",
   "msg.select_register_first": "Please select a register first",
@@ -124,16 +113,17 @@
   "msg.save_log_error_detail": "Error saving log:\n{error}",
   "msg.validation_error_detail": "Error during validation process:\n{error}",
   "msg.more_warnings": "\n...and {count} more warnings",
-  
   "msg.confirm_delete_register": "Are you sure you want to delete register '{name}'?",
   "msg.confirm_delete_field": "Are you sure you want to delete field '{name}'?",
   "msg.confirm_delete_interrupt": "Are you sure you want to delete interrupt '{name}'?",
   "msg.confirm_delete_multiple_registers": "Are you sure you want to delete selected {count} registers?",
   "msg.language_changed": "Language changed to: {language}",
-  
   "label.basic_info": "Basic Info",
   "label.auto_refresh": "Auto Refresh",
   "label.ic_model": "IC Model",
+  "label.load_mode": "Load Mode",
+  "label.search": "Search",
+  "label.type": "Type",
   "label.ic_description": "IC Description",
   "label.version": "Version",
   "label.svd_version": "SVD Version",
@@ -154,7 +144,6 @@
   "label.register": "Register",
   "label.field": "Field",
   "label.address": "Address",
-  
   "placeholder.ic_model": "e.g.: STM32F103C8",
   "placeholder.ic_description": "e.g.: 32-bit ARM Cortex-M3 microcontroller",
   "placeholder.version": "e.g.: 1.0",
@@ -168,16 +157,15 @@
   "placeholder.name": "e.g.: GPIOA",
   "placeholder.interrupt_name": "e.g.: EXTI0",
   "placeholder.interrupt_description": "e.g.: External interrupt line 0",
-  
+  "placeholder.search_blocks": "Search blocks...",
+  "placeholder.size": "e.g.: 0x20",
   "unit.bits": "bits",
   "unit.bytes": "bytes",
   "unit.hex": "0x",
-  
   "access.read_only": "Read-only",
   "access.write_only": "Write-only",
   "access.read_write": "Read/Write",
   "access.write_once": "Write Once",
-  
   "label.endian": "Endianness",
   "label.mpu_exists": "MPU Exists",
   "label.fpu_exists": "FPU Exists",
@@ -190,24 +178,20 @@
   "label.license": "License",
   "label.detailed_description": "Detailed Description",
   "label.enter_detailed_description": "Enter detailed description of the device...",
-  
   "value.yes": "Yes",
   "value.no": "No",
   "value.little": "little",
   "value.big": "big",
   "value.selectable": "selectable",
-  
   "license.do_not_display": "Do Not Display",
   "license.apache_2_0": "Apache-2.0",
   "license.mit": "MIT",
   "license.bsd_3_clause": "BSD-3-Clause",
   "license.proprietary": "Proprietary",
   "license.other": "Other",
-  
   "placeholder.company_name": "e.g.: STM",
   "placeholder.copyright_info": "e.g.: Copyright 2025 STMicroelectronics. All rights reserved.",
   "placeholder.author": "e.g.: SVD Tool Team",
-  
   "tooltip.add_peripheral": "Add new peripheral",
   "tooltip.add_register": "Add register under selected peripheral",
   "tooltip.add_field": "Add field under selected register",
@@ -226,7 +210,6 @@
   "tooltip.generate_svd": "Generate SVD file",
   "tooltip.preview_xml": "Preview XML",
   "tooltip.about": "About SVD Tool",
-  
   "label.peripheral_tree": "Peripheral Tree",
   "label.register_tree": "Register Tree",
   "label.field_table": "Field Table",
@@ -245,18 +228,13 @@
   "label.bit_width_column": "Bit Width",
   "label.reset_value_column": "Reset Value",
   "label.display_name_column": "Display Name",
-  
   "label.no_peripheral_selected": "No peripheral selected",
   "label.no_register_selected": "No register selected",
   "label.no_field_selected": "No field selected",
   "label.select_peripheral_to_view_registers": "Select peripheral to view registers",
   "label.select_register_to_view_fields": "Select register to view fields",
-  
-
   "label.base_address": "Base Address",
   "label.address_block": "Address Block",
-
-  
   "label.add_peripheral": "Add Peripheral",
   "label.edit_peripheral": "Edit Peripheral",
   "label.delete_peripheral": "Delete Peripheral",
@@ -269,7 +247,6 @@
   "label.add_interrupt": "Add Interrupt",
   "label.edit_interrupt": "Edit Interrupt",
   "label.delete_interrupt": "Delete Interrupt",
-  
   "label.dialog_title_add_peripheral": "Add Peripheral",
   "label.dialog_title_edit_peripheral": "Edit Peripheral",
   "label.dialog_title_add_register": "Add Register",
@@ -278,10 +255,8 @@
   "label.dialog_title_edit_field": "Edit Field",
   "label.dialog_title_add_interrupt": "Add Interrupt",
   "label.dialog_title_edit_interrupt": "Edit Interrupt",
-  
   "label.dialog_button_save": "Save",
   "label.dialog_button_cancel": "Cancel",
-  
   "label.peripheral_name": "Peripheral Name",
   "label.base_address_hex": "Base Address (0x)",
   "label.address_block_hex": "Address Block (0x)",
@@ -289,15 +264,12 @@
   "label.group_name": "Group Name",
   "label.access": "Access",
   "label.display_name": "Display Name",
-  
   "label.interrupt_name": "Interrupt Name",
   "label.interrupt_value": "Interrupt Value",
   "label.interrupt_description": "Interrupt Description",
   "label.peripheral": "Peripheral",
-  
   "label.xml_preview": "XML Preview",
   "label.no_data": "No Data",
-  
   "toolbar.main": "Main Toolbar",
   "toolbar.new": "New",
   "toolbar.open": "Open",
@@ -306,17 +278,13 @@
   "toolbar.redo": "Redo",
   "toolbar.generate_svd": "Generate SVD",
   "toolbar.preview": "Realtime Preview",
-  
   "tab.basic_info_tab": "Basic Info",
   "tab.peripheral_tab": "Peripherals/Registers",
   "tab.interrupt_tab": "Interrupts",
   "tab.preview_tab": "Preview/Export",
-  
   "button.export_file": "Export File",
-  
   "label.peripherals_registers": "Peripherals/Registers",
   "label.preview_export": "Preview/Export",
-  
   "label.no_register_data": "No Register Data",
   "label.no_peripheral_data": "No Peripheral Data",
   "label.register_bit_field": "Register Bit Field",
@@ -324,34 +292,28 @@
   "label.peripheral_address_map": "Peripheral Address Map: {name}",
   "label.address_range": "0x{start:08X} - 0x{end:08X}",
   "label.cannot_parse_address_data": "Cannot parse address data",
-  
   "label.tree_name": "Name",
   "label.tree_detail": "Detail",
   "label.base_address_prefix": "Base Address: ",
   "label.offset_prefix": "Offset: ",
   "label.bit_range": "Bit[{start}+{width-1}:{start}]",
-  
   "menu.edit_peripheral": "Edit Peripheral",
   "menu.delete_peripheral": "Delete Peripheral",
   "menu.copy_peripheral": "Copy Peripheral",
   "menu.paste_peripheral": "Paste Peripheral",
   "menu.add_register": "Add Register",
   "menu.sort_alphabetically": "Sort Alphabetically",
-  
   "menu.edit_register": "Edit Register",
   "menu.delete_register": "Delete Register",
   "menu.copy_register": "Copy Register",
   "menu.paste_register": "Paste Register",
   "menu.add_field": "Add Field",
-  
   "menu.edit_field": "Edit Field",
   "menu.delete_field": "Delete Field",
   "menu.copy_field": "Copy Field",
   "menu.paste_field": "Paste Field",
-
   "menu.edit_interrupt": "Edit Interrupt",
   "menu.delete_interrupt": "Delete Interrupt",
-  
   "status.peripherals": "Peripherals",
   "status.registers": "Registers",
   "status.fields": "Fields",
@@ -365,7 +327,12 @@
   "status.error": "Error",
   "status.selected": "Selected",
   "status.xml_edited": "XML edited",
-  
+  "status.edited_not_saved": "Edited, not saved",
+  "status.xml_saved": "XML saved",
+  "status.xml_parse_error": "XML parse error",
+  "status.loaded_blocks": "Loaded blocks",
+  "status.total_blocks": "Total blocks",
+  "status.visible_blocks": "Visible blocks",
   "error.device_name_empty": "Device name cannot be empty",
   "error.device_version_empty": "Device version cannot be empty",
   "error.peripheral_name_validation": "Peripheral name",
@@ -379,24 +346,25 @@
   "error.interrupt_number_validation": "Interrupt number",
   "error.validation_error_prefix": "Validation failed: ",
   "error.unnamed_interrupt": "Unnamed",
-  
   "error.peripheral_validation_failed": "Peripheral '{name}' validation failed: {error}",
   "error.register_validation_failed": "Peripheral '{periph}' -> Register '{reg}' validation failed: {error}",
   "error.field_validation_failed": "Peripheral '{periph}' -> Register '{reg}' -> Field '{field}' validation failed: {error}",
   "error.interrupt_validation_failed": "Interrupt '{name}' validation failed: {error}",
   "error.validation_process_error": "Error during validation process: {error}",
-  
   "error.sort_peripherals_alphabetically_failed": "Sort peripherals alphabetically failed: {error}",
   "error.sort_peripherals_by_address_failed": "Sort peripherals by address failed: {error}",
   "error.sort_registers_by_address_failed": "Sort registers by address failed: {error}",
   "error.sort_fields_by_bit_offset_failed": "Sort fields by bit offset failed: {error}",
-  
   "error.move_peripheral_up_failed": "Move peripheral up failed: {error}",
   "error.move_peripheral_down_failed": "Move peripheral down failed: {error}",
-  
   "cmd.add_peripheral": "Add peripheral: {name}",
   "cmd.delete_peripheral": "Delete peripheral: {name}",
-  
+  "cmd.rename_peripheral": "Rename peripheral: {old_name} -> {new_name}",
+  "cmd.update_peripheral": "Update peripheral: {name}",
+  "cmd.update_register": "Update register: {name}",
+  "cmd.update_field": "Update field: {name}",
+  "cmd.update_interrupt": "Update interrupt: {name}",
+  "cmd.save_edited_xml": "Save edited XML",
   "search.label": "Search:",
   "search.placeholder": "Search peripherals/registers/fields...",
   "search.prev": "Previous",
@@ -405,7 +373,11 @@
   "search.no_results": "No results found containing '{text}'",
   "search.undo": "Undo last operation",
   "search.redo": "Redo last operation",
-  
+  "search_type.all": "All",
+  "search_type.peripheral": "Peripheral",
+  "search_type.register": "Register",
+  "search_type.field": "Field",
+  "search_type.interrupt": "Interrupt",
   "warning.dialog_factory_not_found": "Dialog factory not found",
   "warning.irq_table_not_found": "Interrupt table not found",
   "warning.field_table_not_found": "field_table widget not found",
@@ -418,26 +390,18 @@
   "warning.search_next_btn_not_found": "search_next_btn widget not found",
   "warning.periph_tree_not_found_2": "periph_tree widget not found",
   "warning.irq_table_not_found_3": "irq_table widget not found",
-  
-
   "label.register_name": "Register Name",
   "label.field_name": "Field Name",
-
- 
   "label.address_block_offset": "Address Block Offset",
   "label.address_block_size": "Address Block Size",
   "label.derived_from": "Derived From",
-
-  
   "placeholder.base_address": "e.g.: 0x40000000",
   "placeholder.group_name": "Group Name",
   "placeholder.offset": "e.g.: 0x0C",
   "placeholder.optional_display_name": "Optional Display Name",
   "placeholder.field_description": "Field Description",
   "placeholder.register_description": "Register Description",
-  
   "value.none": "None",
-  
   "error.address_block_size_validation": "Address block size",
   "error.reset_value_validation": "Reset value",
   "error.size_validation": "Size",
@@ -445,11 +409,24 @@
   "error.derived_peripheral_not_exist": "Derived peripheral '{derived_from}' does not exist",
   "error.register_name_exists": "Register name '{name}' already exists",
   "error.peripheral_name_exists": "Peripheral name '{name}' already exists",
-  
   "label.preview_mode": "Preview Mode",
   "label.show_preview": "Show Preview",
   "preview_mode.tab": "Tab",
   "preview_mode.bottom": "Bottom",
   "preview_mode.dock": "Dock Window",
-  "preview_mode.expanded": "Expanded"
+  "preview_mode.expanded": "Expanded",
+  "load_mode.visible": "Visible",
+  "load_mode.selected": "Selected",
+  "load_mode.all": "All",
+  "type.device": "Device",
+  "type.peripheral": "Peripheral",
+  "type.register": "Register",
+  "type.field": "Field",
+  "error.title": "Error",
+  "label.click_to_jump": "Click to jump to source peripheral",
+  "label.from_source": "From",
+  "menu.view.en_US": "English",
+  "menu.view.zh_CN": "中文",
+  "message.validation_failed": "Validation Failed",
+  "message.validation_passed": "Validation Passed"
 }

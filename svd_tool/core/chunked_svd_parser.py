@@ -135,6 +135,9 @@ class ChunkedSVDParser:
         self.warnings.clear()
         self.block_positions.clear()
         
+        # 重置设备信息（避免多次解析数据合并）
+        self.device_info = DeviceInfo()
+        
         # 获取根节点
         root = dom.documentElement
         
@@ -591,7 +594,8 @@ class ChunkedSVDParser:
                 peripheral.interrupts.append({
                     "name": interrupt.name,
                     "value": interrupt.value,
-                    "description": interrupt.description
+                    "description": interrupt.description,
+                    "peripheral": peripheral.name
                 })
                 
                 self.stats["interrupts"] += 1

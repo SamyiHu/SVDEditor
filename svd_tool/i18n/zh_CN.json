@@ -2,19 +2,16 @@
   "menu.file": "文件",
   "menu.edit": "编辑",
   "menu.view": "视图",
-  
   "menu.file.new": "新建",
   "menu.file.open": "打开SVD",
   "menu.file.save": "保存SVD",
   "menu.file.save_as": "另存为",
   "menu.file.exit": "退出",
-  
   "menu.edit.undo": "撤消",
   "menu.edit.redo": "重做",
   "menu.edit.cut": "剪切",
   "menu.edit.copy": "复制",
   "menu.edit.paste": "粘贴",
-  
   "menu.view.expand_all": "展开所有",
   "menu.view.collapse_all": "折叠所有",
   "menu.view.language": "语言",
@@ -25,10 +22,8 @@
   "menu.tools.validate": "验证数据",
   "menu.tools.generate": "生成SVD",
   "menu.help.about": "关于",
-  
   "menu.view.zh_CN": "中文",
   "menu.view.en_US": "English",
-  
   "button.add": "添加",
   "button.edit": "编辑",
   "button.delete": "删除",
@@ -37,16 +32,16 @@
   "button.ok": "确定",
   "button.yes": "是",
   "button.no": "否",
-  
+  "button.clear": "清除",
+  "button.next": "下一个",
+  "button.previous": "上一个",
   "button.add_peripheral": "添加外设",
   "button.add_register": "添加寄存器",
   "button.add_field": "添加位域",
   "button.add_interrupt": "添加中断",
-  
   "button.move_up": "上移",
   "button.move_down": "下移",
   "button.sort": "排序",
-  
   "button.generate": "生成",
   "button.preview": "预览",
   "button.export_file": "导出文件",
@@ -54,39 +49,31 @@
   "button.disabled": "已禁用",
   "button.refresh": "刷新",
   "button.jump_to_selection": "跳转到选中",
-  
   "tab.basic_info": "基本信息",
   "tab.peripherals": "外设",
   "tab.interrupts": "中断",
   "tab.preview": "预览",
-  
   "message.success": "成功",
   "message.warning": "警告",
   "message.error": "错误",
   "message.info": "信息",
-  
   "message.file_loaded": "文件已加载",
   "message.file_saved": "文件已保存",
   "message.file_load_failed": "文件加载失败",
   "message.file_save_failed": "文件保存失败",
-  
   "message.validation_passed": "验证通过",
   "message.validation_failed": "验证失败",
-  
   "message.confirm_delete": "确定要删除吗？",
   "message.confirm_exit": "确定要退出吗？",
   "message.unsaved_changes": "有未保存的更改",
-  
   "error.file_not_found": "文件未找到",
   "error.invalid_format": "无效的格式",
   "error.validation_failed": "验证失败",
   "error.parse_failed": "解析失败",
   "error.generate_failed": "生成失败",
-  
   "tip.select_item": "请选择一个项目",
   "tip.drag_drop": "拖放以重新排序",
   "tip.search": "输入搜索文本",
-  
   "msg.parse_warning": "解析警告",
   "msg.load_error": "加载错误",
   "msg.save_success": "保存成功",
@@ -99,12 +86,12 @@
   "msg.sort_error": "排序错误",
   "msg.confirm_delete": "确认删除",
   "msg.confirm_batch_delete": "确认批量删除",
+  "msg.validation_error": "验证错误",
   "msg.log_panel_not_created": "日志面板未创建",
   "msg.log_content_empty": "日志内容为空",
   "msg.log_save_success": "日志保存成功",
   "msg.log_save_error": "保存日志时出错",
   "msg.create_log_panel_error": "创建日志面板失败",
-  
   "msg.drag_drop_invalid_structure": "拖放操作导致无效的树结构，已恢复",
   "msg.select_peripheral_first": "请先选择一个外设",
   "msg.select_register_first": "请先选择一个寄存器",
@@ -130,16 +117,17 @@
   "msg.save_log_error_detail": "保存日志时出错:\n{error}",
   "msg.validation_error_detail": "验证过程中发生错误:\n{error}",
   "msg.more_warnings": "\n...还有{count}条警告",
-  
   "msg.confirm_delete_register": "确定要删除寄存器 '{name}' 吗？",
   "msg.confirm_delete_field": "确定要删除位域 '{name}' 吗？",
   "msg.confirm_delete_interrupt": "确定要删除中断 '{name}' 吗？",
   "msg.confirm_delete_multiple_registers": "确定要删除选中的 {count} 个寄存器吗？",
   "msg.language_changed": "语言已切换为: {language}",
-  
   "label.basic_info": "基本信息",
   "label.auto_refresh": "自动刷新",
   "label.ic_model": "IC型号",
+  "label.load_mode": "加载模式",
+  "label.search": "搜索",
+  "label.type": "类型",
   "label.ic_description": "IC描述",
   "label.version": "版本号",
   "label.svd_version": "SVD版本",
@@ -161,7 +149,6 @@
   "label.field": "位域",
   "label.address": "地址",
   "label.base_address": "基地址",
-  
   "placeholder.ic_model": "例如: STM32F103C8",
   "placeholder.ic_description": "例如: 32位ARM Cortex-M3微控制器",
   "placeholder.version": "例如: 1.0",
@@ -175,16 +162,15 @@
   "placeholder.name": "例如: GPIOA",
   "placeholder.interrupt_name": "例如: EXTI0",
   "placeholder.interrupt_description": "例如: 外部中断线0",
-  
+  "placeholder.search_blocks": "搜索块...",
+  "placeholder.size": "例如: 0x20",
   "unit.bits": "位",
   "unit.bytes": "字节",
   "unit.hex": "0x",
-  
   "access.read_only": "只读",
   "access.write_only": "只写",
   "access.read_write": "读写",
   "access.write_once": "写一次",
-  
   "label.endian": "端序",
   "label.mpu_exists": "MPU存在",
   "label.fpu_exists": "FPU存在",
@@ -197,24 +183,20 @@
   "label.license": "许可证",
   "label.detailed_description": "详细描述",
   "label.enter_detailed_description": "输入设备的详细描述...",
-  
   "value.yes": "是",
   "value.no": "否",
   "value.little": "little",
   "value.big": "big",
   "value.selectable": "selectable",
-  
   "license.do_not_display": "不显示",
   "license.apache_2_0": "Apache-2.0",
   "license.mit": "MIT",
   "license.bsd_3_clause": "BSD-3-Clause",
   "license.proprietary": "Proprietary",
   "license.other": "Other",
-  
   "placeholder.company_name": "例如: STM",
   "placeholder.copyright_info": "例如: Copyright 2025 STMicroelectronics. All rights reserved.",
   "placeholder.author": "例如: SVD Tool Team",
-  
   "tooltip.add_peripheral": "添加新的外设",
   "tooltip.add_register": "在当前选中的外设下添加寄存器",
   "tooltip.add_field": "在当前选中的寄存器下添加位域",
@@ -233,7 +215,6 @@
   "tooltip.generate_svd": "生成SVD文件",
   "tooltip.preview_xml": "预览XML",
   "tooltip.about": "关于SVD工具",
-  
   "label.peripheral_tree": "外设树",
   "label.register_tree": "寄存器树",
   "label.field_table": "位域表格",
@@ -252,15 +233,12 @@
   "label.bit_width_column": "位宽度",
   "label.reset_value_column": "复位值",
   "label.display_name_column": "显示名称",
-  
   "label.no_peripheral_selected": "未选择外设",
   "label.no_register_selected": "未选择寄存器",
   "label.no_field_selected": "未选择位域",
   "label.select_peripheral_to_view_registers": "选择外设以查看寄存器",
   "label.select_register_to_view_fields": "选择寄存器以查看位域",
-  
   "label.address_block": "地址块",
-  
   "label.add_peripheral": "添加外设",
   "label.edit_peripheral": "编辑外设",
   "label.delete_peripheral": "删除外设",
@@ -273,7 +251,6 @@
   "label.add_interrupt": "添加中断",
   "label.edit_interrupt": "编辑中断",
   "label.delete_interrupt": "删除中断",
-  
   "label.dialog_title_add_peripheral": "添加外设",
   "label.dialog_title_edit_peripheral": "编辑外设",
   "label.dialog_title_add_register": "添加寄存器",
@@ -282,25 +259,20 @@
   "label.dialog_title_edit_field": "编辑位域",
   "label.dialog_title_add_interrupt": "添加中断",
   "label.dialog_title_edit_interrupt": "编辑中断",
-  
   "label.dialog_button_save": "保存",
   "label.dialog_button_cancel": "取消",
-  
   "label.base_address_hex": "基地址(0x)",
   "label.address_block_hex": "地址块(0x)",
   "label.description": "描述",
   "label.group_name": "组名称",
   "label.access": "访问权限",
   "label.display_name": "显示名称",
-  
   "label.xml_preview": "XML预览",
   "label.no_data": "无数据",
-  
   "tab.basic_info_tab": "基本信息",
   "tab.peripheral_tab": "外设/寄存器",
   "tab.interrupt_tab": "中断",
   "tab.preview_tab": "预览/导出",
-  
   "toolbar.main": "主工具栏",
   "toolbar.new": "新建",
   "toolbar.open": "打开",
@@ -309,25 +281,20 @@
   "toolbar.redo": "重做",
   "toolbar.generate_svd": "生成SVD",
   "toolbar.preview": "实时预览",
-  
   "label.peripherals_registers": "外设/寄存器",
   "label.preview_export": "预览/导出",
-  
   "label.no_register_data": "无寄存器数据",
   "label.no_peripheral_data": "无外设数据",
   "label.register_bit_field": "寄存器位域: {name} (32位)",
   "label.peripheral_address_map": "外设地址映射: {name}",
   "label.address_range": "0x{start:08X} - 0x{end:08X}",
   "label.from_source": "来自",
-  "label.from_source": "来自",
   "label.cannot_parse_address_data": "无法解析地址数据",
-  
   "label.tree_name": "名称",
   "label.tree_detail": "详细信息",
   "label.base_address_prefix": "基地址: ",
   "label.offset_prefix": "偏移: ",
   "label.bit_range": "位[{start}+{width-1}:{start}]",
-  
   "status.peripherals": "外设",
   "status.registers": "寄存器",
   "status.fields": "位域",
@@ -344,28 +311,26 @@
   "status.edited_not_saved": "已编辑，未保存",
   "status.xml_saved": "XML已保存",
   "status.xml_parse_error": "XML解析错误",
-  
+  "status.loaded_blocks": "已加载块",
+  "status.total_blocks": "总块数",
+  "status.visible_blocks": "可见块",
   "menu.edit_peripheral": "编辑外设",
   "menu.delete_peripheral": "删除外设",
   "menu.copy_peripheral": "复制外设",
   "menu.paste_peripheral": "粘贴外设",
   "menu.add_register": "添加寄存器",
   "menu.sort_alphabetically": "按字母排序",
-  
   "menu.edit_register": "编辑寄存器",
   "menu.delete_register": "删除寄存器",
   "menu.copy_register": "复制寄存器",
   "menu.paste_register": "粘贴寄存器",
   "menu.add_field": "添加位域",
-  
   "menu.edit_field": "编辑位域",
   "menu.delete_field": "删除位域",
   "menu.copy_field": "复制位域",
   "menu.paste_field": "粘贴位域",
-
   "menu.edit_interrupt": "编辑中断",
   "menu.delete_interrupt": "删除中断",
-  
   "error.title": "错误",
   "error.device_name_empty": "设备名称不能为空",
   "error.device_version_empty": "设备版本不能为空",
@@ -380,25 +345,25 @@
   "error.interrupt_number_validation": "中断号",
   "error.validation_error_prefix": "验证失败: ",
   "error.unnamed_interrupt": "未命名",
-  
   "error.peripheral_validation_failed": "外设 '{name}' 验证失败: {error}",
   "error.register_validation_failed": "外设 '{periph}' -> 寄存器 '{reg}' 验证失败: {error}",
   "error.field_validation_failed": "外设 '{periph}' -> 寄存器 '{reg}' -> 位域 '{field}' 验证失败: {error}",
   "error.interrupt_validation_failed": "中断 '{name}' 验证失败: {error}",
   "error.validation_process_error": "验证过程中发生错误: {error}",
-  
   "error.sort_peripherals_alphabetically_failed": "按字母排序外设失败: {error}",
   "error.sort_peripherals_by_address_failed": "按地址排序外设失败: {error}",
   "error.sort_registers_by_address_failed": "按地址排序寄存器失败: {error}",
   "error.sort_fields_by_bit_offset_failed": "按位偏移排序位域失败: {error}",
-  
   "error.move_peripheral_up_failed": "上移外设失败: {error}",
   "error.move_peripheral_down_failed": "下移外设失败: {error}",
-  
   "cmd.add_peripheral": "添加外设: {name}",
   "cmd.delete_peripheral": "删除外设: {name}",
   "cmd.rename_peripheral": "重命名外设: {old_name} -> {new_name}",
-  
+  "cmd.update_peripheral": "更新外设: {name}",
+  "cmd.update_register": "更新寄存器: {name}",
+  "cmd.update_field": "更新位域: {name}",
+  "cmd.update_interrupt": "更新中断: {name}",
+  "cmd.save_edited_xml": "保存编辑的XML",
   "search.label": "搜索:",
   "search.placeholder": "搜索外设/寄存器/位域...",
   "search.prev": "上一个",
@@ -407,7 +372,11 @@
   "search.no_results": "未找到包含 '{text}' 的结果",
   "search.undo": "已撤消上一个操作",
   "search.redo": "已重做上一个操作",
-  
+  "search_type.all": "全部",
+  "search_type.peripheral": "外设",
+  "search_type.register": "寄存器",
+  "search_type.field": "位域",
+  "search_type.interrupt": "中断",
   "warning.dialog_factory_not_found": "对话框工厂未找到",
   "warning.irq_table_not_found": "中断表格未找到",
   "warning.field_table_not_found": "未找到field_table控件",
@@ -420,7 +389,6 @@
   "warning.search_next_btn_not_found": "未找到search_next_btn控件",
   "warning.periph_tree_not_found_2": "未找到periph_tree控件",
   "warning.irq_table_not_found_3": "未找到irq_table控件",
-  
   "label.peripheral_name": "外设名",
   "label.register_name": "寄存器名",
   "label.field_name": "位域名",
@@ -430,17 +398,14 @@
   "label.address_block_size": "地址块大小",
   "label.derived_from": "继承自",
   "label.peripheral": "关联外设",
-  
   "placeholder.base_address": "例如: 0x40000000",
   "placeholder.group_name": "分组名称",
   "placeholder.offset": "例如: 0x0C",
   "placeholder.optional_display_name": "可选的显示名称",
   "placeholder.field_description": "位域描述",
   "placeholder.register_description": "寄存器描述",
-  
   "value.none": "无",
   "label.click_to_jump": "点击跳转到源外设",
-  
   "error.address_block_size_validation": "地址块大小",
   "error.reset_value_validation": "复位值",
   "error.size_validation": "大小",
@@ -448,11 +413,20 @@
   "error.derived_peripheral_not_exist": "继承的外设 '{derived_from}' 不存在",
   "error.register_name_exists": "寄存器名 '{name}' 已存在",
   "error.peripheral_name_exists": "外设名 '{name}' 已存在",
-  
   "label.preview_mode": "预览模式",
   "label.show_preview": "显示预览",
   "preview_mode.tab": "标签页",
   "preview_mode.bottom": "底部",
   "preview_mode.dock": "停靠窗口",
-  "preview_mode.expanded": "展开"
+  "preview_mode.expanded": "展开",
+  "load_mode.visible": "可见",
+  "load_mode.selected": "选中",
+  "load_mode.all": "全部",
+  "type.device": "设备",
+  "type.peripheral": "外设",
+  "type.register": "寄存器",
+  "type.field": "位域",
+  "label.interrupt_description": "中断描述",
+  "label.register_bit_field_32bit": "寄存器位域: {name} (32位)",
+  "menu.file.export": "导出"
 }

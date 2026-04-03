@@ -24,12 +24,13 @@ class Field:
     reset_value: str = "0x0"
     xml_start_line: int = 0  # XML起始行号
     xml_end_line: int = 0  # XML结束行号
+    enumerated_values: List[Dict[str, str]] = field(default_factory=list)
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         data = asdict(self)
-        # 移除空值
-        return {k: v for k, v in data.items() if v is not None and v != ""}
+        # 只移除None值，保留空字符串（空字符串是有意义的默认值）
+        return {k: v for k, v in data.items() if v is not None}
 
 
 @dataclass
@@ -46,10 +47,6 @@ class Register:
     fields: Dict[str, Field] = field(default_factory=dict)
     xml_start_line: int = 0  # XML起始行号
     xml_end_line: int = 0  # XML结束行号
-    xml_start_line: int = 0  # XML起始行号
-    xml_end_line: int = 0  # XML结束行号
-    xml_start_line: int = 0  # XML起始行号
-    xml_end_line: int = 0  # XML结束行号
 
 
     
@@ -57,8 +54,8 @@ class Register:
         """转换为字典"""
         data = asdict(self)
         data['fields'] = {name: field.to_dict() for name, field in self.fields.items()}
-        # 移除空值
-        return {k: v for k, v in data.items() if v is not None and v != ""}
+        # 只移除None值，保留空字符串（空字符串是有意义的默认值）
+        return {k: v for k, v in data.items() if v is not None}
 
 
 @dataclass
@@ -79,15 +76,13 @@ class Peripheral:
     interrupts: List[Dict[str, Any]] = field(default_factory=list)
     xml_start_line: int = 0  # XML起始行号
     xml_end_line: int = 0  # XML结束行号
-    xml_start_line: int = 0  # XML起始行号
-    xml_end_line: int = 0  # XML结束行号
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         data = asdict(self)
         data['registers'] = {name: reg.to_dict() for name, reg in self.registers.items()}
-        # 移除空值
-        return {k: v for k, v in data.items() if v is not None and v != ""}
+        # 只移除None值，保留空字符串（空字符串是有意义的默认值）
+        return {k: v for k, v in data.items() if v is not None}
 
 
 @dataclass
@@ -101,8 +96,8 @@ class Interrupt:
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         data = asdict(self)
-        # 移除空值
-        return {k: v for k, v in data.items() if v is not None and v != ""}
+        # 只移除None值，保留空字符串（空字符串是有意义的默认值）
+        return {k: v for k, v in data.items() if v is not None}
 
 
 @dataclass

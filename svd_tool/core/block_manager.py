@@ -437,8 +437,12 @@ class BlockManager:
             
             # 寄存器块（按偏移地址排序）
             peripheral = self.device_info.peripherals[periph_name]
-            reg_names = sorted(peripheral.registers.keys(), 
-                            key=lambda x: int(peripheral.registers[x].offset, 0))
+            def _safe_offset(name):
+                try:
+                    return int(peripheral.registers[name].offset, 0)
+                except (ValueError, TypeError):
+                    return 0
+            reg_names = sorted(peripheral.registers.keys(), key=_safe_offset)
             for reg_name in reg_names:
                 ordered_keys.append(f"register:{periph_name}:{reg_name}")
                 
