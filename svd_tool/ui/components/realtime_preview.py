@@ -1722,14 +1722,64 @@ class RealtimePreviewWidget(QWidget):
         self._jump_to_line(start_line)
     
     def _jump_to_line(self, line_num: int):
-        """跳转到指定行"""
+        """跳转到指定行（带平滑滚动动画和居中）"""
         self.logger.info(f"跳转到行 {line_num}")
+        
+        # 保存当前滚动位置
+        scrollbar = self.preview_edit.verticalScrollBar()
+        old_value = scrollbar.value()
+        
+        # 设置光标到目标行
         cursor = QTextCursor(self.preview_edit.document())
         cursor.movePosition(QTextCursor.MoveOperation.Start)
         cursor.movePosition(QTextCursor.MoveOperation.NextBlock, QTextCursor.MoveMode.MoveAnchor, line_num - 1)
         self.preview_edit.setTextCursor(cursor)
-        self.preview_edit.ensureCursorVisible()
-        self.logger.info(f"已跳转到行 {line_num}")
+        
+        # 临时居中光标以获取目标滚动位置
+        self.preview_edit.centerCursor()
+        target_value = scrollbar.value()
+        
+        # 如果位置没变，无需动画
+        if abs(old_value - target_value) < 5:
+            self.logger.info(f"已跳转到行 {line_num}，位置不变")
+            return
+        
+        # 先滚回原位，然后用动画平滑滚动到目标位置
+        scrollbar.setValue(old_value)
+        self._animate_scroll_to(target_value)
+        
+        self.logger.info(f"已跳转到行 {line_num}，从 {old_value} 滚动到 {target_value}")
+    
+    def _animate_scroll_to(self, target_value: int):
+        """平滑滚动到目标位置"""
+        try:
+            from PyQt6.QtCore import QPropertyAnimation, QEasingCurve
+            scrollbar = self.preview_edit.verticalScrollBar()
+            current_value = scrollbar.value()
+            
+            # 如果距离很近，直接跳转
+            if abs(current_value - target_value) < 5:
+                scrollbar.setValue(target_value)
+                return
+            
+            # 创建滚动动画
+            if not hasattr(self, '_scroll_animation'):
+                self._scroll_animation = QPropertyAnimation(scrollbar, b"value")
+                self._scroll_animation.setDuration(300)  # 300ms
+                self._scroll_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+            
+            # 停止之前的动画
+            self._scroll_animation.stop()
+            
+            # 设置动画参数
+            self._scroll_animation.setStartValue(current_value)
+            self._scroll_animation.setEndValue(target_value)
+            
+            # 启动动画
+            self._scroll_animation.start()
+        except Exception as e:
+            self.logger.warning(f"滚动动画失败，直接跳转: {e}")
+            self.preview_edit.verticalScrollBar().setValue(target_value)
     
     def on_text_changed(self):
         """文本变化回调"""

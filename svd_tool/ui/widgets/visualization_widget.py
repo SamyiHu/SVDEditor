@@ -80,20 +80,6 @@ class VisualizationWidget(QWidget):
         else:
             logger.debug("Tree widget not available")
         
-        # 直接调用主窗口的 on_jump_to_peripheral 方法（主要方案）
-        if hasattr(self, 'main_window') and self.main_window:
-            logger.debug("Calling main_window.on_jump_to_peripheral directly")
-            logger.debug(f"hasattr(self.main_window, 'on_jump_to_peripheral'): {hasattr(self.main_window, 'on_jump_to_peripheral')}")
-            logger.debug(f"self.main_window.on_jump_to_peripheral: {getattr(self.main_window, 'on_jump_to_peripheral', None)}")
-            try:
-                self.main_window.on_jump_to_peripheral(source_peripheral_name)
-                logger.debug("main_window.on_jump_to_peripheral called")
-            except Exception as e:
-                logger.error(f"Error calling main_window.on_jump_to_peripheral: {e}")
-                logger.exception("Traceback:")
-        else:
-            logger.debug("main_window not available")
-        
         # 如果state_manager可用，也更新状态管理器的选择状态
         if self.state_manager:
             # 设置选中的外设为源外设

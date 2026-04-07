@@ -88,14 +88,15 @@ class BitFieldWidget(QWidget):
         if not self.fields:
             self.setMinimumHeight(120)
             return
-        # 检查是否有需要外部标签的窄位域
-        has_narrow_fields = any(
-            self._get_field_pixel_width(f) < 50 for f in self.fields
-        )
-        if has_narrow_fields:
+        # 所有位域都有外部标签，需要足够的空间
+        # 根据位域数量估算可能需要的行数（避免标签重叠）
+        num_fields = len(self.fields)
+        if num_fields <= 8:
             self.setMinimumHeight(220)
+        elif num_fields <= 16:
+            self.setMinimumHeight(250)
         else:
-            self.setMinimumHeight(170)
+            self.setMinimumHeight(280)
     
     def _get_field_pixel_width(self, field):
         """估算位域的像素宽度"""
@@ -385,10 +386,10 @@ class BitFieldWidget(QWidget):
                 painter.drawLine(int(x), ruler_y, int(x), ruler_y + 5)
     
     def _paint_external_labels(self, painter: QPainter):
-        """绘制外部标签（用于窄位域）"""
+        """绘制外部标签（每个位域都显示下标）"""
         label_y_base = self._bit_area_y + self._bit_area_height + 30
         
-        # 收集需要外部标签的位域
+        # 每个位域都需要外部标签显示下标
         labels_needed = []
         for idx, field in enumerate(self.fields):
             try:
@@ -399,22 +400,28 @@ class BitFieldWidget(QWidget):
                 x2 = self._get_bit_x(start + bit_width_val)
                 field_width = x2 - x1
                 
-                # 窄位域或名字显示不下的位域需要外部标签
+                # 所有位域都生成外部标签（确保下标始终可见）
+                center_x = (x1 + x2) / 2
+                bit_range_text = f"[{start}:{start + bit_width_val - 1}]"
+                
+                # 判断位域内部是否已经完整显示了名称+下标
                 fm = QFontMetrics(QFont("Arial", 8))
                 name_width = fm.horizontalAdvance(field.name)
+                range_width = fm.horizontalAdvance(bit_range_text)
+                total_needed = max(name_width, range_width) + 8
+                is_fully_shown_inside = field_width >= total_needed and field_width >= 40
                 
-                if field_width < name_width + 4 or field_width < 30:
-                    center_x = (x1 + x2) / 2
-                    bit_range_text = f"[{start}:{start + bit_width_val - 1}]"
-                    labels_needed.append({
-                        'field': field,
-                        'center_x': center_x,
-                        'x1': x1,
-                        'x2': x2,
-                        'bit_range': bit_range_text,
-                        'color': self._get_field_color(idx),
-                        'index': idx
-                    })
+                labels_needed.append({
+                    'field': field,
+                    'center_x': center_x,
+                    'x1': x1,
+                    'x2': x2,
+                    'bit_range': bit_range_text,
+                    'color': self._get_field_color(idx),
+                    'index': idx,
+                    'is_fully_shown_inside': is_fully_shown_inside,
+                    'field_width': field_width
+                })
             except (ValueError, AttributeError):
                 continue
         
