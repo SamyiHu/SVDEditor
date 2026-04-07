@@ -1020,13 +1020,40 @@ class MainWindowRefactored(QMainWindow):
                 if target_type != "peripheral":
                     event.ignore()
                     return
+                target_name = self.tree_manager.get_item_name(target_item)
+        else:
+            event.ignore()
+            return
         
-        # 执行拖放
+        # 如果拖到自身，忽略
+        if source_name == target_name:
+            event.ignore()
+            return
+        
+        # 保存展开状态
+        expanded_paths = self.peripheral_manager._get_expanded_items(periph_tree)
+        
+        # 执行拖放（使用Qt默认行为移动树节点）
         from PyQt6.QtWidgets import QTreeWidget
         QTreeWidget.dropEvent(periph_tree, event)
         
         # 拖放后验证并修正树结构
         self._validate_and_fix_tree_structure_after_drop(source_name)
+        
+        # 恢复展开状态
+        periph_tree_block = periph_tree.blockSignals(True)
+        # 重新应用展开状态
+        for i in range(periph_tree.topLevelItemCount()):
+            item = periph_tree.topLevelItem(i)
+            if item and item.text(0) in expanded_paths:
+                item.setExpanded(True)
+            # 检查子项
+            for j in range(item.childCount() if item else 0):
+                child = item.child(j)
+                child_path = f"{item.text(0)}/{child.text(0)}" if item else ""
+                if child and child_path in expanded_paths:
+                    child.setExpanded(True)
+        periph_tree.blockSignals(periph_tree_block)
     
     def _validate_and_fix_tree_structure_after_drop(self, moved_periph_name):
         """拖放后验证并修正树结构"""
