@@ -10,7 +10,8 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QLabel,
     QLineEdit, QPushButton, QGroupBox, QSplitter,
     QTreeWidget, QTreeWidgetItem, QHeaderView, QTextEdit,
-    QTableWidget, QTableWidgetItem, QComboBox, QSpinBox, QCheckBox
+    QTableWidget, QTableWidgetItem, QComboBox, QSpinBox, QCheckBox,
+    QFormLayout, QGridLayout, QFrame
 )
 from PyQt6.QtCore import Qt
 from ...i18n.i18n import t
@@ -20,12 +21,6 @@ class TabBuilder:
     """标签页构建器"""
 
     def __init__(self, main_window):
-        """
-        初始化标签页构建器
-
-        Args:
-            main_window: 主窗口实例
-        """
         self.main_window = main_window
         self.logger = logging.getLogger("TabBuilder")
 
@@ -33,42 +28,55 @@ class TabBuilder:
         """创建基础信息标签页（优化版）"""
         self.logger.debug("create_basic_info_tab开始")
         try:
-            from PyQt6.QtWidgets import QFormLayout, QGridLayout, QFrame
-            from PyQt6.QtCore import Qt
-
             tab = QWidget()
             layout = QVBoxLayout(tab)
-            layout.setSpacing(0)
-            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(10)
+            layout.setContentsMargins(16, 12, 16, 12)
 
-            # 设备信息组（使用网格布局，更整齐）
-            device_group = QGroupBox(t("label.basic_info"))
-            device_group.setStyleSheet("""
+            # 统一的分组样式 - 现代卡片风格
+            group_style = """
                 QGroupBox {
                     font-weight: bold;
-                    border: 1px solid #CCCCCC;
-                    border-radius: 5px;
-                    margin-top: 10px;
-                    padding: 10px;
+                    font-size: 10pt;
+                    color: #333333;
+                    border: 1px solid #E0E0E0;
+                    border-radius: 8px;
+                    margin-top: 14px;
+                    padding: 12px;
+                    padding-top: 24px;
+                    background-color: #FFFFFF;
                 }
-            """)
+                QGroupBox::title {
+                    subcontrol-origin: margin;
+                    subcontrol-position: top left;
+                    padding: 4px 12px;
+                    background-color: #FFFFFF;
+                    border: 1px solid #E0E0E0;
+                    border-radius: 4px;
+                    color: #2962FF;
+                }
+            """
+
+            # === 设备信息组 ===
+            device_group = QGroupBox(t("label.basic_info"))
+            device_group.setStyleSheet(group_style)
             device_layout = QGridLayout(device_group)
             device_layout.setSpacing(8)
-            device_layout.setContentsMargins(8, 15, 8, 8)
+            device_layout.setContentsMargins(12, 20, 12, 12)
 
             # 第一行：IC型号和描述
             ic_model_label = QLabel(t("label.ic_model") + ":")
             device_layout.addWidget(ic_model_label, 0, 0)
             ic_name_edit = QLineEdit()
             ic_name_edit.setPlaceholderText(t("placeholder.ic_model"))
-            ic_name_edit.setMinimumWidth(150)  # 设置最小宽度
+            ic_name_edit.setMinimumWidth(150)
             device_layout.addWidget(ic_name_edit, 0, 1)
 
             ic_desc_label = QLabel(t("label.ic_description") + ":")
             device_layout.addWidget(ic_desc_label, 0, 2)
             ic_desc_edit = QLineEdit()
             ic_desc_edit.setPlaceholderText(t("placeholder.ic_description"))
-            ic_desc_edit.setMinimumWidth(150)  # 设置最小宽度
+            ic_desc_edit.setMinimumWidth(150)
             device_layout.addWidget(ic_desc_edit, 0, 3)
 
             # 第二行：版本和SVD版本
@@ -76,7 +84,7 @@ class TabBuilder:
             device_layout.addWidget(version_label, 1, 0)
             version_edit = QLineEdit()
             version_edit.setPlaceholderText(t("placeholder.version"))
-            version_edit.setMaximumWidth(80)  # 版本号通常较短，限制最大宽度
+            version_edit.setMaximumWidth(80)
             device_layout.addWidget(version_edit, 1, 1)
 
             svd_version_label = QLabel(t("label.svd_version") + ":")
@@ -84,7 +92,7 @@ class TabBuilder:
             svd_version_combo = QComboBox()
             svd_version_combo.addItems(["1.0", "1.1", "1.2", "1.3", "1.3.1"])
             svd_version_combo.setCurrentText("1.3")
-            svd_version_combo.setMaximumWidth(80)  # SVD版本较短，限制最大宽度
+            svd_version_combo.setMaximumWidth(80)
             device_layout.addWidget(svd_version_combo, 1, 3)
 
             # 第三行：CPU名称和修订版
@@ -92,14 +100,14 @@ class TabBuilder:
             device_layout.addWidget(cpu_name_label, 2, 0)
             cpu_name_edit = QLineEdit()
             cpu_name_edit.setPlaceholderText(t("placeholder.cpu_name"))
-            cpu_name_edit.setMinimumWidth(150)  # CPU名称可能较长
+            cpu_name_edit.setMinimumWidth(150)
             device_layout.addWidget(cpu_name_edit, 2, 1)
 
             cpu_rev_label = QLabel(t("label.cpu_revision") + ":")
             device_layout.addWidget(cpu_rev_label, 2, 2)
             cpu_rev_edit = QLineEdit()
             cpu_rev_edit.setPlaceholderText(t("placeholder.cpu_revision"))
-            cpu_rev_edit.setMaximumWidth(80)  # CPU修订版通常较短（如r0p0）
+            cpu_rev_edit.setMaximumWidth(80)
             device_layout.addWidget(cpu_rev_edit, 2, 3)
 
             # 第四行：端序和MPU
@@ -108,7 +116,7 @@ class TabBuilder:
             endian_combo = QComboBox()
             endian_combo.addItems([t("value.little"), t("value.big"), t("value.selectable")])
             endian_combo.setCurrentText(t("value.little"))
-            endian_combo.setMaximumWidth(100)  # 端序选项较短
+            endian_combo.setMaximumWidth(100)
             device_layout.addWidget(endian_combo, 3, 1)
 
             mpu_label = QLabel(t("label.mpu_exists") + ":")
@@ -116,7 +124,7 @@ class TabBuilder:
             mpu_combo = QComboBox()
             mpu_combo.addItems([t("value.yes"), t("value.no")])
             mpu_combo.setCurrentText(t("value.no"))
-            mpu_combo.setMaximumWidth(60)  # 是/否选项很短
+            mpu_combo.setMaximumWidth(60)
             device_layout.addWidget(mpu_combo, 3, 3)
 
             # 第五行：FPU和NVIC优先级位数
@@ -125,7 +133,7 @@ class TabBuilder:
             fpu_combo = QComboBox()
             fpu_combo.addItems([t("value.yes"), t("value.no")])
             fpu_combo.setCurrentText(t("value.no"))
-            fpu_combo.setMaximumWidth(60)  # 是/否选项很短
+            fpu_combo.setMaximumWidth(60)
             device_layout.addWidget(fpu_combo, 4, 1)
 
             nvic_label = QLabel(t("label.nvic_prio_bits") + ":")
@@ -133,34 +141,25 @@ class TabBuilder:
             nvic_prio_spin = QSpinBox()
             nvic_prio_spin.setRange(0, 8)
             nvic_prio_spin.setValue(4)
-            nvic_prio_spin.setMaximumWidth(60)  # 数字输入框较短
+            nvic_prio_spin.setMaximumWidth(60)
             device_layout.addWidget(nvic_prio_spin, 4, 3)
 
-            # 设置列拉伸
             device_layout.setColumnStretch(1, 1)
             device_layout.setColumnStretch(3, 1)
-
             layout.addWidget(device_group)
+
+            # === 公司版权信息组 ===
             company_group = QGroupBox(t("label.company_copyright"))
-            company_group.setStyleSheet("""
-                QGroupBox {
-                    font-weight: bold;
-                    border: 1px solid #CCCCCC;
-                    border-radius: 5px;
-                    margin-top: 10px;
-                    padding: 10px;
-                }
-            """)
+            company_group.setStyleSheet(group_style)
             company_layout = QGridLayout(company_group)
             company_layout.setSpacing(8)
-            company_layout.setContentsMargins(8, 15, 8, 8)
+            company_layout.setContentsMargins(12, 20, 12, 12)
 
-            # 第一行：厂商ID和版权信息
             company_name_label = QLabel(t("label.company_name") + ":")
             company_layout.addWidget(company_name_label, 0, 0)
             company_name_edit = QLineEdit()
             company_name_edit.setPlaceholderText(t("placeholder.company_name"))
-            company_name_edit.setMinimumWidth(150)  # 厂商名称可能较长
+            company_name_edit.setMinimumWidth(150)
             company_layout.addWidget(company_name_edit, 0, 1)
 
             company_checkbox = QCheckBox(t("label.do_not_display"))
@@ -171,19 +170,18 @@ class TabBuilder:
             company_layout.addWidget(copyright_label, 0, 3)
             copyright_edit = QLineEdit()
             copyright_edit.setPlaceholderText(t("placeholder.copyright_info"))
-            copyright_edit.setMinimumWidth(150)  # 版权信息可能较长
+            copyright_edit.setMinimumWidth(150)
             company_layout.addWidget(copyright_edit, 0, 4)
 
             copyright_checkbox = QCheckBox(t("label.do_not_display"))
             copyright_checkbox.setChecked(False)
             company_layout.addWidget(copyright_checkbox, 0, 5)
 
-            # 第二行：作者和许可证
             author_label = QLabel(t("label.author") + ":")
             company_layout.addWidget(author_label, 1, 0)
             author_edit = QLineEdit()
             author_edit.setPlaceholderText(t("placeholder.author"))
-            author_edit.setMinimumWidth(150)  # 作者名称可能较长
+            author_edit.setMinimumWidth(150)
             company_layout.addWidget(author_edit, 1, 1)
 
             author_checkbox = QCheckBox(t("label.do_not_display"))
@@ -193,53 +191,133 @@ class TabBuilder:
             license_label = QLabel(t("label.license") + ":")
             company_layout.addWidget(license_label, 1, 3)
             license_combo = QComboBox()
-            license_combo.addItems([t("license.do_not_display"), t("license.apache_2_0"), t("license.mit"), t("license.bsd_3_clause"), t("license.proprietary"), t("license.other")])
+            license_combo.addItems([
+                t("license.do_not_display"), t("license.apache_2_0"),
+                t("license.mit"), t("license.bsd_3_clause"),
+                t("license.proprietary"), t("license.other")
+            ])
             license_combo.setCurrentText(t("license.apache_2_0"))
-            license_combo.setMinimumWidth(150)  # 许可证选项可能较长
+            license_combo.setMinimumWidth(150)
             company_layout.addWidget(license_combo, 1, 4)
 
-            # 设置列拉伸
             company_layout.setColumnStretch(1, 1)
             company_layout.setColumnStretch(4, 1)
-
             layout.addWidget(company_group)
+
+            # === 数据汇总组 ===
+            summary_group = QGroupBox(t("label.data_summary"))
+            summary_group.setStyleSheet(group_style)
+            summary_layout = QHBoxLayout(summary_group)
+            summary_layout.setSpacing(16)
+            summary_layout.setContentsMargins(12, 20, 12, 12)
+
+            card_style = """
+                QFrame {
+                    background-color: %s;
+                    border-radius: 8px;
+                    padding: 8px;
+                    min-width: 80px;
+                }
+                QLabel {
+                    background: transparent;
+                    border: none;
+                    padding: 0px;
+                }
+            """
+
+            # 外设卡片
+            periph_card = QFrame()
+            periph_card.setStyleSheet(card_style % "#FFF3E0")
+            pcl = QVBoxLayout(periph_card)
+            pcl.setSpacing(2)
+            pcl.setContentsMargins(10, 6, 10, 6)
+            periph_count_label = QLabel("0")
+            periph_count_label.setStyleSheet("font-size: 22pt; font-weight: bold; color: #E65100;")
+            periph_count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            pcl.addWidget(periph_count_label)
+            ptl = QLabel(t("label.total_peripherals"))
+            ptl.setStyleSheet("font-size: 8pt; color: #BF360C;")
+            ptl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            pcl.addWidget(ptl)
+            summary_layout.addWidget(periph_card)
+
+            # 寄存器卡片
+            reg_card = QFrame()
+            reg_card.setStyleSheet(card_style % "#E3F2FD")
+            rcl = QVBoxLayout(reg_card)
+            rcl.setSpacing(2)
+            rcl.setContentsMargins(10, 6, 10, 6)
+            reg_count_label = QLabel("0")
+            reg_count_label.setStyleSheet("font-size: 22pt; font-weight: bold; color: #1565C0;")
+            reg_count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            rcl.addWidget(reg_count_label)
+            rtl = QLabel(t("label.total_registers"))
+            rtl.setStyleSheet("font-size: 8pt; color: #0D47A1;")
+            rtl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            rcl.addWidget(rtl)
+            summary_layout.addWidget(reg_card)
+
+            # 位域卡片
+            field_card = QFrame()
+            field_card.setStyleSheet(card_style % "#E8F5E9")
+            fcl = QVBoxLayout(field_card)
+            fcl.setSpacing(2)
+            fcl.setContentsMargins(10, 6, 10, 6)
+            field_count_label = QLabel("0")
+            field_count_label.setStyleSheet("font-size: 22pt; font-weight: bold; color: #2E7D32;")
+            field_count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            fcl.addWidget(field_count_label)
+            ftl = QLabel(t("label.total_fields"))
+            ftl.setStyleSheet("font-size: 8pt; color: #1B5E20;")
+            ftl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            fcl.addWidget(ftl)
+            summary_layout.addWidget(field_card)
+
+            # 中断卡片
+            irq_card = QFrame()
+            irq_card.setStyleSheet(card_style % "#FCE4EC")
+            icl = QVBoxLayout(irq_card)
+            icl.setSpacing(2)
+            icl.setContentsMargins(10, 6, 10, 6)
+            irq_count_label = QLabel("0")
+            irq_count_label.setStyleSheet("font-size: 22pt; font-weight: bold; color: #C62828;")
+            irq_count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            icl.addWidget(irq_count_label)
+            itl = QLabel(t("label.total_interrupts"))
+            itl.setStyleSheet("font-size: 8pt; color: #B71C1C;")
+            itl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            icl.addWidget(itl)
+            summary_layout.addWidget(irq_card)
+
+            layout.addWidget(summary_group)
             layout.addStretch(1)
 
-            # 连接厂商名称复选框信号
+            # 复选框信号
             def on_company_checkbox_changed(state):
                 company_name_edit.setEnabled(not company_checkbox.isChecked())
                 if company_checkbox.isChecked():
                     company_name_edit.clear()
-
             company_checkbox.stateChanged.connect(on_company_checkbox_changed)
-            # 初始状态
             company_name_edit.setEnabled(not company_checkbox.isChecked())
 
-            # 连接版权信息复选框信号
             def on_copyright_checkbox_changed(state):
                 copyright_edit.setEnabled(not copyright_checkbox.isChecked())
                 if copyright_checkbox.isChecked():
                     copyright_edit.clear()
-
             copyright_checkbox.stateChanged.connect(on_copyright_checkbox_changed)
-            # 初始状态
             copyright_edit.setEnabled(not copyright_checkbox.isChecked())
 
-            # 连接作者复选框信号
             def on_author_checkbox_changed(state):
                 author_edit.setEnabled(not author_checkbox.isChecked())
                 if author_checkbox.isChecked():
                     author_edit.clear()
-
             author_checkbox.stateChanged.connect(on_author_checkbox_changed)
-            # 初始状态
             author_edit.setEnabled(not author_checkbox.isChecked())
 
             self.logger.debug(f"调用addTab前，标签页数量: {tab_widget.count()}")
             index = tab_widget.addTab(tab, t("tab.basic_info_tab"))
             self.logger.debug(f"addTab返回索引: {index}，标签页数量: {tab_widget.count()}")
 
-            # 返回控件字典
             widgets = {
                 'basic_info_tab': tab,
                 'ic_name_edit': ic_name_edit,
@@ -259,8 +337,11 @@ class TabBuilder:
                 'author_edit': author_edit,
                 'author_checkbox': author_checkbox,
                 'license_combo': license_combo,
+                'periph_count_label': periph_count_label,
+                'reg_count_label': reg_count_label,
+                'field_count_label': field_count_label,
+                'irq_count_label': irq_count_label,
             }
-
             return tab, widgets
 
         except Exception as e:
@@ -273,101 +354,77 @@ class TabBuilder:
         """创建外设标签页"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-
-        # 创建两列分割器（移除了实时预览）
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
         # 左侧：外设树
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
 
-        # 外设树工具栏
         periph_toolbar = QHBoxLayout()
-
-        # 三个独立的添加按钮
         add_periph_btn = QPushButton(t("button.add_peripheral"))
         add_periph_btn.setToolTip(t("tooltip.add_peripheral"))
         periph_toolbar.addWidget(add_periph_btn)
-        
         add_reg_btn = QPushButton(t("button.add_register"))
         add_reg_btn.setEnabled(False)
         add_reg_btn.setToolTip(t("tooltip.add_register"))
         periph_toolbar.addWidget(add_reg_btn)
-
         add_field_btn = QPushButton(t("button.add_field"))
         add_field_btn.setEnabled(False)
         add_field_btn.setToolTip(t("tooltip.add_field"))
         periph_toolbar.addWidget(add_field_btn)
-        
         edit_periph_btn = QPushButton(t("button.edit"))
         edit_periph_btn.setEnabled(False)
         edit_periph_btn.setToolTip(t("tooltip.edit_peripheral"))
         periph_toolbar.addWidget(edit_periph_btn)
-        
         delete_periph_btn = QPushButton(t("button.delete"))
         delete_periph_btn.setEnabled(False)
         delete_periph_btn.setToolTip(t("tooltip.delete_peripheral"))
         periph_toolbar.addWidget(delete_periph_btn)
-
         periph_toolbar.addStretch()
         left_layout.addLayout(periph_toolbar)
 
-        # 外设树（现在包含寄存器作为子项）
         periph_tree = QTreeWidget()
-        periph_tree.setHeaderLabels([t("label.name_column"), t("label.offset_column"), t("label.description_column"), t("label.access_column"), t("label.reset_value_column")])
-        periph_tree.setColumnWidth(0, 180)  # 名称
-        periph_tree.setColumnWidth(1, 100)  # 偏移量/基地址
-        periph_tree.setColumnWidth(2, 200)  # 描述
-        periph_tree.setColumnWidth(3, 80)   # 访问权限
-        periph_tree.setColumnWidth(4, 80)   # 复位值
-
-        # 设置交替行颜色，提高可读性
+        periph_tree.setHeaderLabels([
+            t("label.name_column"), t("label.offset_column"),
+            t("label.description_column"), t("label.access_column"),
+            t("label.reset_value_column")
+        ])
+        periph_tree.setColumnWidth(0, 180)
+        periph_tree.setColumnWidth(1, 100)
+        periph_tree.setColumnWidth(2, 200)
+        periph_tree.setColumnWidth(3, 80)
+        periph_tree.setColumnWidth(4, 80)
         periph_tree.setAlternatingRowColors(True)
-
-        # 设置行高，增加可读性
         periph_tree.setStyleSheet("""
             QTreeWidget {
                 font-family: "Segoe UI", "Microsoft YaHei";
                 font-size: 10pt;
-                outline: 0; /* 移除焦点边框 */
+                outline: 0;
             }
             QTreeWidget::item {
                 padding: 4px;
                 border-bottom: 1px solid #e0e0e0;
                 border-radius: 2px;
             }
-            QTreeWidget::item:hover {
-                background-color: #f5f5f5;
-            }
+            QTreeWidget::item:hover { background-color: #f5f5f5; }
             QTreeWidget::item:selected {
-                background-color: #d1e9ff; /* 更柔和的蓝色 */
+                background-color: #d1e9ff;
                 color: #000000;
                 border: 1px solid #90c8ff;
                 border-radius: 3px;
             }
-            QTreeWidget::item:selected:active {
-                background-color: #b8daff;
-            }
-            QTreeWidget::branch:selected {
-                background-color: transparent; /* 确保分支图标区域也有背景色 */
-            }
-            /* 移除焦点虚线框 */
-            QTreeWidget::item:focus {
-                outline: none;
-            }
+            QTreeWidget::item:selected:active { background-color: #b8daff; }
+            QTreeWidget::branch:selected { background-color: transparent; }
+            QTreeWidget::item:focus { outline: none; }
         """)
-
-        # 设置选择行为为整行选择
         periph_tree.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
         periph_tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
-
         left_layout.addWidget(periph_tree)
 
-        # 右侧：寄存器树
+        # 右侧
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
 
-        # 可视化控件（处理可能的导入错误）
         visualization_widget = None
         try:
             from ..widgets.visualization_widget import VisualizationWidget
@@ -383,19 +440,18 @@ class TabBuilder:
             placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout_placeholder = QVBoxLayout(visualization_widget)
             layout_placeholder.addWidget(placeholder_label)
-
         right_layout.addWidget(visualization_widget)
 
-        # 位域表格（直接编辑，无需工具栏按钮）
         field_table = QTableWidget()
         field_table.setColumnCount(6)
-        field_table.setHorizontalHeaderLabels([t("label.name_column"), t("label.bit_offset_column"), t("label.bit_width_column"), t("label.access_column"), t("label.reset_value_column"), t("label.description_column")])
-
-        # 获取header对象并设置拉伸
+        field_table.setHorizontalHeaderLabels([
+            t("label.name_column"), t("label.bit_offset_column"),
+            t("label.bit_width_column"), t("label.access_column"),
+            t("label.reset_value_column"), t("label.description_column")
+        ])
         header = field_table.horizontalHeader()
         if header:
             header.setStretchLastSection(True)
-            # 设置表头样式
             header.setStyleSheet("""
                 QHeaderView::section {
                     background-color: #f0f0f0;
@@ -404,74 +460,41 @@ class TabBuilder:
                     font-weight: bold;
                 }
             """)
-
-        # 设置表格为可编辑
         field_table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.EditKeyPressed)
-        # 设置选择行为
         field_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        # 设置交替行颜色，使表格更好看
         field_table.setAlternatingRowColors(True)
-        # 设置网格线
         field_table.setShowGrid(True)
-        # 设置网格线颜色（与树选中样式统一）
         field_table.setStyleSheet("""
             QTableWidget {
                 gridline-color: #e0e0e0;
                 font-family: "Segoe UI", "Microsoft YaHei";
                 font-size: 10pt;
-                outline: 0; /* 移除焦点边框 */
+                outline: 0;
             }
-            QTableWidget::item {
-                padding: 4px;
-                border-radius: 2px;
-            }
+            QTableWidget::item { padding: 4px; border-radius: 2px; }
             QTableWidget::item:selected {
-                background-color: #d1e9ff; /* 与树选中样式统一 */
-                color: #000000;
-                border: 1px solid #90c8ff;
-                border-radius: 3px;
+                background-color: #d1e9ff; color: #000000;
+                border: 1px solid #90c8ff; border-radius: 3px;
             }
-            QTableWidget::item:hover {
-                background-color: #f5f5f5;
-            }
-            QTableWidget::item:nth-child(even) {
-                background-color: #f9f9f9;
-            }
-            QTableWidget::item:nth-child(odd) {
-                background-color: #ffffff;
-            }
-            /* 移除焦点虚线框 */
-            QTableWidget::item:focus {
-                outline: none;
-            }
+            QTableWidget::item:hover { background-color: #f5f5f5; }
+            QTableWidget::item:focus { outline: none; }
         """)
-
-        # 设置行高
         vheader = field_table.verticalHeader()
         if vheader:
             vheader.setDefaultSectionSize(28)
-
-        # 设置列宽
-        field_table.setColumnWidth(0, 120)  # 名称
-        field_table.setColumnWidth(1, 80)   # 位偏移
-        field_table.setColumnWidth(2, 80)   # 位宽
-        field_table.setColumnWidth(3, 100)  # 访问权限
-        field_table.setColumnWidth(4, 100)  # 复位值
-        # 描述列自动拉伸
-
+        field_table.setColumnWidth(0, 120)
+        field_table.setColumnWidth(1, 80)
+        field_table.setColumnWidth(2, 80)
+        field_table.setColumnWidth(3, 100)
+        field_table.setColumnWidth(4, 100)
         right_layout.addWidget(field_table)
 
-        # 添加部件到分割器（两列布局）
         splitter.addWidget(left_widget)
         splitter.addWidget(right_widget)
-        # 设置分割器初始大小：左50%，右50%
         splitter.setSizes([800, 800])
-
         layout.addWidget(splitter)
-
         tab_widget.addTab(tab, t("tab.peripheral_tab"))
 
-        # 返回控件字典
         widgets = {
             'peripheral_tab': tab,
             'periph_tree': periph_tree,
@@ -483,7 +506,6 @@ class TabBuilder:
             'edit_periph_btn': edit_periph_btn,
             'delete_periph_btn': delete_periph_btn,
         }
-
         return tab, widgets
 
     def create_interrupt_tab(self, tab_widget: QTabWidget) -> tuple:
@@ -491,97 +513,60 @@ class TabBuilder:
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        # 工具栏
         toolbar = QHBoxLayout()
-
         add_irq_btn = QPushButton(t("button.add_interrupt"))
         toolbar.addWidget(add_irq_btn)
-
         edit_irq_btn = QPushButton(t("label.edit_interrupt"))
         edit_irq_btn.setEnabled(False)
         toolbar.addWidget(edit_irq_btn)
-
         delete_irq_btn = QPushButton(t("label.delete_interrupt"))
         delete_irq_btn.setEnabled(False)
         toolbar.addWidget(delete_irq_btn)
-
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
-        # 中断表格（列顺序：名称、值、外设、描述）
         irq_table = QTableWidget()
         irq_table.setColumnCount(4)
-        irq_table.setHorizontalHeaderLabels([t("label.name_column"), t("label.value_column"), t("label.peripheral"), t("label.description_column")])
-
-        # 获取header对象并设置拉伸和样式
+        irq_table.setHorizontalHeaderLabels([
+            t("label.name_column"), t("label.value_column"),
+            t("label.peripheral"), t("label.description_column")
+        ])
         header = irq_table.horizontalHeader()
         if header:
             header.setStretchLastSection(True)
-            # 设置表头样式
             header.setStyleSheet("""
                 QHeaderView::section {
-                    background-color: #f0f0f0;
-                    padding: 6px;
-                    border: 1px solid #d0d0d0;
-                    font-weight: bold;
+                    background-color: #f0f0f0; padding: 6px;
+                    border: 1px solid #d0d0d0; font-weight: bold;
                 }
             """)
-
-        # 设置表格样式（与树选中样式统一）
         irq_table.setStyleSheet("""
             QTableWidget {
                 gridline-color: #e0e0e0;
                 font-family: "Segoe UI", "Microsoft YaHei";
-                font-size: 10pt;
-                outline: 0; /* 移除焦点边框 */
+                font-size: 10pt; outline: 0;
             }
-            QTableWidget::item {
-                padding: 4px;
-                border-radius: 2px;
-            }
+            QTableWidget::item { padding: 4px; border-radius: 2px; }
             QTableWidget::item:selected {
-                background-color: #d1e9ff; /* 与树选中样式统一 */
-                color: #000000;
-                border: 1px solid #90c8ff;
-                border-radius: 3px;
+                background-color: #d1e9ff; color: #000000;
+                border: 1px solid #90c8ff; border-radius: 3px;
             }
-            QTableWidget::item:hover {
-                background-color: #f5f5f5;
-            }
-            QTableWidget::item:nth-child(even) {
-                background-color: #f9f9f9;
-            }
-            QTableWidget::item:nth-child(odd) {
-                background-color: #ffffff;
-            }
-            /* 移除焦点虚线框 */
-            QTableWidget::item:focus {
-                outline: none;
-            }
+            QTableWidget::item:hover { background-color: #f5f5f5; }
+            QTableWidget::item:focus { outline: none; }
         """)
-
-        # 设置行高
         vheader = irq_table.verticalHeader()
         if vheader:
             vheader.setDefaultSectionSize(28)
-
-        # 设置列宽
-        irq_table.setColumnWidth(0, 150)  # 名称
-        irq_table.setColumnWidth(1, 80)   # 值
-        irq_table.setColumnWidth(2, 120)  # 外设
-
+        irq_table.setColumnWidth(0, 150)
+        irq_table.setColumnWidth(1, 80)
+        irq_table.setColumnWidth(2, 120)
         irq_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         irq_table.setAlternatingRowColors(True)
         irq_table.setShowGrid(True)
-
-        # 启用双击编辑
         irq_table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.EditKeyPressed)
-
         layout.addWidget(irq_table)
-
         tab_widget.addTab(tab, t("tab.interrupt_tab"))
 
-        # 返回控件字典
         widgets = {
             'interrupt_tab': tab,
             'irq_table': irq_table,
@@ -589,44 +574,34 @@ class TabBuilder:
             'edit_irq_btn': edit_irq_btn,
             'delete_irq_btn': delete_irq_btn,
         }
-
         return tab, widgets
 
     def create_preview_tab(self, tab_widget: QTabWidget) -> tuple:
         """创建预览标签页"""
         from .realtime_preview import RealtimePreviewWidget
-        
+
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        # 工具栏
         toolbar = QHBoxLayout()
-
         generate_btn = QPushButton(t("button.generate"))
         toolbar.addWidget(generate_btn)
-
         export_btn = QPushButton(t("button.export_file"))
         toolbar.addWidget(export_btn)
-
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
-        # 创建实时预览组件
-        # 注意：state_manager和coordinator需要在主窗口中设置
         self.realtime_preview = RealtimePreviewWidget(
-            state_manager=None,  # 将在主窗口中设置
+            state_manager=None,
             coordinator=None
         )
         layout.addWidget(self.realtime_preview)
-
         tab_widget.addTab(tab, t("tab.preview_tab"))
 
-        # 返回控件字典
         widgets = {
             'preview_tab': tab,
             'realtime_preview': self.realtime_preview,
             'generate_btn': generate_btn,
             'export_btn': export_btn,
         }
-
         return tab, widgets

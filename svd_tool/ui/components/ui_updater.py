@@ -35,6 +35,23 @@ class UIUpdater:
         if label:
             text = t("status.data_stats", peripherals=stats.get('peripherals', 0), registers=stats.get('registers', 0), fields=stats.get('fields', 0), interrupts=stats.get('interrupts', 0))
             label.setText(text)
+        
+        # 更新基本信息页面的统计卡片
+        periph_label = self.widget_manager.get_widget('periph_count_label')
+        if periph_label:
+            periph_label.setText(str(stats.get('peripherals', 0)))
+        
+        reg_label = self.widget_manager.get_widget('reg_count_label')
+        if reg_label:
+            reg_label.setText(str(stats.get('registers', 0)))
+        
+        field_label = self.widget_manager.get_widget('field_count_label')
+        if field_label:
+            field_label.setText(str(stats.get('fields', 0)))
+        
+        irq_label = self.widget_manager.get_widget('irq_count_label')
+        if irq_label:
+            irq_label.setText(str(stats.get('interrupts', 0)))
 
     def update_status(self, message: str):
         """

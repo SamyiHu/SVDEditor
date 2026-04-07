@@ -354,13 +354,17 @@ class StateManager:
         self.execute_command(command)
     
     def delete_peripheral(self, name: str):
-        """删除外设"""
+        """删除外设（保持位置，支持撤销）"""
         if name not in self.device_info.peripherals:
             return
         
         # 保存旧的外设数据用于撤销
         old_peripheral = self.device_info.peripherals[name]
         was_current = (self.current_peripheral == name)
+        
+        # 保存当前外设顺序和位置
+        peripheral_names = list(self.device_info.peripherals.keys())
+        old_index = peripheral_names.index(name)
         
         # 创建执行函数
         def execute():
@@ -375,7 +379,19 @@ class StateManager:
         
         # 创建撤销函数
         def undo():
-            self.device_info.peripherals[name] = old_peripheral
+            # 重建外设字典，将删除的外设插回原位置
+            from collections import OrderedDict
+            current_peripherals = self.device_info.peripherals
+            new_peripherals = OrderedDict()
+            inserted = False
+            for i, (pname, pdata) in enumerate(current_peripherals.items()):
+                if not inserted and i >= old_index:
+                    new_peripherals[name] = old_peripheral
+                    inserted = True
+                new_peripherals[pname] = pdata
+            if not inserted:
+                new_peripherals[name] = old_peripheral
+            self.device_info.peripherals = new_peripherals
             # 恢复选中状态
             if was_current:
                 self.current_peripheral = name
@@ -393,10 +409,25 @@ class StateManager:
         self.execute_command(command)
     
     def add_register(self, peripheral_name: str, register: Register):
-        """添加寄存器"""
-        if peripheral_name in self.device_info.peripherals:
+        """添加寄存器（支持撤销）"""
+        if peripheral_name not in self.device_info.peripherals:
+            return
+        
+        def execute():
             self.device_info.peripherals[peripheral_name].registers[register.name] = register
             self._notify_state_change()
+        
+        def undo():
+            if register.name in self.device_info.peripherals[peripheral_name].registers:
+                del self.device_info.peripherals[peripheral_name].registers[register.name]
+            self._notify_state_change()
+        
+        command = Command(
+            execute=execute,
+            undo=undo,
+            description=t("cmd.add_register", name=register.name)
+        )
+        self.execute_command(command)
     
     def update_register(self, peripheral_name: str, name: str, register: Register):
         """更新寄存器（支持撤销）"""
@@ -426,23 +457,71 @@ class StateManager:
         self.execute_command(command)
     
     def delete_register(self, peripheral_name: str, name: str):
-        """删除寄存器"""
-        if (peripheral_name in self.device_info.peripherals and
-            name in self.device_info.peripherals[peripheral_name].registers):
+        """删除寄存器（保持位置，支持撤销）"""
+        if not (peripheral_name in self.device_info.peripherals and
+                name in self.device_info.peripherals[peripheral_name].registers):
+            return
+        
+        from collections import OrderedDict
+        old_register = self.device_info.peripherals[peripheral_name].registers[name]
+        was_current = (self.current_peripheral == peripheral_name and self.current_register == name)
+        reg_names = list(self.device_info.peripherals[peripheral_name].registers.keys())
+        old_index = reg_names.index(name)
+        
+        def execute():
             del self.device_info.peripherals[peripheral_name].registers[name]
-            # 如果删除的是当前选中的寄存器，清除相关选择
-            if self.current_peripheral == peripheral_name and self.current_register == name:
+            if was_current:
                 self.current_register = None
                 self.current_field = None
                 self._notify_selection_change()
             self._notify_state_change()
+        
+        def undo():
+            current_regs = self.device_info.peripherals[peripheral_name].registers
+            new_regs = OrderedDict()
+            inserted = False
+            for i, (rname, rdata) in enumerate(current_regs.items()):
+                if not inserted and i >= old_index:
+                    new_regs[name] = old_register
+                    inserted = True
+                new_regs[rname] = rdata
+            if not inserted:
+                new_regs[name] = old_register
+            self.device_info.peripherals[peripheral_name].registers = new_regs
+            if was_current:
+                self.current_register = name
+                self.current_field = None
+                self._notify_selection_change()
+            self._notify_state_change()
+        
+        command = Command(
+            execute=execute,
+            undo=undo,
+            description=t("cmd.delete_register", name=name)
+        )
+        self.execute_command(command)
     
     def add_field(self, peripheral_name: str, register_name: str, field: Field):
-        """添加位域"""
-        if (peripheral_name in self.device_info.peripherals and
-            register_name in self.device_info.peripherals[peripheral_name].registers):
+        """添加位域（支持撤销）"""
+        if not (peripheral_name in self.device_info.peripherals and
+                register_name in self.device_info.peripherals[peripheral_name].registers):
+            return
+        
+        def execute():
             self.device_info.peripherals[peripheral_name].registers[register_name].fields[field.name] = field
             self._notify_state_change()
+        
+        def undo():
+            if field.name in self.device_info.peripherals[peripheral_name].registers[register_name].fields:
+                del self.device_info.peripherals[peripheral_name].registers[register_name].fields[field.name]
+            self._notify_state_change()
+        
+        command = Command(
+            execute=execute,
+            undo=undo,
+            description=t("cmd.add_field", name=field.name)
+        )
+        self.execute_command(command)
     
     def update_field(self, peripheral_name: str, register_name: str, name: str, field: Field):
         """更新位域（支持撤销）"""
@@ -473,18 +552,50 @@ class StateManager:
         self.execute_command(command)
     
     def delete_field(self, peripheral_name: str, register_name: str, name: str):
-        """删除位域"""
-        if (peripheral_name in self.device_info.peripherals and
-            register_name in self.device_info.peripherals[peripheral_name].registers and
-            name in self.device_info.peripherals[peripheral_name].registers[register_name].fields):
+        """删除位域（保持位置，支持撤销）"""
+        if not (peripheral_name in self.device_info.peripherals and
+                register_name in self.device_info.peripherals[peripheral_name].registers and
+                name in self.device_info.peripherals[peripheral_name].registers[register_name].fields):
+            return
+        
+        from collections import OrderedDict
+        old_field = self.device_info.peripherals[peripheral_name].registers[register_name].fields[name]
+        was_current = (self.current_peripheral == peripheral_name and
+                       self.current_register == register_name and
+                       self.current_field == name)
+        field_names = list(self.device_info.peripherals[peripheral_name].registers[register_name].fields.keys())
+        old_index = field_names.index(name)
+        
+        def execute():
             del self.device_info.peripherals[peripheral_name].registers[register_name].fields[name]
-            # 如果删除的是当前选中的位域，清除相关选择
-            if (self.current_peripheral == peripheral_name and
-                self.current_register == register_name and
-                self.current_field == name):
+            if was_current:
                 self.current_field = None
                 self._notify_selection_change()
             self._notify_state_change()
+        
+        def undo():
+            current_fields = self.device_info.peripherals[peripheral_name].registers[register_name].fields
+            new_fields = OrderedDict()
+            inserted = False
+            for i, (fname, fdata) in enumerate(current_fields.items()):
+                if not inserted and i >= old_index:
+                    new_fields[name] = old_field
+                    inserted = True
+                new_fields[fname] = fdata
+            if not inserted:
+                new_fields[name] = old_field
+            self.device_info.peripherals[peripheral_name].registers[register_name].fields = new_fields
+            if was_current:
+                self.current_field = name
+                self._notify_selection_change()
+            self._notify_state_change()
+        
+        command = Command(
+            execute=execute,
+            undo=undo,
+            description=t("cmd.delete_field", name=name)
+        )
+        self.execute_command(command)
     
     def add_interrupt(self, interrupt: Interrupt):
         """添加中断"""

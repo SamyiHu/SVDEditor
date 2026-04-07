@@ -47,6 +47,7 @@ from ..i18n.i18n import I18nManager, get_i18n_manager, set_i18n_manager, t
 
 from ..utils.helpers import pretty_xml, format_hex
 from ..utils.logger import Logger
+from ..core.chain_rules import ChainRulesEngine
 
 
 class MainWindowRefactored(QMainWindow):
@@ -78,8 +79,7 @@ class MainWindowRefactored(QMainWindow):
         self.layout_manager = LayoutManager(self)
         self.peripheral_manager = PeripheralManager(self.state_manager, self.layout_manager)
         
-        # 初始化其他组件
-        self.command_history = CommandHistory()
+        # 注意：不再创建独立的 command_history，使用 state_manager.command_history
         self.tree_manager = TreeManager()
         self.dialog_factory = DialogFactory(self)
         
@@ -104,6 +104,9 @@ class MainWindowRefactored(QMainWindow):
         self.coordinator.register_component('file_operations', self.file_operations)
         self.coordinator.register_component('preview_manager', self.preview_manager)
         self.coordinator.register_component('search_manager', self.search_manager)
+        
+        # 初始化连锁规则引擎
+        self.chain_rules_engine = ChainRulesEngine()
         
         # GUI 日志处理器
         self._gui_log_handler = None
@@ -200,6 +203,9 @@ class MainWindowRefactored(QMainWindow):
             periph_tree.customContextMenuRequested.connect(
                 self.peripheral_manager.handle_tree_context_menu
             )
+            # 连接树折叠/展开信号到预览同步
+            periph_tree.itemCollapsed.connect(self._on_tree_item_collapsed)
+            periph_tree.itemExpanded.connect(self._on_tree_item_expanded)
         
         # 连接可视化控件信号
         visualization_widget = self.layout_manager.get_widget('visualization_widget')
@@ -733,7 +739,7 @@ class MainWindowRefactored(QMainWindow):
                     # 更新状态管理器
                     self.state_manager.device_info = device_info
                     self.state_manager.clear_selection()
-                    self.command_history.clear()
+                    self.state_manager.command_history.clear()
                     
                     # 通知状态变更（触发预览更新）
                     self.state_manager._notify_state_change()
@@ -886,6 +892,21 @@ class MainWindowRefactored(QMainWindow):
         except Exception as e:
             self.logger.error(f"文件保存失败: {str(e)}")
             QMessageBox.critical(self, t("msg.save_error"), t("msg.file_save_failed_detail", error=str(e)))
+    
+    # ===================== 树折叠/展开同步预览 =====================
+    def _on_tree_item_collapsed(self, item: QTreeWidgetItem):
+        """树节点折叠时同步折叠预览"""
+        item_name = item.text(0)
+        self.logger.debug(f"树节点折叠: {item_name}")
+        if self.preview_manager and self.preview_manager.preview_widget:
+            self.preview_manager.preview_widget.sync_fold_from_tree(item_name, is_expanded=False)
+    
+    def _on_tree_item_expanded(self, item: QTreeWidgetItem):
+        """树节点展开时同步展开预览"""
+        item_name = item.text(0)
+        self.logger.debug(f"树节点展开: {item_name}")
+        if self.preview_manager and self.preview_manager.preview_widget:
+            self.preview_manager.preview_widget.sync_fold_from_tree(item_name, is_expanded=True)
     
     # ===================== 其他方法 =====================
     def enable_tree_drag_drop(self):
@@ -1082,13 +1103,35 @@ class MainWindowRefactored(QMainWindow):
     # ===================== 撤销/重做功能 =====================
     def undo(self):
         """撤销操作"""
+        if not self.state_manager.command_history.can_undo():
+            self.logger.debug("没有可撤销的操作")
+            return
+        
         self.state_manager.undo()
+        
+        # 刷新UI
+        self.peripheral_manager.update_peripheral_tree()
+        self.preview_manager.refresh_preview(immediate=True)
         self.update_data_stats()
+        self._update_interrupt_table()
+        self.layout_manager.update_status(t("status.undo_success", default="已撤销"))
+        self.logger.info("撤销操作完成")
     
     def redo(self):
         """重做操作"""
+        if not self.state_manager.command_history.can_redo():
+            self.logger.debug("没有可重做的操作")
+            return
+        
         self.state_manager.redo()
+        
+        # 刷新UI
+        self.peripheral_manager.update_peripheral_tree()
+        self.preview_manager.refresh_preview(immediate=True)
         self.update_data_stats()
+        self._update_interrupt_table()
+        self.layout_manager.update_status(t("status.redo_success", default="已重做"))
+        self.logger.info("重做操作完成")
     
     # ===================== 排序功能 =====================
     def sort_items_alphabetically(self):
@@ -1605,6 +1648,16 @@ class MainWindowRefactored(QMainWindow):
         # 使用StateManager删除位域
         self.state_manager.delete_field(current_peripheral, current_register, field_name)
         
+        # 执行连锁操作
+        chain_results = self.chain_rules_engine.execute_chain(
+            self.state_manager.device_info, "field",
+            current_peripheral, current_register, field_name, "delete")
+        chain_messages = []
+        for r in chain_results:
+            if r['success']:
+                chain_messages.append(r['message'])
+                self.logger.info(f"连锁操作: {r['message']}")
+        
         # 更新UI
         self.peripheral_manager.update_peripheral_tree()
         
@@ -1612,8 +1665,16 @@ class MainWindowRefactored(QMainWindow):
         self.state_manager.set_selection(field=None)
         
         # 更新状态
-        self.layout_manager.update_status(f"已删除位域: {field_name}")
+        status_msg = f"已删除位域: {field_name}"
+        if chain_messages:
+            status_msg += f" (连锁: {len(chain_messages)}项)"
+        self.layout_manager.update_status(status_msg)
         self.logger.info(f"删除位域: {field_name}")
+        
+        # 显示连锁结果
+        if chain_messages:
+            QMessageBox.information(self, t("msg.chain_operation", default="连锁操作"),
+                t("msg.chain_result", default="已同步删除以下关联项:\n") + "\n".join(chain_messages))
         
         # 发射数据变化信号
         self.data_changed.emit()
@@ -2062,6 +2123,195 @@ class MainWindowRefactored(QMainWindow):
                 
         except Exception as e:
             self.logger.error(f"切换日志面板时出错: {str(e)}")
+    
+    def toggle_bit_field_visibility(self, checked: bool):
+        """切换位域图显示/隐藏"""
+        try:
+            visualization_widget = self.layout_manager.get_widget('visualization_widget')
+            if visualization_widget and hasattr(visualization_widget, 'bit_field'):
+                visualization_widget.bit_field.setVisible(not checked)
+                self.logger.debug(f"位域图可见性: {not checked}")
+        except Exception as e:
+            self.logger.error(f"切换位域图可见性时出错: {str(e)}")
+    
+    def toggle_address_map_visibility(self, checked: bool):
+        """切换地址映射图显示/隐藏"""
+        try:
+            visualization_widget = self.layout_manager.get_widget('visualization_widget')
+            if visualization_widget and hasattr(visualization_widget, 'address_map'):
+                visualization_widget.address_map.setVisible(not checked)
+                self.logger.debug(f"地址映射图可见性: {not checked}")
+        except Exception as e:
+            self.logger.error(f"切换地址映射图可见性时出错: {str(e)}")
+    
+    def show_chain_rules_dialog(self):
+        """显示连锁规则编辑对话框"""
+        from ..core.chain_rules import ChainRule, ChainAction
+        from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+            QLineEdit, QPushButton, QListWidget, QListWidgetItem, QComboBox,
+            QCheckBox, QTextEdit, QGroupBox, QFormLayout, QSplitter, QWidget)
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle(t("dialog.chain_rules", default="连锁规则编辑"))
+        dialog.setMinimumSize(700, 500)
+        layout = QVBoxLayout(dialog)
+        
+        # 全局启用开关
+        enable_cb = QCheckBox(t("label.chain_enabled", default="启用连锁操作"))
+        enable_cb.setChecked(self.chain_rules_engine.enabled)
+        layout.addWidget(enable_cb)
+        
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        
+        # 左侧：规则列表
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.addWidget(QLabel(t("label.rules_list", default="规则列表")))
+        rules_list = QListWidget()
+        for i, rule in enumerate(self.chain_rules_engine.rules):
+            item = QListWidgetItem(f"{'✓' if rule.enabled else '✗'} {rule.name}")
+            rules_list.addItem(item)
+        left_layout.addWidget(rules_list)
+        
+        btn_layout = QHBoxLayout()
+        add_rule_btn = QPushButton(t("button.add", default="添加"))
+        del_rule_btn = QPushButton(t("button.delete", default="删除"))
+        btn_layout.addWidget(add_rule_btn)
+        btn_layout.addWidget(del_rule_btn)
+        left_layout.addLayout(btn_layout)
+        splitter.addWidget(left)
+        
+        # 右侧：规则详情
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        
+        form = QFormLayout()
+        name_edit = QLineEdit()
+        form.addRow(t("label.rule_name", default="规则名称:"), name_edit)
+        
+        source_type_combo = QComboBox()
+        source_type_combo.addItems(["peripheral", "register", "field"])
+        form.addRow(t("label.source_type", default="源类型:"), source_type_combo)
+        
+        source_periph = QLineEdit()
+        source_periph.setPlaceholderText(t("placeholder.wildcard_hint", default="* 表示通配符，如 GPIO*"))
+        form.addRow(t("label.source_peripheral", default="源外设:"), source_periph)
+        
+        source_reg = QLineEdit()
+        source_reg.setPlaceholderText(t("placeholder.no_limit", default="留空表示不限"))
+        form.addRow(t("label.source_register", default="源寄存器:"), source_reg)
+        
+        source_field = QLineEdit()
+        source_field.setPlaceholderText(t("placeholder.no_limit", default="留空表示不限"))
+        form.addRow(t("label.source_field", default="源位域:"), source_field)
+        
+        enabled_cb = QCheckBox(t("label.enabled", default="启用"))
+        enabled_cb.setChecked(True)
+        form.addRow(enabled_cb)
+        
+        right_layout.addLayout(form)
+        
+        # 动作列表
+        right_layout.addWidget(QLabel(t("label.actions", default="连锁动作:")))
+        actions_text = QTextEdit()
+        actions_text.setPlaceholderText(
+            t("placeholder.chain_actions",
+              default="每行一个动作，格式：目标外设,目标寄存器,目标位域,动作类型\n"
+                      "例如：PBCON,MODE0,MODE0,delete\n"
+                      "支持变量：$PERIPHERAL, $REGISTER, $FIELD"))
+        actions_text.setMaximumHeight(150)
+        right_layout.addWidget(actions_text)
+        
+        right_layout.addStretch()
+        splitter.addWidget(right)
+        splitter.setSizes([250, 450])
+        layout.addWidget(splitter)
+        
+        # 按钮
+        btn_box = QHBoxLayout()
+        save_btn = QPushButton(t("button.save", default="保存"))
+        cancel_btn = QPushButton(t("button.cancel", default="取消"))
+        btn_box.addStretch()
+        btn_box.addWidget(save_btn)
+        btn_box.addWidget(cancel_btn)
+        layout.addLayout(btn_box)
+        
+        # 选择规则时加载详情
+        def on_rule_selected():
+            row = rules_list.currentRow()
+            if 0 <= row < len(self.chain_rules_engine.rules):
+                rule = self.chain_rules_engine.rules[row]
+                name_edit.setText(rule.name)
+                source_type_combo.setCurrentText(rule.source_type)
+                source_periph.setText(rule.source_peripheral)
+                source_reg.setText(rule.source_register)
+                source_field.setText(rule.source_field)
+                enabled_cb.setChecked(rule.enabled)
+                actions_lines = []
+                for a in rule.actions:
+                    actions_lines.append(f"{a.target_peripheral},{a.target_register},{a.target_field},{a.action}")
+                actions_text.setPlainText("\n".join(actions_lines))
+        
+        rules_list.currentRowChanged.connect(on_rule_selected)
+        
+        # 添加规则
+        def add_rule():
+            rule = ChainRule(name=t("label.new_rule", default="新规则"))
+            self.chain_rules_engine.add_rule(rule)
+            rules_list.addItem(f"✓ {rule.name}")
+            rules_list.setCurrentRow(rules_list.count() - 1)
+        
+        add_rule_btn.clicked.connect(add_rule)
+        
+        # 删除规则
+        def del_rule():
+            row = rules_list.currentRow()
+            if 0 <= row < len(self.chain_rules_engine.rules):
+                self.chain_rules_engine.remove_rule(row)
+                rules_list.takeItem(row)
+        
+        del_rule_btn.clicked.connect(del_rule)
+        
+        # 保存
+        def save():
+            row = rules_list.currentRow()
+            if 0 <= row < len(self.chain_rules_engine.rules):
+                # 解析动作
+                actions = []
+                for line in actions_text.toPlainText().strip().split("\n"):
+                    if not line.strip():
+                        continue
+                    parts = [p.strip() for p in line.split(",")]
+                    if len(parts) >= 2:
+                        action = ChainAction(
+                            target_peripheral=parts[0],
+                            target_register=parts[1],
+                            target_field=parts[2] if len(parts) > 2 else "",
+                            action=parts[3] if len(parts) > 3 else "delete"
+                        )
+                        actions.append(action)
+                
+                rule = ChainRule(
+                    name=name_edit.text() or t("label.unnamed", default="未命名"),
+                    enabled=enabled_cb.isChecked(),
+                    source_type=source_type_combo.currentText(),
+                    source_peripheral=source_periph.text(),
+                    source_register=source_reg.text(),
+                    source_field=source_field.text(),
+                    actions=actions
+                )
+                self.chain_rules_engine.update_rule(row, rule)
+                rules_list.item(row).setText(
+                    f"{'✓' if rule.enabled else '✗'} {rule.name}")
+            
+            self.chain_rules_engine.enabled = enable_cb.isChecked()
+            self.chain_rules_engine.save_rules()
+            dialog.accept()
+        
+        save_btn.clicked.connect(save)
+        cancel_btn.clicked.connect(dialog.reject)
+        
+        dialog.exec()
 
     def validate_data(self):
         """验证数据"""

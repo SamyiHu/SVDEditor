@@ -58,12 +58,13 @@ class I18nManager:
         self.locale = locale
         self._load_translations()
     
-    def get(self, key: str, **kwargs) -> str:
+    def get(self, key: str, default: Optional[str] = None, **kwargs) -> str:
         """
         获取翻译文本
         
         Args:
             key: 翻译键
+            default: 默认文本（找不到翻译时使用）
             **kwargs: 格式化参数
             
         Returns:
@@ -75,11 +76,13 @@ class I18nManager:
         # 回退到中文
         elif key in self.fallback_translations:
             text = self.fallback_translations[key]
-        # 如果都没有，返回键本身
+        # 如果都没有，使用默认值或返回键本身
+        elif default is not None:
+            text = default
         else:
             text = key
         
-        # 格式化参数
+        # 格式化参数（排除default参数）
         if kwargs:
             try:
                 text = text.format(**kwargs)

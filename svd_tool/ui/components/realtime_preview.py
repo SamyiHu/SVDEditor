@@ -87,12 +87,26 @@ class HighlightedTextEdit(QPlainTextEdit):
         self.element_hierarchy = {}  # {child_key: parent_key}
         self.element_children = {}  # {parent_key: [child_keys]}
         
-        # 高亮颜色配置
+        # 高亮颜色配置 - 更鲜明的颜色和边框
         self.highlight_colors = {
-            'peripheral': QColor(255, 200, 100, 80),  # 橙色半透明
-            'register': QColor(100, 200, 255, 80),    # 蓝色半透明
-            'field': QColor(100, 255, 150, 80),      # 绿色半透明
-            'interrupt': QColor(255, 150, 200, 80)    # 粉色半透明
+            'peripheral': QColor(255, 183, 77, 50),    # 暖橙色半透明背景
+            'register': QColor(66, 165, 245, 50),      # 清新蓝色半透明背景
+            'field': QColor(102, 187, 106, 50),        # 翠绿色半透明背景
+            'interrupt': QColor(239, 154, 154, 50)     # 柔粉色半透明背景
+        }
+        # 高亮边框颜色 - 更深且不透明
+        self.highlight_border_colors = {
+            'peripheral': QColor(255, 152, 0, 180),    # 深橙色边框
+            'register': QColor(33, 150, 243, 180),     # 深蓝色边框
+            'field': QColor(76, 175, 80, 180),         # 深绿色边框
+            'interrupt': QColor(239, 83, 80, 180)      # 深粉色边框
+        }
+        # 高亮标签颜色
+        self.highlight_label_colors = {
+            'peripheral': QColor(255, 152, 0),         # 橙色标签
+            'register': QColor(33, 150, 243),          # 蓝色标签
+            'field': QColor(76, 175, 80),              # 绿色标签
+            'interrupt': QColor(239, 83, 80)           # 粉色标签
         }
     
     def set_folded_elements(self, folded_elements: set):
@@ -434,23 +448,30 @@ class HighlightedTextEdit(QPlainTextEdit):
                     # 计算高亮区域（添加缝隙）
                     highlight_rect = QRect(left, top, width, height)
                     
-                    # 绘制圆角矩形
+                    # 绘制圆角矩形背景（使用渐变效果）
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.setBrush(QBrush(color))
-                    painter.drawRoundedRect(highlight_rect, 8, 8)
+                    painter.drawRoundedRect(highlight_rect, 6, 6)
                     
-                    # 绘制边框
-                    border_color = QColor(color)
-                    border_color.setAlpha(200)
-                    painter.setPen(QPen(border_color, 2))
+                    # 绘制左侧色条（装饰线）
+                    label_color = self.highlight_label_colors.get(selected_type, QColor("#FF9800"))
+                    bar_rect = QRect(highlight_rect.left(), highlight_rect.top() + 2, 4, highlight_rect.height() - 4)
+                    painter.setBrush(QBrush(label_color))
+                    painter.drawRoundedRect(bar_rect, 2, 2)
+                    
+                    # 绘制边框（使用对应类型的边框颜色）
+                    border_color = self.highlight_border_colors.get(selected_type, QColor(200, 200, 200, 150))
+                    painter.setPen(QPen(border_color, 1.5))
                     painter.setBrush(Qt.BrushStyle.NoBrush)
-                    painter.drawRoundedRect(highlight_rect, 8, 8)
+                    painter.drawRoundedRect(highlight_rect, 6, 6)
                     
-                    # 在右上角绘制选中名称
-                    # selected_element 是元组 (element_type, peripheral_name, element_name)
+                    # 在右上角绘制选中名称标签
                     element_type_key, peripheral_name, element_name = selected_element
-                    name_text = f"{selected_type}: {element_name}"
-                    painter.setPen(QColor("#333333"))
+                    # 使用更友好的显示名称
+                    type_labels = {'peripheral': 'P', 'register': 'R', 'field': 'F', 'interrupt': 'I'}
+                    type_label = type_labels.get(selected_type, '?')
+                    name_text = f"[{type_label}] {element_name}"
+                    
                     font = painter.font()
                     font.setBold(True)
                     font.setPointSize(9)
@@ -458,19 +479,25 @@ class HighlightedTextEdit(QPlainTextEdit):
                     
                     # 计算文本位置（右上角）
                     text_rect = painter.fontMetrics().boundingRect(name_text)
-                    text_x = highlight_rect.right() - text_rect.width() - 10
-                    text_y = highlight_rect.top() + text_rect.height() + 5
+                    text_x = highlight_rect.right() - text_rect.width() - 12
+                    text_y = highlight_rect.top() + text_rect.height() + 4
                     
-                    # 绘制文本背景
-                    bg_rect = QRect(text_x - 5, text_y - text_rect.height() - 2,
-                                   text_rect.width() + 10, text_rect.height() + 4)
+                    # 绘制标签背景（使用对应的标签颜色作为背景）
+                    bg_rect = QRect(text_x - 6, text_y - text_rect.height() - 3,
+                                   text_rect.width() + 12, text_rect.height() + 6)
                     painter.setPen(Qt.PenStyle.NoPen)
-                    painter.setBrush(QColor(255, 255, 255, 200))
-                    painter.drawRoundedRect(bg_rect, 4, 4)
+                    # 半透明白色背景
+                    painter.setBrush(QColor(255, 255, 255, 220))
+                    painter.drawRoundedRect(bg_rect, 3, 3)
                     
-                    # 绘制文本
-                    painter.setPen(QColor("#333333"))
-                    painter.drawText(text_x, text_y, name_text)
+                    # 绘制标签左侧色点
+                    dot_rect = QRect(text_x - 3, bg_rect.top() + 3, 4, bg_rect.height() - 6)
+                    painter.setBrush(QBrush(label_color))
+                    painter.drawRoundedRect(dot_rect, 2, 2)
+                    
+                    # 绘制文本（使用标签颜色）
+                    painter.setPen(label_color)
+                    painter.drawText(text_x + 4, text_y, name_text)
         
         # 绘制折叠标记（只绘制箭头，不绘制块）
         if hasattr(self, 'fold_markers'):
@@ -919,6 +946,53 @@ class RealtimePreviewWidget(QWidget):
         
         # 重新渲染
         self.logger.debug("调用 _apply_folding")
+        self._apply_folding()
+    
+    def sync_fold_from_tree(self, item_name: str, is_expanded: bool):
+        """
+        从树状图同步折叠/展开状态到预览
+        
+        Args:
+            item_name: 项目名称（外设名或寄存器名）
+            is_expanded: True=展开, False=折叠
+        """
+        self.logger.debug(f"sync_fold_from_tree: item_name={item_name}, is_expanded={is_expanded}")
+        
+        # 尝试匹配外设
+        peripheral_key = ('peripheral', item_name, item_name)
+        if peripheral_key in self.element_ranges:
+            if is_expanded:
+                self.folded_elements.discard(peripheral_key)
+            else:
+                self.folded_elements.add(peripheral_key)
+            self._apply_folding()
+            self.logger.debug(f"同步外设折叠状态: {item_name} -> {'展开' if is_expanded else '折叠'}")
+            return
+        
+        # 尝试匹配寄存器（需要找到所属外设）
+        for key in self.element_ranges:
+            if key[0] == 'register' and key[2] == item_name:
+                if is_expanded:
+                    self.folded_elements.discard(key)
+                else:
+                    self.folded_elements.add(key)
+                self._apply_folding()
+                self.logger.debug(f"同步寄存器折叠状态: {item_name} -> {'展开' if is_expanded else '折叠'}")
+                return
+        
+        self.logger.debug(f"sync_fold_from_tree: 未找到匹配元素 {item_name}")
+    
+    def collapse_peripheral_in_preview(self, peripheral_name: str):
+        """折叠预览中指定外设"""
+        key = ('peripheral', peripheral_name, peripheral_name)
+        if key in self.element_ranges:
+            self.folded_elements.add(key)
+            self._apply_folding()
+    
+    def expand_peripheral_in_preview(self, peripheral_name: str):
+        """展开预览中指定外设"""
+        key = ('peripheral', peripheral_name, peripheral_name)
+        self.folded_elements.discard(key)
         self._apply_folding()
     
     def _draw_fold_blocks(self, painter: QPainter):

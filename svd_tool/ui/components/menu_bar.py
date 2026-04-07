@@ -160,6 +160,22 @@ class MenuBarBuilder:
             lambda checked: setattr(self.main_window, 'auto_save_error', checked)
         )
         view_menu.addAction(self.main_window.toggle_auto_save_action)
+        
+        view_menu.addSeparator()
+        
+        # 隐藏位域图选项
+        self.main_window.toggle_bit_field_action = QAction(t("menu.view.hide_bit_field"), self.parent)
+        self.main_window.toggle_bit_field_action.setCheckable(True)
+        self.main_window.toggle_bit_field_action.setChecked(False)
+        self.main_window.toggle_bit_field_action.triggered.connect(self.main_window.toggle_bit_field_visibility)
+        view_menu.addAction(self.main_window.toggle_bit_field_action)
+        
+        # 隐藏地址映射图选项
+        self.main_window.toggle_address_map_action = QAction(t("menu.view.hide_address_map"), self.parent)
+        self.main_window.toggle_address_map_action.setCheckable(True)
+        self.main_window.toggle_address_map_action.setChecked(False)
+        self.main_window.toggle_address_map_action.triggered.connect(self.main_window.toggle_address_map_visibility)
+        view_menu.addAction(self.main_window.toggle_address_map_action)
     
     def _create_tools_menu(self):
         """创建工具菜单"""
@@ -175,6 +191,23 @@ class MenuBarBuilder:
         generate_action.triggered.connect(self.main_window.generate_svd)
         generate_action.setShortcut(QKeySequence("Ctrl+G"))
         tools_menu.addAction(generate_action)
+        
+        tools_menu.addSeparator()
+        
+        # 连锁操作开关
+        self.main_window.toggle_chain_action = QAction(
+            t("menu.tools.chain_enabled", default="启用连锁操作"), self.parent)
+        self.main_window.toggle_chain_action.setCheckable(True)
+        self.main_window.toggle_chain_action.setChecked(True)
+        self.main_window.toggle_chain_action.triggered.connect(
+            lambda checked: setattr(self.main_window.chain_rules_engine, 'enabled', checked))
+        tools_menu.addAction(self.main_window.toggle_chain_action)
+        
+        # 连锁规则编辑
+        chain_edit_action = QAction(
+            t("menu.tools.chain_rules", default="编辑连锁规则..."), self.parent)
+        chain_edit_action.triggered.connect(self.main_window.show_chain_rules_dialog)
+        tools_menu.addAction(chain_edit_action)
     
     def _create_help_menu(self):
         """创建帮助菜单"""

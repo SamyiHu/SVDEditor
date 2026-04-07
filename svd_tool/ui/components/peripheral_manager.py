@@ -201,7 +201,7 @@ class PeripheralManager(QObject):
                     field_item = QTreeWidgetItem(reg_item)
                     field_item.setText(0, field_name)
                     # 偏移列显示偏移和位宽（例如："0-3"表示从位0开始，宽度为3）
-                    field_item.setText(1, f"{field.bit_offset}-{field.bit_offset + field.bit_width}")
+                    field_item.setText(1, f"[{field.bit_offset}:{field.bit_offset + field.bit_width - 1}]")
                     # 描述列显示描述
                     field_item.setText(2, field.description or "")
                     field_item.setText(3, field.access or "")
