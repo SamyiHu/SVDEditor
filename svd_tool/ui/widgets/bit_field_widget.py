@@ -428,11 +428,15 @@ class BitFieldWidget(QWidget):
         if not labels_needed:
             return
         
-        # 绘制连接线和标签
+        # 绘制连接线和标签（跳过内部已完整显示的位域）
         painter.setFont(QFont("Arial", 8))
         used_y_positions = []  # 避免标签重叠
         
         for label_info in labels_needed:
+            # 如果内部已经完整显示了名称+下标，则跳过外部标签
+            if label_info.get('is_fully_shown_inside', False):
+                continue
+            
             field = label_info['field']
             center_x = label_info['center_x']
             bit_range = label_info['bit_range']

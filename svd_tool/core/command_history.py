@@ -1,6 +1,6 @@
 # svd_tool/core/command_history.py
-from typing import Any, List, Callable, Optional
-from dataclasses import dataclass
+from typing import Any, List, Callable, Optional, Dict, Tuple
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -9,6 +9,8 @@ class Command:
     execute: Callable[[], Any]  # 执行函数
     undo: Callable[[], Any]     # 撤消函数
     description: str = ""       # 命令描述
+    selection_before: Optional[Dict[str, Optional[str]]] = None  # 执行前的选中状态
+    selection_after: Optional[Dict[str, Optional[str]]] = None   # 执行后的选中状态
 
 
 class CommandHistory:

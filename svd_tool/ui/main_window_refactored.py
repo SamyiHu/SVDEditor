@@ -1114,6 +1114,19 @@ class MainWindowRefactored(QMainWindow):
         self.preview_manager.refresh_preview(immediate=True)
         self.update_data_stats()
         self._update_interrupt_table()
+        
+        # 恢复选中状态到树控件
+        selection = self.state_manager.get_selection()
+        periph = selection.get('peripheral')
+        reg = selection.get('register')
+        field_name = selection.get('field')
+        if field_name and reg and periph:
+            self.peripheral_manager.select_field(periph, reg, field_name)
+        elif reg and periph:
+            self.peripheral_manager.select_register(periph, reg)
+        elif periph:
+            self.peripheral_manager._select_peripheral_in_tree(periph)
+        
         self.layout_manager.update_status(t("status.undo_success", default="已撤销"))
         self.logger.info("撤销操作完成")
     

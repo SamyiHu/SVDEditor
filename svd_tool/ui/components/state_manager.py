@@ -637,19 +637,44 @@ class StateManager:
     # ===================== 命令历史操作 =====================
     def execute_command(self, command: Command):
         """执行命令并记录到历史"""
+        # 保存执行前的选中状态
+        command.selection_before = self.get_selection()
+        
         self.command_history.execute(command)
+        
+        # 保存执行后的选中状态
+        command.selection_after = self.get_selection()
+        
         self._notify_state_change()
     
     def undo(self):
         """撤销"""
         if self.command_history.can_undo():
             self.command_history.undo()
+            # 恢复执行前的选中状态
+            if self.command_history.redo_stack:
+                command = self.command_history.redo_stack[-1]
+                if command.selection_before:
+                    self.set_selection(
+                        peripheral=command.selection_before.get('peripheral'),
+                        register=command.selection_before.get('register'),
+                        field=command.selection_before.get('field')
+                    )
             self._notify_state_change()
     
     def redo(self):
         """重做"""
         if self.command_history.can_redo():
             self.command_history.redo()
+            # 恢复执行后的选中状态
+            if self.command_history.history:
+                command = self.command_history.history[-1]
+                if command.selection_after:
+                    self.set_selection(
+                        peripheral=command.selection_after.get('peripheral'),
+                        register=command.selection_after.get('register'),
+                        field=command.selection_after.get('field')
+                    )
             self._notify_state_change()
     
     # ===================== 数据统计 =====================

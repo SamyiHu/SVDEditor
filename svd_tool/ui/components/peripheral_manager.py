@@ -667,13 +667,14 @@ class PeripheralManager(QObject):
         )
         
         # 通过StateManager执行命令（支持撤销）
+        # 注意：execute_command 内部会触发 _notify_state_change -> on_state_changed -> update_peripheral_tree
+        # 所以这里不需要再次调用 update_peripheral_tree()
         moved = self.state_manager.execute_command(command)
         
         if moved:
-            # 更新UI
-            self.update_peripheral_tree()
-            # 重新选中该项目
-            self._select_peripheral_in_tree(periph_name)
+            # 重新选中该项目（延迟执行，等树重建完成）
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(50, lambda: self._select_peripheral_in_tree(periph_name))
             # 显示状态消息
             if hasattr(main_window, 'status_label'):
                 main_window.status_label.setText(f"已上移外设: {periph_name}")
@@ -745,13 +746,14 @@ class PeripheralManager(QObject):
         )
         
         # 通过StateManager执行命令（支持撤销）
+        # 注意：execute_command 内部会触发 _notify_state_change -> on_state_changed -> update_peripheral_tree
+        # 所以这里不需要再次调用 update_peripheral_tree()
         moved = self.state_manager.execute_command(command)
         
         if moved:
-            # 更新UI
-            self.update_peripheral_tree()
-            # 重新选中该项目
-            self._select_peripheral_in_tree(periph_name)
+            # 重新选中该项目（延迟执行，等树重建完成）
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(50, lambda: self._select_peripheral_in_tree(periph_name))
             # 显示状态消息
             if hasattr(main_window, 'status_label'):
                 main_window.status_label.setText(f"已下移外设: {periph_name}")
