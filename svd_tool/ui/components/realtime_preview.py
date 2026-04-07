@@ -204,19 +204,8 @@ class HighlightedTextEdit(QPlainTextEdit):
         # 更新当前高亮键（用于兼容）
         self.current_highlight_key = key
         
-        # 滚动到高亮区域的中间位置
-        if key in self.element_line_ranges:
-            start_line, end_line = self.element_line_ranges[key]
-            middle_line = (start_line + end_line) // 2
-            
-            # 创建光标并移动到中间行
-            cursor = QTextCursor(self.document())
-            cursor.movePosition(QTextCursor.MoveOperation.Start)
-            cursor.movePosition(QTextCursor.MoveOperation.NextBlock, QTextCursor.MoveMode.MoveAnchor, middle_line - 1)
-            self.setTextCursor(cursor)
-            
-            # 滚动到光标位置
-            self.centerCursor()
+        # 注意：滚动由外部 _jump_to_line() 统一处理（带动画），
+        # 这里不执行 centerCursor() 避免冲突
         
         self.update()
     
