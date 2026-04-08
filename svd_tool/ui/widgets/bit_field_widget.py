@@ -52,6 +52,7 @@ class BitFieldWidget(QWidget):
         self.register = None
         self.fields = []
         self.field_rects = {}  # 字段名 -> QRect
+        self._field_display_modes = {}  # 字段名 -> 显示模式 ('full', 'name_only', 'small', 'abbrev', 'none')
         self.selected_field_name = None
         self.hovered_field_name = None
         self.source_peripheral_name = None
@@ -257,9 +258,45 @@ class BitFieldWidget(QWidget):
             rx2 = self._get_bit_x(re)
             painter.drawRect(int(rx1), self._bit_area_y, int(rx2 - rx1), self._bit_area_height)
     
+    def _compute_display_mode(self, field_width: float, name_text: str, bit_range: str) -> str:
+        """统一计算位域的显示模式（供 _paint_fields 和 _paint_external_labels 共用）
+        
+        使用一致的字体度量（Arial 9号 + Arial 7号）来判断显示模式。
+        返回值: 'full' | 'name_only' | 'small' | 'abbrev' | 'none'
+        """
+        fm_name = QFontMetrics(QFont("Arial", 9, QFont.Weight.Bold))
+        fm_range = QFontMetrics(QFont("Arial", 7))
+        
+        name_width = fm_name.horizontalAdvance(name_text)
+        range_width = fm_range.horizontalAdvance(bit_range)
+        
+        total_needed = max(name_width, range_width) + 8
+        
+        if field_width >= total_needed and field_width >= 40:
+            return 'full'
+        elif field_width >= name_width + 8:
+            return 'name_only'
+        elif field_width >= 20:
+            # 检查小字体能否放下
+            small_fm = QFontMetrics(QFont("Arial", 7, QFont.Weight.Bold))
+            small_name_width = small_fm.horizontalAdvance(name_text)
+            if field_width >= small_name_width + 4:
+                return 'small'
+            else:
+                return 'abbrev'
+        else:
+            return 'none'
+    
     def _paint_fields(self, painter: QPainter):
         """绘制位域矩形"""
         self.field_rects.clear()
+        self._field_display_modes.clear()
+        
+        # 统一字体
+        font_name = QFont("Arial", 9, QFont.Weight.Bold)
+        font_range = QFont("Arial", 7)
+        font_small = QFont("Arial", 7, QFont.Weight.Bold)
+        font_abbrev = QFont("Arial", 9, QFont.Weight.Bold)
         
         for idx, field in enumerate(self.fields):
             try:
@@ -302,56 +339,61 @@ class BitFieldWidget(QWidget):
                 # 存储矩形区域
                 self.field_rects[field.name] = (rect_x, rect_y, rect_w, rect_h)
                 
-                # 在位域矩形内部显示名称和位范围
-                fm = QFontMetrics(QFont("Arial", 9))
+                # 计算显示模式（使用统一方法）
                 name_text = field.name
-                name_width = fm.horizontalAdvance(name_text)
-                
-                painter.setPen(QPen(Qt.GlobalColor.white if color.lightness() < 180 else Qt.GlobalColor.black, 1))
-                
-                # 位范围文本
                 bit_range = f"[{start}:{start + bit_width_val - 1}]"
-                range_fm = QFontMetrics(QFont("Arial", 7))
-                range_width = range_fm.horizontalAdvance(bit_range)
+                display_mode = self._compute_display_mode(field_width, name_text, bit_range)
+                self._field_display_modes[field.name] = display_mode
                 
-                # 判断是否能完整显示名称+位范围
-                total_needed = max(name_width, range_width) + 8
+                # 根据显示模式绘制文本
+                text_color = Qt.GlobalColor.white if color.lightness() < 180 else Qt.GlobalColor.black
+                painter.setPen(QPen(text_color, 1))
                 
-                if field_width >= total_needed and field_width >= 40:
+                if display_mode == 'full':
                     # 空间足够，居中显示名称和位范围（名称上方，位范围下方）
-                    painter.setFont(QFont("Arial", 9, QFont.Weight.Bold))
+                    fm = QFontMetrics(font_name)
+                    name_width = fm.horizontalAdvance(name_text)
+                    
+                    painter.setFont(font_name)
                     text_x = rect_x + (rect_w - name_width) // 2
                     text_y = rect_y + rect_h // 2 - 2
                     painter.drawText(text_x, text_y, name_text)
                     
                     # 位范围显示在名称下方
-                    painter.setFont(QFont("Arial", 7))
+                    range_fm = QFontMetrics(font_range)
+                    range_width = range_fm.horizontalAdvance(bit_range)
+                    painter.setFont(font_range)
                     painter.setPen(QPen(
                         QColor(255, 255, 255, 200) if color.lightness() < 180 else QColor(80, 80, 80, 200), 1))
                     range_x = rect_x + (rect_w - range_width) // 2
                     range_y = text_y + range_fm.height()
                     painter.drawText(range_x, range_y, bit_range)
-                elif field_width >= name_width + 8:
+                    
+                elif display_mode == 'name_only':
                     # 空间只够显示名称
-                    painter.setFont(QFont("Arial", 9, QFont.Weight.Bold))
+                    fm = QFontMetrics(font_name)
+                    name_width = fm.horizontalAdvance(name_text)
+                    painter.setFont(font_name)
                     text_x = rect_x + (rect_w - name_width) // 2
                     text_y = rect_y + rect_h // 2 + fm.ascent() // 2 - 1
                     painter.drawText(text_x, text_y, name_text)
-                elif field_width >= 20:
-                    # 空间有限，使用小字体
-                    painter.setFont(QFont("Arial", 7, QFont.Weight.Bold))
-                    small_fm = QFontMetrics(QFont("Arial", 7, QFont.Weight.Bold))
+                    
+                elif display_mode == 'small':
+                    # 使用小字体显示完整名称
+                    small_fm = QFontMetrics(font_small)
                     small_name_width = small_fm.horizontalAdvance(name_text)
-                    if field_width >= small_name_width + 4:
-                        text_x = rect_x + (rect_w - small_name_width) // 2
-                        text_y = rect_y + rect_h // 2 + small_fm.ascent() // 2 - 1
-                        painter.drawText(text_x, text_y, name_text)
-                    else:
-                        # 显示首字母
-                        abbrev = name_text[0]
-                        painter.setFont(QFont("Arial", 9, QFont.Weight.Bold))
-                        painter.drawText(rect_x + rect_w // 2 - 4, rect_y + rect_h // 2 + 4, abbrev)
-                # 太窄的位域名称将在外部标签中显示
+                    painter.setFont(font_small)
+                    text_x = rect_x + (rect_w - small_name_width) // 2
+                    text_y = rect_y + rect_h // 2 + small_fm.ascent() // 2 - 1
+                    painter.drawText(text_x, text_y, name_text)
+                    
+                elif display_mode == 'abbrev':
+                    # 显示首字母
+                    abbrev = name_text[0]
+                    painter.setFont(font_abbrev)
+                    painter.drawText(rect_x + rect_w // 2 - 4, rect_y + rect_h // 2 + 4, abbrev)
+                
+                # display_mode == 'none' 时不绘制任何内部文本，依赖外部标签
                 
             except (ValueError, AttributeError):
                 continue
@@ -386,7 +428,11 @@ class BitFieldWidget(QWidget):
                 painter.drawLine(int(x), ruler_y, int(x), ruler_y + 5)
     
     def _paint_external_labels(self, painter: QPainter):
-        """绘制外部标签（每个位域都显示下标）"""
+        """绘制外部标签（每个位域都显示下标）
+        
+        使用 _paint_fields 中通过 _compute_display_mode 计算的统一显示模式，
+        确保内外判断使用完全一致的字体度量，避免"既不在内部显示也不生成外部标签"的问题。
+        """
         label_y_base = self._bit_area_y + self._bit_area_height + 30
         
         # 每个位域都需要外部标签显示下标
@@ -400,16 +446,12 @@ class BitFieldWidget(QWidget):
                 x2 = self._get_bit_x(start + bit_width_val)
                 field_width = x2 - x1
                 
-                # 所有位域都生成外部标签（确保下标始终可见）
                 center_x = (x1 + x2) / 2
                 bit_range_text = f"[{start}:{start + bit_width_val - 1}]"
                 
-                # 判断位域内部是否已经完整显示了名称+下标
-                fm = QFontMetrics(QFont("Arial", 8))
-                name_width = fm.horizontalAdvance(field.name)
-                range_width = fm.horizontalAdvance(bit_range_text)
-                total_needed = max(name_width, range_width) + 8
-                is_fully_shown_inside = field_width >= total_needed and field_width >= 40
+                # 使用 _paint_fields 中已计算的统一显示模式（与内部渲染使用相同字体度量）
+                display_mode = self._field_display_modes.get(field.name, 'none')
+                is_fully_shown_inside = (display_mode == 'full')
                 
                 labels_needed.append({
                     'field': field,

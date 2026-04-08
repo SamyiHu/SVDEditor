@@ -151,6 +151,9 @@ class PeripheralManager(QObject):
         if not periph_tree:
             return
         
+        # 阻塞信号，防止重建过程中触发选择变更导致展开/跳转
+        periph_tree.blockSignals(True)
+        
         # 保存当前展开状态
         expanded_paths = self._get_expanded_items(periph_tree)
         
@@ -220,9 +223,16 @@ class PeripheralManager(QObject):
                     periph_name = path.split('/')[0]
                     if periph_name in item_map:
                         item_map[periph_name].setExpanded(True)
+        
+        # 恢复树信号
+        periph_tree.blockSignals(False)
     
     def _get_expanded_items(self, tree: QTreeWidget):
-        """获取当前展开的项目名称（包括外设和寄存器）"""
+        """获取当前展开的项目名称（包括外设和寄存器）
+        
+        注意：Qt中折叠父节点不会改变子节点的isExpanded状态，
+        所以只遍历已展开节点的子节点，避免捕获隐藏的展开状态。
+        """
         expanded = []
         
         def traverse(item, path=""):
@@ -235,11 +245,12 @@ class PeripheralManager(QObject):
             
             if item.isExpanded():
                 expanded.append(current_path)
-            
-            # 递归遍历子项
-            for i in range(item.childCount()):
-                child = item.child(i)
-                traverse(child, current_path)
+                
+                # 只有当前项展开时才遍历子项
+                # （折叠的父节点下，子节点的isExpanded状态不可靠）
+                for i in range(item.childCount()):
+                    child = item.child(i)
+                    traverse(child, current_path)
         
         # 遍历顶级项目（外设）
         for i in range(tree.topLevelItemCount()):
@@ -418,11 +429,14 @@ class PeripheralManager(QObject):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            self.state_manager.delete_peripheral(periph_name)
-            self.peripheral_deleted.emit(periph_name)
+            # 暂停通知，防止删除过程中多次重建树
+            self.state_manager.pause_notifications()
+            try:
+                self.state_manager.delete_peripheral(periph_name)
+            finally:
+                self.state_manager.resume_notifications()
             
-            # 更新UI
-            self.update_peripheral_tree()
+            self.peripheral_deleted.emit(periph_name)
     
     def get_peripheral_info(self, periph_name: str) -> Optional[Dict[str, Any]]:
         """获取外设信息"""
@@ -505,7 +519,12 @@ class PeripheralManager(QObject):
             if action_data == "edit_peripheral":
                 self.edit_peripheral(item_name)
             elif action_data == "delete_peripheral":
-                self.delete_selected_peripheral()
+                # 支持多选批量删除
+                selected = periph_tree.selectedItems()
+                if len(selected) > 1:
+                    main_window._batch_delete_selected(selected)
+                else:
+                    self.delete_selected_peripheral()
             elif action_data == "add_register":
                 # 调用主窗口的添加寄存器功能
                 if hasattr(main_window, 'add_register'):
@@ -517,8 +536,11 @@ class PeripheralManager(QObject):
                 if hasattr(main_window, 'edit_register'):
                     main_window.edit_register(item_name)
             elif action_data == "delete_register":
-                # 调用主窗口的删除寄存器功能
-                if hasattr(main_window, 'delete_register'):
+                # 支持多选批量删除
+                selected = periph_tree.selectedItems()
+                if len(selected) > 1:
+                    main_window._batch_delete_selected(selected)
+                elif hasattr(main_window, 'delete_register'):
                     main_window.delete_register(item_name)
             elif action_data == "add_field":
                 # 调用主窗口的添加位域功能
@@ -540,8 +562,11 @@ class PeripheralManager(QObject):
                 if hasattr(main_window, 'edit_field'):
                     main_window.edit_field(item_name)
             elif action_data == "delete_field":
-                # 调用主窗口的删除位域功能
-                if hasattr(main_window, 'delete_field'):
+                # 支持多选批量删除
+                selected = periph_tree.selectedItems()
+                if len(selected) > 1:
+                    main_window._batch_delete_selected(selected)
+                elif hasattr(main_window, 'delete_field'):
                     main_window.delete_field(item_name)
             elif action_data == "sort_alphabetically":
                 # 调用主窗口的排序功能
@@ -765,17 +790,23 @@ class PeripheralManager(QObject):
             )
     
     def _select_peripheral_in_tree(self, periph_name: str):
-        """在树中选中指定外设"""
+        """在树中选中指定外设（不改变展开状态）"""
         periph_tree = self.layout_manager.get_widget('periph_tree')
         if not periph_tree:
             return
+        
+        # 阻塞信号，避免选中触发不必要的状态变更
+        periph_tree.blockSignals(True)
         
         # 遍历树查找外设项目
         for i in range(periph_tree.topLevelItemCount()):
             item = periph_tree.topLevelItem(i)
             if item.text(0) == periph_name:
                 periph_tree.setCurrentItem(item)
+                # 不改变展开状态，保持原有状态
                 break
+        
+        periph_tree.blockSignals(False)
     
     def select_peripheral(self, periph_name: str):
         """选中指定外设（公开方法）"""

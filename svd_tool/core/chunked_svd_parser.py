@@ -138,6 +138,9 @@ class ChunkedSVDParser:
         # 重置设备信息（避免多次解析数据合并）
         self.device_info = DeviceInfo()
         
+        # 解析XML注释中的copyright、author、license信息
+        self._parse_comments(dom)
+        
         # 获取根节点
         root = dom.documentElement
         
@@ -180,6 +183,27 @@ class ChunkedSVDParser:
         # 如果没有位置信息，返回0
         return 0
     
+    def _parse_comments(self, dom: minidom.Document):
+        """解析XML注释中的版权、作者、许可证信息"""
+        for child in dom.childNodes:
+            if child.nodeType == child.COMMENT_NODE:
+                comment_text = child.data.strip()
+                
+                # 解析版权信息
+                copyright_match = re.search(r'Copyright\s*\(c\)\s*\d{4}[^.\n]*\.?', comment_text, re.IGNORECASE)
+                if copyright_match:
+                    self.device_info.copyright = copyright_match.group(0).strip()
+                
+                # 解析作者信息
+                author_match = re.search(r'Author:\s*(.+?)(?:\n|$)', comment_text, re.IGNORECASE)
+                if author_match:
+                    self.device_info.author = author_match.group(1).strip()
+                
+                # 解析许可证信息
+                license_match = re.search(r'License:\s*(.+?)(?:\n|$)', comment_text, re.IGNORECASE)
+                if license_match:
+                    self.device_info.license = license_match.group(1).strip()
+    
     def _parse_device_info(self, device_node):
         """解析设备信息"""
         # 设备名称
@@ -203,6 +227,11 @@ class ChunkedSVDParser:
         else:
             self.warnings.append("未找到SVD版本信息，使用默认版本1.3")
             self.device_info.svd_version = "1.3"
+        
+        # 厂商名称
+        vendor_nodes = device_node.getElementsByTagName("vendor")
+        if vendor_nodes and vendor_nodes[0].firstChild:
+            self.device_info.vendor = vendor_nodes[0].firstChild.data.strip()
         
         self.logger.debug(f"设备信息: {self.device_info.name} v{self.device_info.version}")
     
@@ -605,17 +634,25 @@ class ChunkedSVDParser:
                 self.warnings.append(error_msg)
     
     def _collect_interrupts_to_device(self):
-        """收集所有中断到设备信息"""
+        """收集所有中断到设备信息（支持多外设共用同一中断）"""
         for periph_name, peripheral in self.device_info.peripherals.items():
             for interrupt in peripheral.interrupts:
                 irq_name = interrupt.get("name", "")
                 if irq_name:
-                    self.device_info.interrupts[irq_name] = Interrupt(
-                        name=irq_name,
-                        value=interrupt.get("value", 0),
-                        description=interrupt.get("description", ""),
-                        peripheral=periph_name
-                    )
+                    if irq_name in self.device_info.interrupts:
+                        # 已存在同名中断，添加外设到 peripherals 列表
+                        existing = self.device_info.interrupts[irq_name]
+                        if periph_name not in existing.peripherals:
+                            existing.peripherals.append(periph_name)
+                    else:
+                        # 创建新的中断对象
+                        self.device_info.interrupts[irq_name] = Interrupt(
+                            name=irq_name,
+                            value=interrupt.get("value", 0),
+                            description=interrupt.get("description", ""),
+                            peripheral=periph_name,
+                            peripherals=[periph_name]
+                        )
     
     def _set_block_positions(self):
         """设置块位置信息到块管理器"""

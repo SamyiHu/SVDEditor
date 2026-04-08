@@ -5,7 +5,9 @@ from typing import Optional, Dict, Any, List
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QDialogButtonBox,
-    QComboBox, QSpinBox, QTextEdit, QMessageBox
+    QComboBox, QSpinBox, QTextEdit, QMessageBox,
+    QListWidget, QListWidgetItem, QAbstractItemView,
+    QCheckBox, QGroupBox, QToolButton, QWidget
 )
 from PyQt6.QtCore import Qt
 
@@ -397,7 +399,7 @@ class FieldEditDialog(BaseEditDialog):
 
 
 class InterruptEditDialog(BaseEditDialog):
-    """中断编辑对话框"""
+    """中断编辑对话框（支持多外设共用中断）"""
     
     def __init__(self, parent=None, interrupt: Optional[Interrupt] = None,
                  peripherals: Optional[List[str]] = None, is_edit: bool = False):
@@ -426,15 +428,104 @@ class InterruptEditDialog(BaseEditDialog):
         self.value_spin.setRange(0, 255)
         self.add_form_row(t("label.interrupt_value") + ":", self.value_spin)
         
-        # 关联外设
-        self.periph_combo = QComboBox()
-        self.periph_combo.addItems(self.peripherals)
-        self.add_form_row(t("label.peripheral") + ":", self.periph_combo)
+        # === 关联外设（支持多选，带搜索过滤和快捷操作） ===
+        periph_widget = QWidget()
+        periph_container = QVBoxLayout(periph_widget)
+        periph_container.setContentsMargins(0, 0, 0, 0)
+        periph_container.setSpacing(4)
+        
+        # 搜索过滤框
+        search_layout = QHBoxLayout()
+        self.periph_search = QLineEdit()
+        self.periph_search.setPlaceholderText("🔍 搜索外设...")
+        self.periph_search.setClearButtonEnabled(True)
+        self.periph_search.textChanged.connect(self._filter_peripherals)
+        search_layout.addWidget(self.periph_search)
+        
+        # 全选/取消全选按钮
+        self.select_all_btn = QPushButton("全选")
+        self.select_all_btn.setFixedWidth(50)
+        self.select_all_btn.setToolTip("选中所有可见的外设")
+        self.select_all_btn.clicked.connect(self._select_all_visible)
+        search_layout.addWidget(self.select_all_btn)
+        
+        self.deselect_all_btn = QPushButton("清空")
+        self.deselect_all_btn.setFixedWidth(50)
+        self.deselect_all_btn.setToolTip("取消选中所有可见的外设")
+        self.deselect_all_btn.clicked.connect(self._deselect_all_visible)
+        search_layout.addWidget(self.deselect_all_btn)
+        
+        periph_container.addLayout(search_layout)
+        
+        # 已选计数标签
+        self.selected_count_label = QLabel("已选: 0 个外设")
+        self.selected_count_label.setStyleSheet("color: #666; font-size: 11px;")
+        periph_container.addWidget(self.selected_count_label)
+        
+        # 外设列表（复选框）
+        self.periph_list = QListWidget()
+        self.periph_list.setMaximumHeight(150)
+        self.periph_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        for periph_name in sorted(self.peripherals):
+            item = QListWidgetItem(periph_name)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Unchecked)
+            self.periph_list.addItem(item)
+        self.periph_list.itemChanged.connect(self._update_selected_count)
+        periph_container.addWidget(self.periph_list)
+        
+        self.add_form_row(t("label.peripheral") + ":", periph_widget)
         
         # 描述
         self.desc_edit = QLineEdit()
         self.desc_edit.setPlaceholderText(t("placeholder.interrupt_description"))
         self.add_form_row(t("label.description") + ":", self.desc_edit)
+    
+    def _filter_peripherals(self, filter_text: str):
+        """根据搜索文本过滤外设列表"""
+        filter_lower = filter_text.strip().lower()
+        for i in range(self.periph_list.count()):
+            item = self.periph_list.item(i)
+            if item is None:
+                continue
+            if not filter_lower or filter_lower in item.text().lower():
+                item.setHidden(False)
+            else:
+                item.setHidden(True)
+    
+    def _select_all_visible(self):
+        """选中所有可见的外设"""
+        self.periph_list.blockSignals(True)
+        for i in range(self.periph_list.count()):
+            item = self.periph_list.item(i)
+            if item is not None and not item.isHidden():
+                item.setCheckState(Qt.CheckState.Checked)
+        self.periph_list.blockSignals(False)
+        self._update_selected_count()
+    
+    def _deselect_all_visible(self):
+        """取消选中所有可见的外设"""
+        self.periph_list.blockSignals(True)
+        for i in range(self.periph_list.count()):
+            item = self.periph_list.item(i)
+            if item is not None and not item.isHidden():
+                item.setCheckState(Qt.CheckState.Unchecked)
+        self.periph_list.blockSignals(False)
+        self._update_selected_count()
+    
+    def _update_selected_count(self):
+        """更新已选计数"""
+        count = len(self._get_selected_peripherals())
+        self.selected_count_label.setText(f"已选: {count} 个外设")
+    
+    def _get_selected_peripherals(self) -> List[str]:
+        """获取选中的外设列表"""
+        selected = []
+        for i in range(self.periph_list.count()):
+            item = self.periph_list.item(i)
+            if item.checkState() == Qt.CheckState.Checked:
+                selected.append(item.text())
+        return selected
     
     def load_data(self, interrupt: Interrupt):
         """加载数据"""
@@ -445,11 +536,16 @@ class InterruptEditDialog(BaseEditDialog):
         self.value_spin.setValue(interrupt.value)
         self.desc_edit.setText(interrupt.description)
         
-        # 设置关联外设
-        if interrupt.peripheral:
-            index = self.periph_combo.findText(interrupt.peripheral)
-            if index >= 0:
-                self.periph_combo.setCurrentIndex(index)
+        # 设置关联外设（支持多选）
+        selected_peripherals = interrupt.peripherals if interrupt.peripherals else (
+            [interrupt.peripheral] if interrupt.peripheral else []
+        )
+        for i in range(self.periph_list.count()):
+            item = self.periph_list.item(i)
+            if item.text() in selected_peripherals:
+                item.setCheckState(Qt.CheckState.Checked)
+            else:
+                item.setCheckState(Qt.CheckState.Unchecked)
     
     def validate_input(self):
         """验证输入"""
@@ -460,17 +556,19 @@ class InterruptEditDialog(BaseEditDialog):
         value = self.value_spin.value()
         Validator.validate_irq_number(value)
         
-        # 验证关联外设
-        peripheral = self.periph_combo.currentText()
-        if not peripheral:
+        # 验证至少选择一个关联外设
+        selected = self._get_selected_peripherals()
+        if not selected:
             raise ValidationError(t("error.must_select_peripheral"))
     
     def collect_data(self):
         """收集数据"""
+        selected_peripherals = self._get_selected_peripherals()
         self.result_data = {
             "old_name": self.original_name if self.is_edit else "",
             "name": self.name_edit.text().strip(),
             "value": self.value_spin.value(),
             "description": self.desc_edit.text().strip(),
-            "peripheral": self.periph_combo.currentText()
+            "peripheral": selected_peripherals[0] if selected_peripherals else "",
+            "peripherals": selected_peripherals
         }

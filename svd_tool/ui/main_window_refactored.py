@@ -107,6 +107,11 @@ class MainWindowRefactored(QMainWindow):
         
         # 初始化连锁规则引擎
         self.chain_rules_engine = ChainRulesEngine()
+        # 自动加载项目根目录下的 chain_rules.json
+        _chain_rules_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'chain_rules.json')
+        if os.path.exists(_chain_rules_path):
+            self.chain_rules_engine.set_rule_file(_chain_rules_path)
+            self.logger.info(f"已加载连锁规则文件: {_chain_rules_path} ({len(self.chain_rules_engine.rules)}条规则)")
         
         # GUI 日志处理器
         self._gui_log_handler = None
@@ -619,26 +624,161 @@ class MainWindowRefactored(QMainWindow):
             self.show_message("提示", "请先选择一个项目进行编辑", "info")
     
     def on_delete_button_clicked(self):
-        """统一的删除按钮点击事件 - 根据当前选择智能删除"""
-        # 获取当前选择
-        selection = self.state_manager.get_selection()
-        peripheral = selection.get('peripheral')
-        register = selection.get('register')
-        field = selection.get('field')
+        """统一的删除按钮点击事件 - 支持多选批量删除"""
+        periph_tree = self.layout_manager.get_widget('periph_tree')
+        if not periph_tree:
+            return
         
-        # 根据选择决定删除什么
-        if field and peripheral and register:
-            # 删除位域
-            self.delete_field(field)
-        elif register and peripheral:
-            # 删除寄存器
-            self.delete_register(register)
-        elif peripheral:
-            # 删除外设
+        selected = periph_tree.selectedItems()
+        if not selected:
+            self.show_message(t("message.warning", default="提示"), 
+                              t("msg.select_item_first", default="请先选择要删除的项目"), "info")
+            return
+        
+        # 多选批量删除
+        if len(selected) > 1:
+            self._batch_delete_selected(selected)
+            return
+        
+        # 单选删除
+        item = selected[0]
+        item_type = self.tree_manager.get_item_type(item)
+        item_name = self.tree_manager.get_item_name(item)
+        
+        if item_type == "field":
+            # 获取外设和寄存器名
+            reg_item = item.parent()
+            periph_item = reg_item.parent() if reg_item else None
+            if reg_item and periph_item:
+                self.state_manager.set_selection(
+                    peripheral=self.tree_manager.get_item_name(periph_item),
+                    register=self.tree_manager.get_item_name(reg_item),
+                    field=item_name
+                )
+            self.delete_field(item_name)
+        elif item_type == "register":
+            periph_item = item.parent()
+            if periph_item:
+                self.state_manager.set_selection(
+                    peripheral=self.tree_manager.get_item_name(periph_item),
+                    register=item_name
+                )
+            self.delete_register(item_name)
+        elif item_type == "peripheral":
             self.peripheral_manager.delete_selected_peripheral()
-        else:
-            # 没有选择任何项目
-            self.show_message("提示", "请先选择一个项目进行删除", "info")
+    
+    def _batch_delete_selected(self, items: list):
+        """批量删除选中的项目"""
+        # ===== 第一步：先收集所有待删除项的信息（在树被重建之前） =====
+        to_delete_periphs = []
+        to_delete_regs = []  # (periph, reg)
+        to_delete_fields = []  # (periph, reg, field)
+        
+        for item in items:
+            item_type = item.data(0, Qt.ItemDataRole.UserRole)
+            item_name = item.data(0, Qt.ItemDataRole.UserRole + 1)
+            
+            if item_type == "peripheral":
+                to_delete_periphs.append(item_name)
+            elif item_type == "register":
+                periph_item = item.parent()
+                if periph_item:
+                    periph_name = periph_item.data(0, Qt.ItemDataRole.UserRole + 1)
+                    to_delete_regs.append((periph_name, item_name))
+            elif item_type == "field":
+                reg_item = item.parent()
+                periph_item = reg_item.parent() if reg_item else None
+                if reg_item and periph_item:
+                    periph_name = periph_item.data(0, Qt.ItemDataRole.UserRole + 1)
+                    reg_name = reg_item.data(0, Qt.ItemDataRole.UserRole + 1)
+                    to_delete_fields.append((periph_name, reg_name, item_name))
+        
+        total = len(to_delete_periphs) + len(to_delete_regs) + len(to_delete_fields)
+        if total == 0:
+            return
+        
+        # 构建确认消息
+        msg_parts = []
+        if to_delete_periphs:
+            msg_parts.append(f"外设: {', '.join(to_delete_periphs)}")
+        if to_delete_regs:
+            reg_names = [f"{p}.{r}" for p, r in to_delete_regs]
+            msg_parts.append(f"寄存器: {', '.join(reg_names)}")
+        if to_delete_fields:
+            field_names = [f"{p}.{r}.{f}" for p, r, f in to_delete_fields]
+            msg_parts.append(f"位域: {', '.join(field_names)}")
+        
+        confirm_msg = f"确定要删除以下 {total} 个项目吗？\n\n" + "\n".join(msg_parts)
+        
+        reply = QMessageBox.question(
+            self, "批量删除确认",
+            confirm_msg,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        # ===== 第二步：暂停状态通知，防止每次删除都重建树 =====
+        self.state_manager.pause_notifications()
+        
+        deleted_count = 0
+        chain_messages = []
+        
+        try:
+            # 删除位域（先删位域，再删寄存器，最后删外设，避免依赖问题）
+            for periph, reg, field_name in to_delete_fields:
+                try:
+                    # 先执行连锁规则（在数据还完整时）
+                    chain_results = self.chain_rules_engine.execute_chain(
+                        self.state_manager.device_info, "field", periph, reg, field_name, "delete")
+                    for r in chain_results:
+                        if r['success']:
+                            chain_messages.append(r['message'])
+                    # 再删除位域本身
+                    self.state_manager.delete_field(periph, reg, field_name)
+                    deleted_count += 1
+                except Exception as e:
+                    self.logger.error(f"批量删除位域 {periph}.{reg}.{field_name} 失败: {e}")
+            
+            # 删除寄存器
+            for periph, reg_name in to_delete_regs:
+                try:
+                    self.state_manager.delete_register(periph, reg_name)
+                    deleted_count += 1
+                except Exception as e:
+                    self.logger.error(f"批量删除寄存器 {periph}.{reg_name} 失败: {e}")
+            
+            # 删除外设
+            for periph_name in to_delete_periphs:
+                try:
+                    self.state_manager.delete_peripheral(periph_name)
+                    deleted_count += 1
+                except Exception as e:
+                    self.logger.error(f"批量删除外设 {periph_name} 失败: {e}")
+        
+        finally:
+            # ===== 第三步：恢复通知并统一刷新UI =====
+            # update_peripheral_tree 内部已处理 blockSignals
+            self.state_manager.resume_notifications()
+        
+        # 清除选择
+        self.state_manager.set_selection(peripheral=None, register=None, field=None)
+        self.update_data_stats()
+        
+        status_msg = f"已批量删除 {deleted_count} 个项目"
+        if chain_messages:
+            status_msg += f" (连锁: {len(chain_messages)}项)"
+        self.layout_manager.update_status(status_msg)
+        self.logger.info(f"批量删除完成: {deleted_count} 个项目")
+        
+        # 显示连锁结果
+        if chain_messages:
+            QMessageBox.information(self, "连锁操作",
+                "已同步删除以下关联项:\n" + "\n".join(chain_messages))
+        
+        self.data_changed.emit()
     
     def on_register_clicked(self, register):
         """寄存器点击事件处理"""
@@ -793,6 +933,9 @@ class MainWindowRefactored(QMainWindow):
             
             if not file_path:
                 return
+            
+            # 保存前先从UI更新设备信息（包括公司、版权、协议等基本信息）
+            self.update_device_info_from_ui()
             
             # 生成SVD
             generator = SVDGenerator(self.state_manager.device_info)
@@ -1030,6 +1173,9 @@ class MainWindowRefactored(QMainWindow):
             event.ignore()
             return
         
+        # 保存拖放前的外设顺序（用于撤销）
+        old_order = list(self.state_manager.device_info.peripherals.keys())
+        
         # 保存展开状态
         expanded_paths = self.peripheral_manager._get_expanded_items(periph_tree)
         
@@ -1054,6 +1200,41 @@ class MainWindowRefactored(QMainWindow):
                 if child and child_path in expanded_paths:
                     child.setExpanded(True)
         periph_tree.blockSignals(periph_tree_block)
+        
+        # 记录拖放操作到命令历史（支持撤销）
+        new_order = list(self.state_manager.device_info.peripherals.keys())
+        if old_order != new_order:
+            # 捕获当前状态用于闭包
+            captured_old_order = old_order[:]
+            captured_new_order = new_order[:]
+            state_mgr = self.state_manager
+            
+            def execute_reorder():
+                """重做拖放：恢复为拖放后的顺序"""
+                peripherals = state_mgr.device_info.peripherals
+                reordered = {name: peripherals[name] for name in captured_new_order if name in peripherals}
+                state_mgr.device_info.peripherals = reordered
+                state_mgr._notify_state_change()
+                return True
+            
+            def undo_reorder():
+                """撤销拖放：恢复为拖放前的顺序"""
+                peripherals = state_mgr.device_info.peripherals
+                reordered = {name: peripherals[name] for name in captured_old_order if name in peripherals}
+                state_mgr.device_info.peripherals = reordered
+                state_mgr._notify_state_change()
+                return True
+            
+            from ..core.command_history import Command
+            command = Command(
+                execute=execute_reorder,
+                undo=undo_reorder,
+                description=f"拖放调整外设顺序: {source_name}"
+            )
+            # 直接推入历史栈，不重新执行（拖放已经生效）
+            state_mgr.command_history.history.append(command)
+            state_mgr.command_history.current_index = len(state_mgr.command_history.history) - 1
+            state_mgr.command_history.redo_stack.clear()
     
     def _validate_and_fix_tree_structure_after_drop(self, moved_periph_name):
         """拖放后验证并修正树结构"""
@@ -1426,11 +1607,15 @@ class MainWindowRefactored(QMainWindow):
         if reply != QMessageBox.StandardButton.Yes:
             return
         
-        # 使用StateManager删除寄存器
-        self.state_manager.delete_register(current_peripheral, reg_name)
+        # 暂停通知，防止删除过程中多次重建树
+        self.state_manager.pause_notifications()
         
-        # 更新UI
-        self.peripheral_manager.update_peripheral_tree()
+        try:
+            # 使用StateManager删除寄存器
+            self.state_manager.delete_register(current_peripheral, reg_name)
+        finally:
+            # 恢复通知，触发一次统一的树重建
+            self.state_manager.resume_notifications()
         
         # 清除寄存器选择
         self.state_manager.set_selection(register=None, field=None)
@@ -1685,21 +1870,25 @@ class MainWindowRefactored(QMainWindow):
         if reply != QMessageBox.StandardButton.Yes:
             return
         
-        # 使用StateManager删除位域
-        self.state_manager.delete_field(current_peripheral, current_register, field_name)
+        # 暂停通知，防止删除和连锁操作过程中多次重建树
+        self.state_manager.pause_notifications()
         
-        # 执行连锁操作
-        chain_results = self.chain_rules_engine.execute_chain(
-            self.state_manager.device_info, "field",
-            current_peripheral, current_register, field_name, "delete")
-        chain_messages = []
-        for r in chain_results:
-            if r['success']:
-                chain_messages.append(r['message'])
-                self.logger.info(f"连锁操作: {r['message']}")
-        
-        # 更新UI
-        self.peripheral_manager.update_peripheral_tree()
+        try:
+            # 使用StateManager删除位域
+            self.state_manager.delete_field(current_peripheral, current_register, field_name)
+            
+            # 执行连锁操作
+            chain_results = self.chain_rules_engine.execute_chain(
+                self.state_manager.device_info, "field",
+                current_peripheral, current_register, field_name, "delete")
+            chain_messages = []
+            for r in chain_results:
+                if r['success']:
+                    chain_messages.append(r['message'])
+                    self.logger.info(f"连锁操作: {r['message']}")
+        finally:
+            # 恢复通知，触发一次统一的树重建
+            self.state_manager.resume_notifications()
         
         # 清除位域选择
         self.state_manager.set_selection(field=None)
@@ -1740,11 +1929,13 @@ class MainWindowRefactored(QMainWindow):
             
             # 创建中断对象
             from ..core.data_model import Interrupt
+            peripherals = result.get("peripherals", [result["peripheral"]] if result.get("peripheral") else [])
             interrupt = Interrupt(
                 name=result["name"],
                 value=result["value"],  # 保持为int
                 description=result["description"],
-                peripheral=result["peripheral"]
+                peripheral=result["peripheral"],
+                peripherals=peripherals
             )
             
             # 使用StateManager添加中断
@@ -1808,11 +1999,13 @@ class MainWindowRefactored(QMainWindow):
             
             # 创建更新后的中断对象
             from ..core.data_model import Interrupt
+            updated_peripherals = result.get("peripherals", [result["peripheral"]] if result.get("peripheral") else [])
             updated_interrupt = Interrupt(
                 name=new_name,
                 value=result["value"],  # 保持为int
                 description=result["description"],
-                peripheral=result["peripheral"]
+                peripheral=result["peripheral"],
+                peripherals=updated_peripherals
             )
             
             # 使用StateManager更新中断
@@ -1901,7 +2094,9 @@ class MainWindowRefactored(QMainWindow):
             irq_table.insertRow(i)
             irq_table.setItem(i, 0, QTableWidgetItem(interrupt.name))
             irq_table.setItem(i, 1, QTableWidgetItem(str(interrupt.value)))
-            irq_table.setItem(i, 2, QTableWidgetItem(interrupt.peripheral or ""))
+            # 显示所有关联外设（逗号分隔）
+            periph_display = ", ".join(interrupt.peripherals) if interrupt.peripherals else (interrupt.peripheral or "")
+            irq_table.setItem(i, 2, QTableWidgetItem(periph_display))
             irq_table.setItem(i, 3, QTableWidgetItem(interrupt.description or ""))
     
     def _refresh_all_data(self):
@@ -2216,8 +2411,12 @@ class MainWindowRefactored(QMainWindow):
         btn_layout = QHBoxLayout()
         add_rule_btn = QPushButton(t("button.add", default="添加"))
         del_rule_btn = QPushButton(t("button.delete", default="删除"))
+        batch_gen_btn = QPushButton(t("button.batch_generate", default="⚡批量生成"))
+        batch_gen_btn.setToolTip(t("tooltip.batch_generate", 
+            default="根据模板批量生成规则，例如为每个引脚PA0-15生成连锁规则"))
         btn_layout.addWidget(add_rule_btn)
         btn_layout.addWidget(del_rule_btn)
+        btn_layout.addWidget(batch_gen_btn)
         left_layout.addLayout(btn_layout)
         splitter.addWidget(left)
         
@@ -2311,6 +2510,179 @@ class MainWindowRefactored(QMainWindow):
                 rules_list.takeItem(row)
         
         del_rule_btn.clicked.connect(del_rule)
+        
+        # 批量生成规则
+        def batch_generate():
+            """批量生成连锁规则"""
+            from PyQt6.QtWidgets import (QDialog as BatchDialog, QVBoxLayout as BatchVLayout,
+                QHBoxLayout as BatchHLayout, QLabel as BatchLabel, QLineEdit as BatchLineEdit,
+                QPushButton as BatchBtn, QSpinBox as BatchSpin, QGroupBox as BatchGroup,
+                QFormLayout as BatchForm, QListWidget as BatchList, QCheckBox as BatchCheck,
+                QDialogButtonBox)
+            
+            batch_dlg = BatchDialog(dialog)
+            batch_dlg.setWindowTitle(t("dialog.batch_generate_rules", default="⚡批量生成连锁规则"))
+            batch_dlg.setMinimumSize(550, 500)
+            batch_lay = BatchVLayout(batch_dlg)
+            
+            # === 模板选择 ===
+            tpl_group = BatchGroup(t("label.template", default="模板"))
+            tpl_lay = BatchForm(tpl_group)
+            
+            tpl_combo = QComboBox()
+            tpl_combo.addItems([
+                t("tpl.gpio_pin", default="GPIO引脚 → 配置/上下拉/电平寄存器"),
+                t("tpl.custom", default="自定义模板"),
+            ])
+            tpl_lay.addRow(t("label.template_type", default="模板类型:"), tpl_combo)
+            batch_lay.addWidget(tpl_group)
+            
+            # === 参数设置 ===
+            param_group = BatchGroup(t("label.params", default="参数"))
+            param_form = BatchForm(param_group)
+            
+            # GPIO端口前缀
+            port_prefix_edit = BatchLineEdit("PA,PB,PC,PD,PE")
+            port_prefix_edit.setToolTip(t("tooltip.port_prefix", default="逗号分隔的端口前缀列表"))
+            param_form.addRow(t("label.port_prefix", default="端口前缀:"), port_prefix_edit)
+            
+            # 引脚范围
+            pin_range_widget = QWidget()
+            pin_range_lay = BatchHLayout(pin_range_widget)
+            pin_range_lay.setContentsMargins(0, 0, 0, 0)
+            pin_start_spin = BatchSpin()
+            pin_start_spin.setRange(0, 31)
+            pin_start_spin.setValue(0)
+            pin_end_spin = BatchSpin()
+            pin_end_spin.setRange(0, 31)
+            pin_end_spin.setValue(15)
+            pin_range_lay.addWidget(pin_start_spin)
+            pin_range_lay.addWidget(BatchLabel("-"))
+            pin_range_lay.addWidget(pin_end_spin)
+            param_form.addRow(t("label.pin_range", default="引脚范围:"), pin_range_widget)
+            
+            # 目标配置寄存器后缀
+            config_reg_edit = BatchLineEdit("CON")
+            param_form.addRow(t("label.config_reg", default="配置寄存器后缀:"), config_reg_edit)
+            config_field_edit = BatchLineEdit("MODE")
+            param_form.addRow(t("label.config_field", default="配置位域前缀:"), config_field_edit)
+            
+            # 目标上下拉寄存器
+            pull_reg_edit = BatchLineEdit("PH")
+            param_form.addRow(t("label.pull_reg", default="上下拉寄存器后缀:"), pull_reg_edit)
+            pull_field_edit = BatchLineEdit("PUPD")
+            param_form.addRow(t("label.pull_field", default="上下拉位域前缀:"), pull_field_edit)
+            
+            # 目标电平寄存器
+            level_reg_edit = BatchLineEdit("VEV")
+            param_form.addRow(t("label.level_reg", default="电平寄存器后缀:"), level_reg_edit)
+            level_field_edit = BatchLineEdit("LEV")
+            param_form.addRow(t("label.level_field", default="电平位域前缀:"), level_field_edit)
+            
+            batch_lay.addWidget(param_group)
+            
+            # === 预览 ===
+            preview_group = BatchGroup(t("label.preview", default="预览（将生成的规则）"))
+            preview_lay = BatchVLayout(preview_group)
+            preview_list = BatchList()
+            preview_lay.addWidget(preview_list)
+            batch_lay.addWidget(preview_group)
+            
+            count_label = BatchLabel("")
+            batch_lay.addWidget(count_label)
+            
+            def refresh_preview():
+                preview_list.clear()
+                prefixes = [p.strip() for p in port_prefix_edit.text().split(",") if p.strip()]
+                start_pin = pin_start_spin.value()
+                end_pin = pin_end_spin.value()
+                rules_count = 0
+                
+                for prefix in prefixes:
+                    for pin in range(start_pin, end_pin + 1):
+                        name = f"{prefix}{pin}"
+                        port = prefix  # PA, PB, etc.
+                        con_reg = f"{port}{config_reg_edit.text()}"
+                        ph_reg = f"{port}{pull_reg_edit.text()}"
+                        vev_reg = f"{port}{level_reg_edit.text()}"
+                        mode_field = f"{config_field_edit.text()}{pin}"
+                        pupd_field = f"{pull_field_edit.text()}{pin}"
+                        lev_field = f"{level_field_edit.text()}{pin}"
+                        
+                        preview_list.addItem(
+                            f"✓ 删除 {name} → 删除 {con_reg}.{mode_field}, {ph_reg}.{pupd_field}, {vev_reg}.{lev_field}")
+                        rules_count += 1
+                
+                count_label.setText(t("label.total_rules", default=f"共 {rules_count} 条规则"))
+            
+            # 连接信号实时预览
+            port_prefix_edit.textChanged.connect(refresh_preview)
+            pin_start_spin.valueChanged.connect(refresh_preview)
+            pin_end_spin.valueChanged.connect(refresh_preview)
+            config_reg_edit.textChanged.connect(refresh_preview)
+            config_field_edit.textChanged.connect(refresh_preview)
+            pull_reg_edit.textChanged.connect(refresh_preview)
+            pull_field_edit.textChanged.connect(refresh_preview)
+            level_reg_edit.textChanged.connect(refresh_preview)
+            level_field_edit.textChanged.connect(refresh_preview)
+            
+            refresh_preview()
+            
+            # 按钮
+            btn_box = QDialogButtonBox(
+                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            btn_box.accepted.connect(batch_dlg.accept)
+            btn_box.rejected.connect(batch_dlg.reject)
+            batch_lay.addWidget(btn_box)
+            
+            if batch_dlg.exec() == BatchDialog.DialogCode.Accepted:
+                # 生成规则
+                prefixes = [p.strip() for p in port_prefix_edit.text().split(",") if p.strip()]
+                start_pin = pin_start_spin.value()
+                end_pin = pin_end_spin.value()
+                generated = 0
+                
+                for prefix in prefixes:
+                    for pin in range(start_pin, end_pin + 1):
+                        name = f"{prefix}{pin}"
+                        port = prefix
+                        con_reg = f"{port}{config_reg_edit.text()}"
+                        ph_reg = f"{port}{pull_reg_edit.text()}"
+                        vev_reg = f"{port}{level_reg_edit.text()}"
+                        mode_field = f"{config_field_edit.text()}{pin}"
+                        pupd_field = f"{pull_field_edit.text()}{pin}"
+                        lev_field = f"{level_field_edit.text()}{pin}"
+                        
+                        rule = ChainRule(
+                            name=f"删除{name}时连锁删除配置",
+                            enabled=True,
+                            source_type="field",
+                            source_peripheral="GPIO*",
+                            source_register="*" + name,
+                            source_field=name,
+                            trigger="delete",
+                            actions=[
+                                ChainAction(target_peripheral="*", target_register=con_reg,
+                                           target_field=mode_field, action="delete",
+                                           description=f"删除{con_reg}.{mode_field}"),
+                                ChainAction(target_peripheral="*", target_register=ph_reg,
+                                           target_field=pupd_field, action="delete",
+                                           description=f"删除{ph_reg}.{pupd_field}"),
+                                ChainAction(target_peripheral="*", target_register=vev_reg,
+                                           target_field=lev_field, action="delete",
+                                           description=f"删除{vev_reg}.{lev_field}"),
+                            ]
+                        )
+                        self.chain_rules_engine.add_rule(rule)
+                        rules_list.addItem(f"✓ {rule.name}")
+                        generated += 1
+                
+                self.chain_rules_engine.save_rules()
+                QMessageBox.information(dialog,
+                    t("msg.batch_gen_complete", default="批量生成完成"),
+                    t("msg.batch_gen_result", default=f"已生成 {generated} 条连锁规则"))
+        
+        batch_gen_btn.clicked.connect(batch_generate)
         
         # 保存
         def save():

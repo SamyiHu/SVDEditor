@@ -418,7 +418,7 @@ class TabBuilder:
             QTreeWidget::item:focus { outline: none; }
         """)
         periph_tree.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
-        periph_tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
+        periph_tree.setSelectionMode(QTreeWidget.SelectionMode.ExtendedSelection)
         left_layout.addWidget(periph_tree)
 
         # 右侧

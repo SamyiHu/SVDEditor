@@ -45,8 +45,8 @@ class TreeManager:
         tree.setDropIndicatorShown(True)  # 显示放置指示器
         tree.setDragDropMode(QTreeWidget.DragDropMode.InternalMove)  # 内部移动
 
-        # 设置选择模式
-        tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
+        # 设置选择模式（支持 Ctrl/Shift 多选）
+        tree.setSelectionMode(QTreeWidget.SelectionMode.ExtendedSelection)
         
         return tree
     

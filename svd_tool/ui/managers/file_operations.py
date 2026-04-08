@@ -126,6 +126,9 @@ class FileOperations(QObject):
             if not file_path:
                 return
 
+            # 保存前先从UI更新设备信息（包括公司、版权、协议等基本信息）
+            self.update_device_info_from_ui()
+
             # 生成SVD
             generator = SVDGenerator(self.state_manager.device_info)
             svd_xml = generator.generate()

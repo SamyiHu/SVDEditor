@@ -91,7 +91,8 @@ class Interrupt:
     name: str
     value: int
     description: str = ""
-    peripheral: str = ""
+    peripheral: str = ""  # 保留兼容性，指向第一个关联外设
+    peripherals: List[str] = field(default_factory=list)  # 支持多外设共用中断
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""

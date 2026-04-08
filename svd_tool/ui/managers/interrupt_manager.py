@@ -5,7 +5,7 @@
 import logging
 from typing import Optional
 
-from PyQt6.QtWidgets import QTableWidget, QMessageBox, QMenu
+from PyQt6.QtWidgets import QTableWidget, QMessageBox, QMenu, QTableWidgetItem
 from ...i18n.i18n import t
 
 
@@ -78,11 +78,13 @@ class InterruptManager:
             
             # 创建中断对象
             from ..core.data_model import Interrupt
+            peripherals = result.get("peripherals", [result["peripheral"]] if result.get("peripheral") else [])
             interrupt = Interrupt(
                 name=result["name"],
                 value=result["value"],  # 保持为int
                 description=result["description"],
-                peripheral=result["peripheral"]
+                peripheral=result["peripheral"],
+                peripherals=peripherals
             )
             
             # 使用StateManager添加中断
@@ -160,11 +162,13 @@ class InterruptManager:
             
             # 创建更新后的中断对象
             from ..core.data_model import Interrupt
+            updated_peripherals = result.get("peripherals", [result["peripheral"]] if result.get("peripheral") else [])
             updated_interrupt = Interrupt(
                 name=new_name,
                 value=result["value"],  # 保持为int
                 description=result["description"],
-                peripheral=result["peripheral"]
+                peripheral=result["peripheral"],
+                peripherals=updated_peripherals
             )
             
             # 使用StateManager更新中断
@@ -269,7 +273,9 @@ class InterruptManager:
             irq_table.insertRow(i)
             irq_table.setItem(i, 0, QTableWidgetItem(interrupt.name))
             irq_table.setItem(i, 1, QTableWidgetItem(str(interrupt.value)))
-            irq_table.setItem(i, 2, QTableWidgetItem(interrupt.peripheral or ""))
+            # 显示所有关联外设（逗号分隔）
+            periph_display = ", ".join(interrupt.peripherals) if interrupt.peripherals else (interrupt.peripheral or "")
+            irq_table.setItem(i, 2, QTableWidgetItem(periph_display))
             irq_table.setItem(i, 3, QTableWidgetItem(interrupt.description or ""))
     
     def update_interrupt_buttons_state(self):

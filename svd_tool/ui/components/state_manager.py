@@ -51,13 +51,27 @@ class StateManager:
         if callback in self._selection_change_callbacks:
             self._selection_change_callbacks.remove(callback)
     
+    def pause_notifications(self):
+        """暂停状态变更通知（用于批量操作）"""
+        self._notifications_paused = True
+    
+    def resume_notifications(self):
+        """恢复状态变更通知，并触发一次通知"""
+        self._notifications_paused = False
+        self._notify_state_change()
+        self._notify_selection_change()
+    
     def _notify_state_change(self):
         """通知状态变更"""
+        if getattr(self, '_notifications_paused', False):
+            return
         for callback in self._state_change_callbacks:
             callback()
     
     def _notify_selection_change(self):
         """通知选择变更"""
+        if getattr(self, '_notifications_paused', False):
+            return
         for callback in self._selection_change_callbacks:
             callback()
     
@@ -597,9 +611,50 @@ class StateManager:
         )
         self.execute_command(command)
     
+    def _sync_interrupt_to_peripherals(self, interrupt: Interrupt):
+        """将中断同步到关联的外设的interrupts列表中"""
+        for periph_name in interrupt.peripherals:
+            if periph_name in self.device_info.peripherals:
+                peripheral = self.device_info.peripherals[periph_name]
+                # 检查是否已存在同名中断
+                existing = None
+                for idx, irq_dict in enumerate(peripheral.interrupts):
+                    if irq_dict["name"] == interrupt.name:
+                        existing = idx
+                        break
+                irq_dict = {
+                    "name": interrupt.name,
+                    "value": interrupt.value,
+                    "description": interrupt.description,
+                    "peripheral": periph_name
+                }
+                if existing is not None:
+                    peripheral.interrupts[existing] = irq_dict
+                else:
+                    peripheral.interrupts.append(irq_dict)
+    
+    def _remove_interrupt_from_peripheral(self, interrupt_name: str, periph_name: str):
+        """从指定外设的interrupts列表中移除中断"""
+        if periph_name in self.device_info.peripherals:
+            peripheral = self.device_info.peripherals[periph_name]
+            peripheral.interrupts = [
+                irq for irq in peripheral.interrupts if irq["name"] != interrupt_name
+            ]
+    
+    def _sync_all_peripheral_interrupts(self):
+        """根据device_info.interrupts完全重建所有外设的interrupts列表"""
+        # 先清空所有外设的中断列表
+        for peripheral in self.device_info.peripherals.values():
+            peripheral.interrupts = []
+        # 根据device_info.interrupts重建
+        for interrupt in self.device_info.interrupts.values():
+            self._sync_interrupt_to_peripherals(interrupt)
+    
     def add_interrupt(self, interrupt: Interrupt):
         """添加中断"""
         self.device_info.interrupts[interrupt.name] = interrupt
+        # 同步到外设
+        self._sync_interrupt_to_peripherals(interrupt)
         self._notify_state_change()
     
     def update_interrupt(self, name: str, interrupt: Interrupt):
@@ -612,12 +667,30 @@ class StateManager:
         
         # 创建执行函数
         def execute():
-            self.device_info.interrupts[name] = interrupt
+            # 如果名称更改，先从旧外设中移除
+            if name != interrupt.name:
+                for periph_name in old_interrupt.peripherals:
+                    self._remove_interrupt_from_peripheral(name, periph_name)
+                del self.device_info.interrupts[name]
+            
+            # 更新中断数据
+            self.device_info.interrupts[interrupt.name] = interrupt
+            # 同步到所有关联外设
+            self._sync_interrupt_to_peripherals(interrupt)
             self._notify_state_change()
         
         # 创建撤销函数
         def undo():
+            # 撤销：从新外设中移除
+            if name != interrupt.name:
+                for periph_name in interrupt.peripherals:
+                    self._remove_interrupt_from_peripheral(interrupt.name, periph_name)
+                del self.device_info.interrupts[interrupt.name]
+            
+            # 恢复旧的中断数据
             self.device_info.interrupts[name] = old_interrupt
+            # 同步旧中断到外设
+            self._sync_interrupt_to_peripherals(old_interrupt)
             self._notify_state_change()
         
         # 创建命令并执行
@@ -631,6 +704,10 @@ class StateManager:
     def delete_interrupt(self, name: str):
         """删除中断"""
         if name in self.device_info.interrupts:
+            interrupt = self.device_info.interrupts[name]
+            # 从所有关联外设中移除
+            for periph_name in interrupt.peripherals:
+                self._remove_interrupt_from_peripheral(name, periph_name)
             del self.device_info.interrupts[name]
             self._notify_state_change()
     
@@ -640,12 +717,15 @@ class StateManager:
         # 保存执行前的选中状态
         command.selection_before = self.get_selection()
         
-        self.command_history.execute(command)
+        result = self.command_history.execute(command)
         
         # 保存执行后的选中状态
         command.selection_after = self.get_selection()
         
-        self._notify_state_change()
+        # 注意：execute 闭包内部已经调用了 _notify_state_change()，这里不再重复调用
+        # 避免双重通知导致 UI 重建两次（例如外设树会被重建两次）
+        
+        return result
     
     def undo(self):
         """撤销"""
