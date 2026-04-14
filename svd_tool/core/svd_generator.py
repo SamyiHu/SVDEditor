@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional
 from xml.etree import ElementTree as ET
 from xml.dom import minidom
 
-from .data_model import DeviceInfo
+from .data_model import DeviceInfo, Cluster
 from .constants import SVD_VERSIONS
 from ..utils.logger import Logger
 
@@ -146,14 +146,20 @@ class SVDGenerator:
         for interrupt in peripheral.interrupts:
             self._add_interrupt_to_peripheral(periph_elem, interrupt)
         
-        # 添加寄存器
-        if peripheral.registers:
+        # 添加寄存器和簇
+        if peripheral.registers or peripheral.clusters:
             registers_elem = ET.SubElement(periph_elem, "registers")
             
             for reg_name, register in peripheral.registers.items():
                 reg_elem = self._create_register_element(register)
                 if reg_elem:
                     registers_elem.append(reg_elem)
+            
+            # 添加寄存器簇
+            for cl_name, cluster in peripheral.clusters.items():
+                cl_elem = self._create_cluster_element(cluster)
+                if cl_elem:
+                    registers_elem.append(cl_elem)
         
         return periph_elem
     
@@ -172,7 +178,10 @@ class SVDGenerator:
     
     def _create_register_element(self, register) -> Optional[ET.Element]:
         """创建寄存器元素"""
-        reg_elem = ET.Element("register")
+        attrs = {}
+        if hasattr(register, 'derived_from') and register.derived_from:
+            attrs["derivedFrom"] = register.derived_from
+        reg_elem = ET.Element("register", attrs)
         
         ET.SubElement(reg_elem, "name").text = register.name
         
@@ -210,6 +219,57 @@ class SVDGenerator:
         
         return reg_elem
     
+    def _create_cluster_element(self, cluster: Cluster) -> Optional[ET.Element]:
+        """创建寄存器簇元素"""
+        attrs = {}
+        if cluster.derived_from:
+            attrs["derivedFrom"] = cluster.derived_from
+
+        cl_elem = ET.Element("cluster", attrs)
+
+        ET.SubElement(cl_elem, "name").text = cluster.name
+
+        if cluster.display_name:
+            ET.SubElement(cl_elem, "displayName").text = cluster.display_name
+
+        description = cluster.description or cluster.name
+        ET.SubElement(cl_elem, "description").text = description
+
+        ET.SubElement(cl_elem, "addressOffset").text = cluster.address_offset
+
+        # dim 信息（簇数组）
+        if cluster.dim is not None:
+            ET.SubElement(cl_elem, "dim").text = str(cluster.dim)
+            ET.SubElement(cl_elem, "dimIncrement").text = cluster.dim_increment
+            if cluster.dim_index:
+                ET.SubElement(cl_elem, "dimIndex").text = ",".join(cluster.dim_index)
+
+        if cluster.size:
+            ET.SubElement(cl_elem, "size").text = cluster.size
+
+        if cluster.access:
+            ET.SubElement(cl_elem, "access").text = cluster.access
+
+        if cluster.reset_value:
+            ET.SubElement(cl_elem, "resetValue").text = cluster.reset_value
+
+        if cluster.reset_mask and cluster.reset_mask != "0xFFFFFFFF":
+            ET.SubElement(cl_elem, "resetMask").text = cluster.reset_mask
+
+        # 簇内的寄存器
+        for reg_name, register in cluster.registers.items():
+            reg_elem = self._create_register_element(register)
+            if reg_elem:
+                cl_elem.append(reg_elem)
+
+        # 嵌套簇
+        for sub_name, sub_cluster in cluster.clusters.items():
+            sub_elem = self._create_cluster_element(sub_cluster)
+            if sub_elem:
+                cl_elem.append(sub_elem)
+
+        return cl_elem
+
     def _create_field_element(self, field) -> Optional[ET.Element]:
         """创建位域元素"""
         field_elem = ET.Element("field")

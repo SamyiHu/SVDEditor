@@ -1,11 +1,12 @@
 # svd_tool/core/svd_parser.py
 import re
+from copy import deepcopy
 from typing import Dict, Any, Optional, List, Tuple
 from xml.dom import minidom
 from xml.parsers.expat import ExpatError
 import warnings
 
-from .data_model import DeviceInfo, Peripheral, Register, Field, Interrupt, CPUInfo
+from .data_model import DeviceInfo, Peripheral, Register, Field, Interrupt, CPUInfo, Cluster
 from .validators import Validator, ValidationError
 from ..utils.logger import Logger
 
@@ -371,12 +372,16 @@ class SVDParser:
         return peripheral
     
     def _parse_registers_for_peripheral(self, periph_node, peripheral: Peripheral):
-        """为外设解析寄存器"""
+        """为外设解析寄存器和簇"""
         registers_node = periph_node.getElementsByTagName("registers")
         if not registers_node:
             return
         
-        reg_nodes = registers_node[0].getElementsByTagName("register")
+        # 只解析直接子节点中的 register（不包含 cluster 内部的寄存器）
+        reg_nodes = []
+        for child in registers_node[0].childNodes:
+            if child.nodeType == child.ELEMENT_NODE and child.tagName == "register":
+                reg_nodes.append(child)
         
         self.logger.debug(f"外设 {peripheral.name} 有 {len(reg_nodes)} 个寄存器")
         
@@ -391,6 +396,128 @@ class SVDParser:
                 self.stats["errors"] += 1
                 error_msg = f"外设 {peripheral.name} 解析寄存器失败: {str(e)}"
                 self.warnings.append(error_msg)
+        
+        # 解析寄存器簇 (cluster)
+        self._parse_clusters_for_node(registers_node[0], peripheral.clusters, peripheral.name)
+
+    def _parse_clusters_for_node(self, parent_node, clusters_dict: dict, parent_name: str):
+        """解析 cluster 元素"""
+        if not parent_node:
+            return
+        cluster_nodes = parent_node.getElementsByTagName("cluster")
+        # 只取直接子节点中的 cluster（避免递归匹配嵌套簇内的簇）
+        direct_clusters = []
+        for child in parent_node.childNodes:
+            if child.nodeType == child.ELEMENT_NODE and child.tagName == "cluster":
+                direct_clusters.append(child)
+
+        for cl_node in direct_clusters:
+            try:
+                cluster = self._parse_cluster(cl_node)
+                if cluster:
+                    clusters_dict[cluster.name] = cluster
+                    self.stats["registers"] += len(cluster.registers)
+                    self.logger.debug(f"解析簇 {cluster.name} ({len(cluster.registers)} 个寄存器)")
+            except Exception as e:
+                self.stats["errors"] += 1
+                self.warnings.append(f"解析簇失败 ({parent_name}): {str(e)}")
+
+    def _parse_cluster(self, cl_node) -> Optional[Cluster]:
+        """解析单个 cluster 元素"""
+        name_nodes = cl_node.getElementsByTagName("name")
+        if not name_nodes or not name_nodes[0].firstChild:
+            self.warnings.append("跳过未命名的 cluster")
+            return None
+
+        name = name_nodes[0].firstChild.data.strip()
+
+        # 地址偏移
+        offset = "0x0"
+        offset_nodes = cl_node.getElementsByTagName("addressOffset")
+        if offset_nodes and offset_nodes[0].firstChild:
+            offset = offset_nodes[0].firstChild.data.strip()
+
+        cluster = Cluster(name=name, address_offset=offset)
+
+        # 描述
+        desc_nodes = cl_node.getElementsByTagName("description")
+        if desc_nodes and desc_nodes[0].firstChild:
+            cluster.description = desc_nodes[0].firstChild.data.strip()
+        else:
+            cluster.description = name
+
+        # 显示名称
+        dn_nodes = cl_node.getElementsByTagName("displayName")
+        if dn_nodes and dn_nodes[0].firstChild:
+            cluster.display_name = dn_nodes[0].firstChild.data.strip()
+
+        # size / access / resetValue / resetMask
+        size_nodes = cl_node.getElementsByTagName("size")
+        if size_nodes and size_nodes[0].firstChild:
+            cluster.size = size_nodes[0].firstChild.data.strip()
+
+        for child in cl_node.childNodes:
+            if child.nodeType == child.ELEMENT_NODE and child.tagName == "access" and child.firstChild:
+                cluster.access = child.firstChild.data.strip()
+                break
+
+        rv_nodes = cl_node.getElementsByTagName("resetValue")
+        if rv_nodes and rv_nodes[0].firstChild:
+            cluster.reset_value = rv_nodes[0].firstChild.data.strip()
+
+        rm_nodes = cl_node.getElementsByTagName("resetMask")
+        if rm_nodes and rm_nodes[0].firstChild:
+            cluster.reset_mask = rm_nodes[0].firstChild.data.strip()
+
+        # dim 信息
+        dim_nodes = cl_node.getElementsByTagName("dim")
+        if dim_nodes and dim_nodes[0].firstChild:
+            try:
+                cluster.dim = int(dim_nodes[0].firstChild.data.strip())
+            except ValueError:
+                pass
+
+        dim_inc_nodes = cl_node.getElementsByTagName("dimIncrement")
+        if dim_inc_nodes and dim_inc_nodes[0].firstChild:
+            cluster.dim_increment = dim_inc_nodes[0].firstChild.data.strip()
+
+        dim_idx_nodes = cl_node.getElementsByTagName("dimIndex")
+        if dim_idx_nodes and dim_idx_nodes[0].firstChild:
+            idx_text = dim_idx_nodes[0].firstChild.data.strip()
+            if "-" in idx_text:
+                try:
+                    start, end = idx_text.split("-")
+                    cluster.dim_index = [str(i) for i in range(int(start), int(end) + 1)]
+                except ValueError:
+                    cluster.dim_index = idx_text.split(",")
+            else:
+                cluster.dim_index = idx_text.split(",")
+
+        # derivedFrom
+        if cl_node.hasAttribute("derivedFrom"):
+            cluster.derived_from = cl_node.getAttribute("derivedFrom")
+
+        # 解析簇内的寄存器
+        for child in cl_node.childNodes:
+            if child.nodeType == child.ELEMENT_NODE and child.tagName == "register":
+                try:
+                    reg = self._parse_register(child)
+                    if reg:
+                        cluster.registers[reg.name] = reg
+                except Exception as e:
+                    self.warnings.append(f"簇 {name} 解析寄存器失败: {str(e)}")
+
+        # 递归解析嵌套簇
+        for child in cl_node.childNodes:
+            if child.nodeType == child.ELEMENT_NODE and child.tagName == "cluster":
+                try:
+                    sub = self._parse_cluster(child)
+                    if sub:
+                        cluster.clusters[sub.name] = sub
+                except Exception as e:
+                    self.warnings.append(f"簇 {name} 解析子簇失败: {str(e)}")
+
+        return cluster
     
     def _parse_register(self, reg_node) -> Optional[Register]:
         """解析寄存器"""
@@ -412,7 +539,10 @@ class SVDParser:
         
         # 创建寄存器对象
         register = Register(name=name, offset=offset)
-        
+
+        # 寄存器级 derivedFrom
+        if hasattr(reg_node, 'hasAttribute') and reg_node.hasAttribute("derivedFrom"):
+            register.derived_from = reg_node.getAttribute("derivedFrom")
         
         # ----- 关键修复：回归简单直接的解析方式 -----
         
@@ -595,57 +725,204 @@ class SVDParser:
         return result
     
     def _resolve_inheritance(self):
-        """解析外设继承关系（derivedFrom）"""
-        # 需要多次迭代，因为继承链可能有多层
-        max_iterations = 10  # 防止无限循环
+        """解析外设继承关系（derivedFrom）— 完整版
+        
+        CMSIS-SVD 继承规则:
+        1. 外设级 derivedFrom: 继承所有未定义的属性、寄存器、簇、中断
+        2. 寄存器级 derivedFrom: 继承单个寄存器的未定义属性和位域
+        3. 簇级 derivedFrom: 继承簇的未定义属性、寄存器和子簇
+        4. 支持多级继承链（A→B→C）
+        5. 支持循环引用检测
+        """
+        # ---- 第一阶段：外设级继承 ----
+        self._resolve_peripheral_inheritance()
+
+        # ---- 第二阶段：寄存器级 derivedFrom（外设内部） ----
+        for peripheral in self.device_info.peripherals.values():
+            self._resolve_register_inheritance(peripheral)
+            # 簇内寄存器继承
+            for cluster in peripheral.clusters.values():
+                self._resolve_cluster_inheritance(cluster, peripheral)
+
+    def _resolve_peripheral_inheritance(self):
+        """解析外设级 derivedFrom 继承"""
+        max_iterations = 10
         for _ in range(max_iterations):
             resolved_any = False
             for name, peripheral in list(self.device_info.peripherals.items()):
-                if peripheral.derived_from:
-                    parent_name = peripheral.derived_from
-                    if parent_name in self.device_info.peripherals:
-                        parent = self.device_info.peripherals[parent_name]
-                        # 只继承当前为空的字段（即外设自身未定义的内容）
-                        if not peripheral.registers and parent.registers:
-                            peripheral.registers = {
-                                reg_name: Register(
-                                    name=reg.name,
-                                    offset=reg.offset,
-                                    description=reg.description,
-                                    display_name=reg.display_name,
-                                    size=reg.size,
-                                    access=reg.access,
-                                    reset_value=reg.reset_value,
-                                    reset_mask=reg.reset_mask,
-                                    fields={
-                                        f_name: Field(
-                                            name=f.name,
-                                            description=f.description,
-                                            display_name=f.display_name,
-                                            bit_offset=f.bit_offset,
-                                            bit_width=f.bit_width,
-                                            access=f.access,
-                                            reset_value=f.reset_value,
-                                            enumerated_values=list(f.enumerated_values)
-                                        ) for f_name, f in reg.fields.items()
-                                    }
-                                ) for reg_name, reg in parent.registers.items()
-                            }
-                            resolved_any = True
-                        if not peripheral.interrupts and parent.interrupts:
-                            peripheral.interrupts = list(parent.interrupts)
-                            resolved_any = True
-                        if not peripheral.description or peripheral.description == peripheral.name:
-                            if parent.description and parent.description != parent.name:
-                                peripheral.description = parent.description
-                    else:
-                        self.warnings.append(
-                            f"外设 {name} 的继承源 {parent_name} 不存在"
-                        )
-                    # 继承完成后清除 derived_from 标记（不再需要）
-                    # 保留原始值以便生成器可以重新输出
+                if not peripheral.derived_from:
+                    continue
+
+                parent_name = peripheral.derived_from
+
+                # 循环引用检测
+                if self._has_circular_inheritance(name, parent_name):
+                    self.warnings.append(
+                        f"检测到循环继承: {name} → {parent_name}，跳过"
+                    )
+                    peripheral.derived_from = ""
+                    continue
+
+                if parent_name not in self.device_info.peripherals:
+                    self.warnings.append(
+                        f"外设 {name} 的继承源 {parent_name} 不存在"
+                    )
+                    peripheral.derived_from = ""
+                    continue
+
+                parent = self.device_info.peripherals[parent_name]
+
+                # 如果父级也有 derivedFrom 且尚未解析，先跳过
+                if parent.derived_from:
+                    continue
+
+                # 继承未定义的属性
+                changed = False
+
+                # 基本属性继承
+                for attr in ['display_name', 'group_name']:
+                    if not getattr(peripheral, attr, None) and getattr(parent, attr, None):
+                        setattr(peripheral, attr, getattr(parent, attr))
+                        changed = True
+
+                # 描述继承
+                if (not peripheral.description or peripheral.description == peripheral.name):
+                    if parent.description and parent.description != parent.name:
+                        peripheral.description = parent.description
+                        changed = True
+
+                # 地址块继承 — 利用 Peripheral 默认实例判断是否未被修改
+                _default_ab = Peripheral(name="__default__", base_address="0x0").address_block
+                if peripheral.address_block == _default_ab:
+                    if parent.address_block:
+                        peripheral.address_block = dict(parent.address_block)
+                        changed = True
+
+                # 寄存器继承（只在外设没有自己的寄存器时）
+                if not peripheral.registers and parent.registers:
+                    peripheral.registers = self._deep_copy_registers(parent.registers)
+                    changed = True
+
+                # 簇继承
+                if not peripheral.clusters and parent.clusters:
+                    peripheral.clusters = self._deep_copy_clusters(parent.clusters)
+                    changed = True
+
+                # 中断继承
+                if not peripheral.interrupts and parent.interrupts:
+                    peripheral.interrupts = list(parent.interrupts)
+                    changed = True
+
+                if changed:
+                    resolved_any = True
+
             if not resolved_any:
                 break
+
+    def _resolve_register_inheritance(self, peripheral: Peripheral):
+        """解析寄存器级 derivedFrom（在外设内部查找源寄存器）"""
+        all_regs = peripheral.registers
+        for reg_name, register in list(all_regs.items()):
+            if not hasattr(register, 'derived_from') or not register.derived_from:
+                continue
+
+            source_name = register.derived_from
+            if source_name in all_regs and source_name != reg_name:
+                source = all_regs[source_name]
+                self._merge_register_from_source(register, source)
+                register.derived_from = ""  # 清除标记
+            else:
+                self.warnings.append(
+                    f"寄存器 {reg_name} 的继承源 {source_name} 在外设 {peripheral.name} 中不存在"
+                )
+
+    def _resolve_cluster_inheritance(self, cluster: Cluster, peripheral: Peripheral):
+        """解析簇级 derivedFrom"""
+        if cluster.derived_from:
+            # 在外设的其他簇中查找源
+            if cluster.derived_from in peripheral.clusters:
+                source = peripheral.clusters[cluster.derived_from]
+                # 继承未定义的属性
+                if not cluster.description or cluster.description == cluster.name:
+                    cluster.description = source.description
+                for attr in ['display_name', 'size', 'access', 'reset_value', 'reset_mask']:
+                    if not getattr(cluster, attr, None) and getattr(source, attr, None):
+                        setattr(cluster, attr, getattr(source, attr))
+                if not cluster.registers and source.registers:
+                    cluster.registers = self._deep_copy_registers(source.registers)
+                if not cluster.clusters and source.clusters:
+                    cluster.clusters = self._deep_copy_clusters(source.clusters)
+                cluster.derived_from = ""
+
+        # 递归处理嵌套簇
+        for sub in cluster.clusters.values():
+            self._resolve_cluster_inheritance(sub, peripheral)
+
+    @staticmethod
+    def _is_default_value(obj: Any, attr: str) -> bool:
+        """判断属性值是否为数据模型的默认值（即未被用户/XML显式设置）
+        
+        利用 dataclasses.fields() 提取字段默认值，避免实例化带必填参数的 dataclass。
+        """
+        val = getattr(obj, attr, None)
+        if val is None:
+            return True
+        # 通过 dataclass 元信息获取默认值
+        try:
+            from dataclasses import fields, MISSING
+            for f in fields(type(obj)):
+                if f.name == attr:
+                    if f.default is not MISSING:
+                        return val == f.default
+                    elif f.default_factory is not MISSING:
+                        return val == f.default_factory()
+                    else:
+                        # 无默认值的必填字段 → 不算默认值
+                        return False
+            # 属性不在 dataclass fields 中
+            return False
+        except Exception:
+            return False
+
+    def _merge_register_from_source(self, target: Register, source: Register):
+        """从源寄存器合并未定义的属性到目标寄存器"""
+        if not target.description or target.description == target.name:
+            target.description = source.description
+        if not target.display_name and source.display_name:
+            target.display_name = source.display_name
+        if self._is_default_value(target, 'size') and source.size:
+            target.size = source.size
+        if not target.access:
+            target.access = source.access
+        if self._is_default_value(target, 'reset_value') and source.reset_value:
+            target.reset_value = source.reset_value
+        if self._is_default_value(target, 'reset_mask') and source.reset_mask:
+            target.reset_mask = source.reset_mask
+        # 继承位域（只在没有自己的位域时）
+        if not target.fields and source.fields:
+            target.fields = deepcopy(source.fields)
+
+    def _has_circular_inheritance(self, name: str, derived_from: str) -> bool:
+        """检测循环继承"""
+        visited = {name}
+        current = derived_from
+        while current:
+            if current in visited:
+                return True
+            visited.add(current)
+            if current in self.device_info.peripherals:
+                current = self.device_info.peripherals[current].derived_from
+            else:
+                break
+        return False
+
+    def _deep_copy_registers(self, registers: Dict[str, Register]) -> Dict[str, Register]:
+        """深拷贝寄存器字典 — 使用 copy.deepcopy 避免 manually listed fields 遗漏"""
+        return deepcopy(registers)
+
+    def _deep_copy_clusters(self, clusters: Dict[str, Cluster]) -> Dict[str, Cluster]:
+        """深拷贝簇字典 — 使用 copy.deepcopy 递归拷贝含嵌套簇的完整结构"""
+        return deepcopy(clusters)
     
     def _parse_interrupts_for_peripheral(self, periph_node, peripheral: Peripheral):
         """为外设解析中断"""

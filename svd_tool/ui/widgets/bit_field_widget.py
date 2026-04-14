@@ -116,6 +116,11 @@ class BitFieldWidget(QWidget):
         self.selected_field_name = field_name
         self.update()
     
+    def highlight_field(self, field_name: str):
+        """高亮指定位域（供外部联动调用，如表格选择联动）"""
+        self.selected_field_name = field_name
+        self.update()
+    
     def _get_field_color(self, index: int) -> QColor:
         """获取位域颜色"""
         return self.FIELD_COLORS[index % len(self.FIELD_COLORS)]

@@ -12,9 +12,11 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from .dialogs import BaseEditDialog
+from .dialogs.enum_values_editor import EnumValuesEditor
 from ..core.data_model import Peripheral, Register, Field, Interrupt
 from ..core.validators import Validator, ValidationError
 from ..core.constants import ACCESS_OPTIONS
+from ..core.svd_schema_validator import SVDSchemaValidator
 from ..i18n.i18n import t
 
 
@@ -25,31 +27,55 @@ class DialogFactory:
         self.parent = parent
         self.existing_peripherals: List[str] = []
         self.existing_registers: List[str] = []
+        # 完整数据字典（用于实时冲突检测）
+        self.existing_peripherals_data: Dict[str, Peripheral] = {}
+        self.existing_registers_data: Dict[str, Register] = {}
+        self.existing_fields_data: Dict[str, Field] = {}
     
-    def set_existing_peripherals(self, peripherals: List[str]):
+    def set_existing_peripherals(self, peripherals):
         """设置已存在的外设列表"""
-        self.existing_peripherals = peripherals
+        if isinstance(peripherals, dict):
+            self.existing_peripherals = list(peripherals.keys())
+            self.existing_peripherals_data = peripherals
+        else:
+            self.existing_peripherals = peripherals
     
-    def set_existing_registers(self, registers: List[str]):
+    def set_existing_registers(self, registers):
         """设置已存在的寄存器列表"""
-        self.existing_registers = registers
+        if isinstance(registers, dict):
+            self.existing_registers = list(registers.keys())
+            self.existing_registers_data = registers
+        else:
+            self.existing_registers = registers
+    
+    def set_existing_fields(self, fields: Dict[str, Field]):
+        """设置已存在的位域字典"""
+        self.existing_fields_data = fields
     
     def create_peripheral_dialog(self, peripheral: Optional[Peripheral] = None, 
                                 is_edit: bool = False) -> QDialog:
         """创建外设编辑对话框"""
-        dialog = PeripheralEditDialog(self.parent, peripheral, self.existing_peripherals, is_edit)
+        dialog = PeripheralEditDialog(
+            self.parent, peripheral, self.existing_peripherals,
+            self.existing_peripherals_data, is_edit
+        )
         return dialog
     
     def create_register_dialog(self, register: Optional[Register] = None,
                               is_edit: bool = False) -> QDialog:
         """创建寄存器编辑对话框"""
-        dialog = RegisterEditDialog(self.parent, register, self.existing_registers, is_edit)
+        dialog = RegisterEditDialog(
+            self.parent, register, self.existing_registers,
+            self.existing_registers_data, is_edit
+        )
         return dialog
     
     def create_field_dialog(self, field: Optional[Field] = None,
                            is_edit: bool = False) -> QDialog:
         """创建位域编辑对话框"""
-        dialog = FieldEditDialog(self.parent, field, is_edit)
+        dialog = FieldEditDialog(
+            self.parent, field, self.existing_fields_data, is_edit
+        )
         return dialog
     
     def create_interrupt_dialog(self, interrupt: Optional[Interrupt] = None,
@@ -65,10 +91,13 @@ class PeripheralEditDialog(BaseEditDialog):
     """外设编辑对话框"""
     
     def __init__(self, parent=None, peripheral: Optional[Peripheral] = None,
-                 existing_peripherals: Optional[List[str]] = None, is_edit: bool = False):
+                 existing_peripherals: Optional[List[str]] = None,
+                 existing_peripherals_data: Optional[Dict[str, Peripheral]] = None,
+                 is_edit: bool = False):
         # 保存实例变量
         self.peripheral = peripheral
         self.existing_peripherals = existing_peripherals or []
+        self.existing_peripherals_data = existing_peripherals_data or {}
         self.is_edit = is_edit
         self.original_name = peripheral.name if peripheral else ""
         
@@ -77,6 +106,21 @@ class PeripheralEditDialog(BaseEditDialog):
         
         # 调用父类初始化
         super().__init__(parent, title)
+        
+        # 添加地址冲突检测标签
+        self._conflict_label = QLabel("")
+        self._conflict_label.setStyleSheet("color: red; font-weight: bold; font-size: 11px;")
+        self._conflict_label.setWordWrap(True)
+        # 插入到基地址输入框后面（第2行）
+        self._form_layout.insertRow(2, "", self._conflict_label)
+        
+        # 是否存在地址冲突标志
+        self._has_address_conflict = False
+        
+        # 连接实时检测信号
+        self.base_addr_edit.textChanged.connect(self._check_address_conflict)
+        self.offset_edit.textChanged.connect(self._check_address_conflict)
+        self.size_edit.textChanged.connect(self._check_address_conflict)
         
         if peripheral:
             self.load_data(peripheral)
@@ -147,6 +191,36 @@ class PeripheralEditDialog(BaseEditDialog):
             if index >= 0:
                 self.derived_combo.setCurrentIndex(index)
     
+    def _check_address_conflict(self):
+        """实时检测外设地址冲突"""
+        base_addr = self.base_addr_edit.text().strip()
+        if not base_addr:
+            self._conflict_label.setText("")
+            self._has_address_conflict = False
+            return
+        
+        addr_block = {
+            "offset": self.offset_edit.text().strip(),
+            "size": self.size_edit.text().strip(),
+        }
+        
+        conflict = SVDSchemaValidator.check_peripheral_address_conflict(
+            new_name=self.name_edit.text().strip(),
+            new_base_addr=base_addr,
+            new_addr_block=addr_block,
+            existing_peripherals=self.existing_peripherals_data,
+            exclude_name=self.original_name if self.is_edit else ""
+        )
+        
+        if conflict:
+            self._conflict_label.setText(f"⚠️ {conflict}")
+            self._conflict_label.setStyleSheet("color: red; font-weight: bold; font-size: 11px;")
+            self._has_address_conflict = True
+        else:
+            self._conflict_label.setText("✓ 地址无冲突")
+            self._conflict_label.setStyleSheet("color: green; font-size: 11px;")
+            self._has_address_conflict = False
+    
     def validate_input(self):
         """验证输入"""
         name = self.name_edit.text().strip()
@@ -159,6 +233,10 @@ class PeripheralEditDialog(BaseEditDialog):
         Validator.validate_hex(self.base_addr_edit.text().strip(), t("error.base_address_validation"))
         Validator.validate_hex(self.offset_edit.text().strip(), t("error.offset_address_validation"))
         Validator.validate_hex(self.size_edit.text().strip(), t("error.address_block_size_validation"))
+        
+        # 检查地址冲突（阻止保存）
+        if self._has_address_conflict:
+            raise ValidationError("外设地址与现有外设冲突，请修改基地址或地址块大小")
         
         # 验证继承关系
         derived_from = self.derived_combo.currentText()
@@ -191,10 +269,13 @@ class RegisterEditDialog(BaseEditDialog):
     """寄存器编辑对话框"""
     
     def __init__(self, parent=None, register: Optional[Register] = None,
-                 existing_registers: Optional[List[str]] = None, is_edit: bool = False):
+                 existing_registers: Optional[List[str]] = None,
+                 existing_registers_data: Optional[Dict[str, Register]] = None,
+                 is_edit: bool = False):
         # 保存实例变量
         self.register = register
         self.existing_registers = existing_registers or []
+        self.existing_registers_data = existing_registers_data or {}
         self.is_edit = is_edit
         self.original_name = register.name if register else ""
         
@@ -202,6 +283,16 @@ class RegisterEditDialog(BaseEditDialog):
         title = t("label.dialog_title_edit_register") if is_edit and register else t("label.dialog_title_add_register")
         
         super().__init__(parent, title)
+        
+        # 添加偏移冲突检测标签
+        self._reg_conflict_label = QLabel("")
+        self._reg_conflict_label.setStyleSheet("color: red; font-weight: bold; font-size: 11px;")
+        self._reg_conflict_label.setWordWrap(True)
+        self._form_layout.insertRow(2, "", self._reg_conflict_label)
+        self._has_offset_conflict = False
+        
+        # 连接实时检测信号
+        self.offset_edit.textChanged.connect(self._check_offset_conflict)
         
         if register:
             self.load_data(register)
@@ -263,6 +354,30 @@ class RegisterEditDialog(BaseEditDialog):
         else:
             self.access_combo.setCurrentIndex(0)  # 设置为"无"
     
+    def _check_offset_conflict(self):
+        """实时检测寄存器偏移冲突"""
+        offset = self.offset_edit.text().strip()
+        if not offset:
+            self._reg_conflict_label.setText("")
+            self._has_offset_conflict = False
+            return
+        
+        conflict = SVDSchemaValidator.check_register_offset_conflict(
+            new_name=self.name_edit.text().strip(),
+            new_offset=offset,
+            existing_registers=self.existing_registers_data,
+            exclude_name=self.original_name if self.is_edit else ""
+        )
+        
+        if conflict:
+            self._reg_conflict_label.setText(f"⚠️ {conflict}")
+            self._reg_conflict_label.setStyleSheet("color: red; font-weight: bold; font-size: 11px;")
+            self._has_offset_conflict = True
+        else:
+            self._reg_conflict_label.setText("✓ 偏移地址无冲突")
+            self._reg_conflict_label.setStyleSheet("color: green; font-size: 11px;")
+            self._has_offset_conflict = False
+    
     def validate_input(self):
         """验证输入"""
         name = self.name_edit.text().strip()
@@ -275,6 +390,10 @@ class RegisterEditDialog(BaseEditDialog):
         Validator.validate_hex(self.offset_edit.text().strip(), t("error.offset_address_validation"))
         Validator.validate_hex(self.reset_edit.text().strip(), t("error.reset_value_validation"))
         Validator.validate_hex(self.size_edit.text().strip(), t("error.size_validation"))
+        
+        # 检查偏移冲突（阻止保存）
+        if self._has_offset_conflict:
+            raise ValidationError("寄存器偏移地址与现有寄存器冲突，请修改偏移地址")
     
     def collect_data(self):
         """收集数据"""
@@ -297,9 +416,12 @@ class RegisterEditDialog(BaseEditDialog):
 class FieldEditDialog(BaseEditDialog):
     """位域编辑对话框"""
     
-    def __init__(self, parent=None, field: Optional[Field] = None, is_edit: bool = False):
+    def __init__(self, parent=None, field: Optional[Field] = None,
+                 existing_fields_data: Optional[Dict[str, Field]] = None,
+                 is_edit: bool = False):
         # 保存实例变量
         self.field = field
+        self.existing_fields_data = existing_fields_data or {}
         self.is_edit = is_edit
         self.original_name = field.name if field else ""
         
@@ -307,6 +429,17 @@ class FieldEditDialog(BaseEditDialog):
         title = t("label.dialog_title_edit_field") if is_edit and field else t("label.dialog_title_add_field")
         
         super().__init__(parent, title)
+        
+        # 添加位域冲突检测标签
+        self._field_conflict_label = QLabel("")
+        self._field_conflict_label.setStyleSheet("color: red; font-weight: bold; font-size: 11px;")
+        self._field_conflict_label.setWordWrap(True)
+        self._form_layout.insertRow(3, "", self._field_conflict_label)
+        self._has_bit_conflict = False
+        
+        # 连接实时检测信号
+        self.offset_spin.valueChanged.connect(self._check_bit_conflict)
+        self.width_spin.valueChanged.connect(self._check_bit_conflict)
         
         if field:
             self.load_data(field)
@@ -347,6 +480,11 @@ class FieldEditDialog(BaseEditDialog):
         self.reset_edit = QLineEdit()
         self.reset_edit.setText("0x0")
         self.add_form_row(t("label.reset_value") + ":", self.reset_edit)
+        
+        # 枚举值编辑器
+        enum_values = self.field.enumerated_values if (self.field and hasattr(self.field, 'enumerated_values') and self.field.enumerated_values) else None
+        self.enum_editor = EnumValuesEditor(enumerated_values=enum_values)
+        self.add_form_row("", self.enum_editor)
     
     def load_data(self, field: Field):
         """加载数据"""
@@ -367,6 +505,37 @@ class FieldEditDialog(BaseEditDialog):
                 self.access_combo.setCurrentIndex(index)
         else:
             self.access_combo.setCurrentIndex(0)  # 设置为"无"
+        
+        # 加载枚举值
+        if hasattr(field, 'enumerated_values') and field.enumerated_values:
+            self.enum_editor.load_data(field.enumerated_values)
+    
+    def _check_bit_conflict(self):
+        """实时检测位域位范围冲突"""
+        bit_offset = self.offset_spin.value()
+        bit_width = self.width_spin.value()
+        
+        if not self.existing_fields_data:
+            self._field_conflict_label.setText("")
+            self._has_bit_conflict = False
+            return
+        
+        conflict = SVDSchemaValidator.check_field_bit_conflict(
+            new_name=self.name_edit.text().strip(),
+            new_bit_offset=bit_offset,
+            new_bit_width=bit_width,
+            existing_fields=self.existing_fields_data,
+            exclude_name=self.original_name if self.is_edit else ""
+        )
+        
+        if conflict:
+            self._field_conflict_label.setText(f"⚠️ {conflict}")
+            self._field_conflict_label.setStyleSheet("color: red; font-weight: bold; font-size: 11px;")
+            self._has_bit_conflict = True
+        else:
+            self._field_conflict_label.setText("✓ 位范围无冲突")
+            self._field_conflict_label.setStyleSheet("color: green; font-size: 11px;")
+            self._has_bit_conflict = False
     
     def validate_input(self):
         """验证输入"""
@@ -379,6 +548,14 @@ class FieldEditDialog(BaseEditDialog):
         Validator.validate_bit_range(offset, width)
         
         Validator.validate_hex(self.reset_edit.text().strip(), t("error.reset_value_validation"))
+        
+        # 检查位域冲突（阻止保存）
+        if self._has_bit_conflict:
+            raise ValidationError("位域位范围与现有位域冲突，请修改起始位或位宽")
+        
+        # 验证枚举值
+        if not self.enum_editor.validate():
+            raise ValidationError("枚举值验证失败")
     
     def collect_data(self):
         """收集数据"""
@@ -394,7 +571,8 @@ class FieldEditDialog(BaseEditDialog):
             "display_name": self.display_name_edit.text().strip(),
             "description": self.desc_edit.text().strip(),
             "access": access,
-            "reset_value": self.reset_edit.text().strip()
+            "reset_value": self.reset_edit.text().strip(),
+            "enumerated_values": self.enum_editor.collect_data()
         }
 
 
@@ -459,7 +637,9 @@ class InterruptEditDialog(BaseEditDialog):
         
         # 已选计数标签
         self.selected_count_label = QLabel("已选: 0 个外设")
-        self.selected_count_label.setStyleSheet("color: #666; font-size: 11px;")
+        from ..config.styles import get_style_scheme
+        _c = get_style_scheme().colors
+        self.selected_count_label.setStyleSheet(f"color: {_c.text_secondary}; font-size: 11px;")
         periph_container.addWidget(self.selected_count_label)
         
         # 外设列表（复选框）

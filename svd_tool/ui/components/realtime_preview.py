@@ -6,11 +6,12 @@
 import re
 import logging
 from typing import Dict, Any, Optional, Tuple, List
+from concurrent.futures import ThreadPoolExecutor, Future
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QPlainTextEdit, QFrame, QLabel, QMessageBox, QTextEdit, QScrollBar
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QRegularExpression, QMargins, QPoint, QRect
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QRegularExpression, QMargins, QPoint, QRect, QObject
 from PyQt6.QtGui import (
     QTextCursor, QTextCharFormat, QColor, QSyntaxHighlighter,
     QTextDocument, QFont, QTextBlockFormat, QMouseEvent, QPainter,
@@ -20,6 +21,196 @@ from PyQt6.QtGui import (
 from ...core.svd_generator import SVDGenerator
 from ...utils.helpers import pretty_xml
 from ...i18n.i18n import t
+
+
+class _XMLResultSignals(QObject):
+    """XML生成结果信号（用于从后台线程安全地传递结果到主线程）"""
+    result_ready = pyqtSignal(int, str, object)  # (generation_id, pretty_svd, line_data)
+
+
+def _parse_xml_line_map(xml_text: str) -> Tuple[dict, dict, dict, dict]:
+    """解析XML文本，构建行号映射和元素范围映射（纯CPU操作，可安全在后台线程执行）
+    
+    Returns:
+        (line_map, element_ranges, element_hierarchy, element_children)
+    """
+    line_map = {}
+    element_ranges = {}
+    element_hierarchy = {}
+    element_children = {}
+    
+    lines = xml_text.split('\n')
+    element_stack = []
+    
+    current_peripheral = None
+    current_register = None
+    current_field = None
+    current_interrupt = None
+    pending_peripheral_name = None
+    pending_register_name = None
+    pending_field_name = None
+    
+    for line_num, line in enumerate(lines, 1):
+        stripped = line.strip()
+        
+        # 外设开始
+        if stripped == '<peripheral>' or stripped.startswith('<peripheral derivedFrom='):
+            pending_peripheral_name = None
+            element_stack.append(('peripheral', None, None, line_num))
+            continue
+        
+        # 外设名称
+        if pending_peripheral_name is None and element_stack and element_stack[-1][0] == 'peripheral':
+            name_match = re.search(r'<name>([^<]+)</name>', stripped)
+            if name_match:
+                pending_peripheral_name = name_match.group(1)
+                current_peripheral = pending_peripheral_name
+                if element_stack:
+                    elem_type, _, _, start_line = element_stack[-1]
+                    element_stack[-1] = (elem_type, current_peripheral, current_peripheral, start_line)
+                line_map[line_num] = ('peripheral', current_peripheral, current_peripheral)
+                continue
+        
+        # 外设结束
+        if stripped == '</peripheral>':
+            if element_stack and element_stack[-1][0] == 'peripheral':
+                elem_type, periph_name, elem_name, start_line = element_stack.pop()
+                if periph_name:
+                    element_ranges[(elem_type, periph_name, elem_name)] = (start_line, line_num)
+                    peripheral_key = (elem_type, periph_name, elem_name)
+                    if peripheral_key not in element_children:
+                        element_children[peripheral_key] = []
+            current_peripheral = None
+            pending_peripheral_name = None
+            current_register = None
+            pending_register_name = None
+            current_field = None
+            pending_field_name = None
+            continue
+        
+        # 寄存器开始
+        if stripped == '<register>':
+            pending_register_name = None
+            element_stack.append(('register', current_peripheral, None, line_num))
+            continue
+        
+        # 寄存器名称
+        if pending_register_name is None and element_stack and element_stack[-1][0] == 'register':
+            name_match = re.search(r'<name>([^<]+)</name>', stripped)
+            if name_match:
+                pending_register_name = name_match.group(1)
+                current_register = pending_register_name
+                if element_stack:
+                    elem_type, periph_name, _, start_line = element_stack[-1]
+                    element_stack[-1] = (elem_type, periph_name, current_register, start_line)
+                if current_peripheral:
+                    line_map[line_num] = ('register', current_peripheral, current_register)
+                continue
+        
+        # 寄存器结束
+        if stripped == '</register>':
+            if element_stack and element_stack[-1][0] == 'register':
+                elem_type, periph_name, reg_name, start_line = element_stack.pop()
+                if periph_name and reg_name:
+                    element_ranges[(elem_type, periph_name, reg_name)] = (start_line, line_num)
+                    register_key = (elem_type, periph_name, reg_name)
+                    peripheral_key = ('peripheral', periph_name, periph_name)
+                    if peripheral_key in element_children:
+                        if register_key not in element_children[peripheral_key]:
+                            element_children[peripheral_key].append(register_key)
+            current_register = None
+            pending_register_name = None
+            current_field = None
+            pending_field_name = None
+            continue
+        
+        # 位域开始
+        if stripped == '<field>':
+            pending_field_name = None
+            element_stack.append(('field', current_peripheral, None, line_num))
+            continue
+        
+        # 位域名称
+        if pending_field_name is None and element_stack and element_stack[-1][0] == 'field':
+            name_match = re.search(r'<name>([^<]+)</name>', stripped)
+            if name_match:
+                pending_field_name = name_match.group(1)
+                current_field = pending_field_name
+                if element_stack:
+                    elem_type, periph_name, _, start_line = element_stack[-1]
+                    element_stack[-1] = (elem_type, periph_name, current_field, start_line)
+                if current_peripheral and current_register:
+                    line_map[line_num] = ('field', current_peripheral, f"{current_register}.{current_field}")
+                continue
+        
+        # 位域结束
+        if stripped == '</field>':
+            if element_stack and element_stack[-1][0] == 'field':
+                elem_type, periph_name, field_name, start_line = element_stack.pop()
+                if periph_name and field_name and current_register:
+                    element_ranges[(elem_type, periph_name, f"{current_register}.{field_name}")] = (start_line, line_num)
+                    field_key = (elem_type, periph_name, f"{current_register}.{field_name}")
+                    register_key = ('register', periph_name, current_register)
+                    if register_key in element_children:
+                        if field_key not in element_children[register_key]:
+                            element_children[register_key].append(field_key)
+            current_field = None
+            pending_field_name = None
+            continue
+        
+        # 兼容旧格式：带属性的寄存器标签
+        register_match = re.search(r'<register\s+name="([^"]+)"', stripped)
+        if register_match:
+            if not current_peripheral and element_stack:
+                for item in reversed(element_stack):
+                    if item[0] == 'peripheral':
+                        current_peripheral = item[1]
+                        break
+            if current_peripheral:
+                current_register = register_match.group(1)
+                line_map[line_num] = ('register', current_peripheral, current_register)
+                element_stack.append(('register', current_peripheral, current_register, line_num))
+            continue
+        
+        # 旧格式寄存器结束
+        if stripped == '</register>':
+            if element_stack and element_stack[-1][0] == 'register':
+                elem_type, periph_name, elem_name, start_line = element_stack.pop()
+                element_ranges[(elem_type, periph_name, elem_name)] = (start_line, line_num)
+            current_field = None
+            continue
+        
+        # 旧格式位域
+        field_match = re.search(r'<field\s+name="([^"]+)"', stripped)
+        if field_match:
+            if not current_register and element_stack:
+                for item in reversed(element_stack):
+                    if item[0] == 'register':
+                        current_register = item[2]
+                        current_peripheral = item[1]
+                        break
+            if current_register and current_peripheral:
+                current_field = field_match.group(1)
+                line_map[line_num] = ('field', current_peripheral, f"{current_register}.{current_field}")
+                element_stack.append(('field', current_peripheral, f"{current_register}.{current_field}", line_num))
+            continue
+        
+        # 中断
+        interrupt_match = re.search(r'<interrupt>\s*<name>([^<]+)</name>', stripped)
+        if interrupt_match and current_peripheral:
+            current_interrupt = interrupt_match.group(1)
+            line_map[line_num] = ('interrupt', current_peripheral, current_interrupt)
+            element_stack.append(('interrupt', current_peripheral, current_interrupt, line_num))
+            continue
+        
+        if stripped == '</interrupt>':
+            if element_stack and element_stack[-1][0] == 'interrupt':
+                elem_type, periph_name, elem_name, start_line = element_stack.pop()
+                element_ranges[(elem_type, periph_name, elem_name)] = (start_line, line_num)
+            current_interrupt = None
+            continue
+    
+    return line_map, element_ranges, element_hierarchy, element_children
 
 
 class XMLHighlighter(QSyntaxHighlighter):
@@ -33,23 +224,25 @@ class XMLHighlighter(QSyntaxHighlighter):
         
         # XML标签
         tag_format = QTextCharFormat()
-        tag_format.setForeground(QColor("#0000FF"))
+        from ...config.styles import get_style_scheme
+        _sc = get_style_scheme().colors
+        tag_format.setForeground(QColor(_sc.syntax_tag_color))
         tag_format.setFontWeight(QFont.Weight.Bold)
         self.highlighting_rules.append((re.compile(r'<[^>]+>'), tag_format))
         
         # 属性名
         attr_format = QTextCharFormat()
-        attr_format.setForeground(QColor("#FF00FF"))
+        attr_format.setForeground(QColor(_sc.syntax_attr_color))
         self.highlighting_rules.append((re.compile(r'\s\w+='), attr_format))
         
         # 属性值
         value_format = QTextCharFormat()
-        value_format.setForeground(QColor("#FF0000"))
+        value_format.setForeground(QColor(_sc.syntax_value_color))
         self.highlighting_rules.append((re.compile(r'"[^"]*"'), value_format))
         
         # 注释
         comment_format = QTextCharFormat()
-        comment_format.setForeground(QColor("#008000"))
+        comment_format.setForeground(QColor(_sc.syntax_comment_color))
         comment_format.setFontItalic(True)
         self.highlighting_rules.append((re.compile(r'<!--.*?-->', re.DOTALL), comment_format))
     
@@ -109,75 +302,107 @@ class HighlightedTextEdit(QPlainTextEdit):
             'interrupt': QColor(239, 83, 80)           # 粉色标签
         }
     
+    def begin_batch_update(self):
+        """开始批量更新模式，抑制所有重绘"""
+        self._batch_mode = True
+    
+    def end_batch_update(self):
+        """结束批量更新模式，一次性应用所有变更"""
+        self._batch_mode = False
+        self._update_block_visibility()
+        self.update()
+    
     def set_folded_elements(self, folded_elements: set):
         """设置折叠元素集合"""
         self.folded_elements = folded_elements
-        self._update_block_visibility()
+        if not getattr(self, '_batch_mode', False):
+            self._update_block_visibility()
     
     def _update_block_visibility(self):
-        """根据折叠状态更新文本块的可见性"""
+        """根据折叠状态更新文本块的可见性（优化的单次扫描算法）"""
         doc = self.document()
         if not doc:
             return
         
-        # 首先显示所有文本块
-        block = doc.begin()
-        while block.isValid():
-            block.setVisible(True)
-            block = block.next()
+        # 快速路径：如果没有折叠元素，确保所有块可见
+        if not self.folded_elements:
+            block = doc.begin()
+            # 检查是否已经全部可见（避免不必要的标记）
+            needs_update = False
+            while block.isValid():
+                if not block.isVisible():
+                    block.setVisible(True)
+                    needs_update = True
+                block = block.next()
+            if needs_update:
+                doc.adjustSize()
+                if not getattr(self, '_batch_mode', False):
+                    self.update()
+            return
         
-        # 隐藏被折叠的元素对应的文本块（保留前两行和最后一行）
+        # 构建需要隐藏的行号集合（一次性计算）
+        hidden_lines = set()
         for key in self.folded_elements:
             if key in self.element_line_ranges:
                 start_line, end_line = self.element_line_ranges[key]
-                # 隐藏从 start_line + 2 到 end_line - 1 的所有文本块（保留前两行和最后一行）
-                for line_num in range(start_line + 2, end_line):
-                    block = doc.findBlockByNumber(line_num - 1)
-                    if block.isValid():
-                        block.setVisible(False)
+                # 保留前两行和最后一行，隐藏中间内容
+                hidden_lines.update(range(start_line + 2, end_line))
         
-        # 处理嵌套折叠：当外设被折叠时，隐藏其内部的所有寄存器和位域
+        # 处理嵌套折叠：外设被折叠时，隐藏其内部所有子元素
         if hasattr(self, 'element_children'):
             for peripheral_key, children in self.element_children.items():
                 if peripheral_key in self.folded_elements:
-                    # 外设被折叠，隐藏其内部的所有子元素
                     for child_key in children:
                         if child_key in self.element_line_ranges:
-                            child_start_line, child_end_line = self.element_line_ranges[child_key]
-                            # 隐藏子元素的所有行
-                            for line_num in range(child_start_line, child_end_line + 1):
-                                block = doc.findBlockByNumber(line_num - 1)
-                                if block.isValid():
-                                    block.setVisible(False)
+                            child_start, child_end = self.element_line_ranges[child_key]
+                            hidden_lines.update(range(child_start, child_end + 1))
         
-        # 重新计算文档布局
-        doc.adjustSize()
-        self.update()
+        # 单次扫描：只切换需要改变的块
+        block = doc.begin()
+        block_num = 0
+        needs_update = False
+        while block.isValid():
+            should_be_visible = (block_num + 1) not in hidden_lines
+            if block.isVisible() != should_be_visible:
+                block.setVisible(should_be_visible)
+                needs_update = True
+            block = block.next()
+            block_num += 1
+        
+        if needs_update:
+            doc.adjustSize()
+        if not getattr(self, '_batch_mode', False):
+            self.update()
     
     def set_element_line_ranges(self, element_line_ranges: dict):
         """设置元素行范围"""
         self.element_line_ranges = element_line_ranges
-        self._update_block_visibility()
+        if not getattr(self, '_batch_mode', False):
+            self._update_block_visibility()
     
     def set_element_children(self, element_children: dict):
         """设置元素子级关系"""
         self.element_children = element_children
-        self.update()
+        if not getattr(self, '_batch_mode', False):
+            self.update()
     
     def set_element_ranges(self, element_ranges: dict):
         """设置元素范围（用于折叠块绘制）"""
         self.element_ranges = element_ranges
-        self.update()
+        if not getattr(self, '_batch_mode', False):
+            self.update()
     
     def set_fold_markers(self, fold_markers: dict):
         """设置折叠标记"""
         self.fold_markers = fold_markers
-        self.update()
+        if not getattr(self, '_batch_mode', False):
+            self.update()
     
     def set_highlight_ranges(self, highlight_ranges: dict):
         """设置高亮范围"""
         self.highlight_ranges = highlight_ranges
-        self.update()
+        if not getattr(self, '_batch_mode', False):
+            self.update()
     
     def set_current_highlight(self, element_type: str, peripheral_name: str, element_name: str):
         """设置当前高亮的元素"""
@@ -382,6 +607,7 @@ class HighlightedTextEdit(QPlainTextEdit):
         采用优先级策略（field > register > peripheral），只高亮最内层的元素，
         避免颜色叠加导致的可读性问题。
         """
+        from ...config.styles import get_style_scheme
         # 先调用父类的绘制
         super().paintEvent(event)
         
@@ -443,7 +669,7 @@ class HighlightedTextEdit(QPlainTextEdit):
                     painter.drawRoundedRect(highlight_rect, 6, 6)
                     
                     # 绘制左侧色条（装饰线）
-                    label_color = self.highlight_label_colors.get(selected_type, QColor("#FF9800"))
+                    label_color = self.highlight_label_colors.get(selected_type, QColor(get_style_scheme().colors.viz_decorative_bar_color))
                     bar_rect = QRect(highlight_rect.left(), highlight_rect.top() + 2, 4, highlight_rect.height() - 4)
                     painter.setBrush(QBrush(label_color))
                     painter.drawRoundedRect(bar_rect, 2, 2)
@@ -543,15 +769,19 @@ class HighlightedTextEdit(QPlainTextEdit):
                         ellipsis_x = 30  # 左边距（在箭头后面）
                         
                         # 绘制省略号
-                        painter.setPen(QPen(QColor("#999999"), 2))
+                        from ...config.styles import get_style_scheme
+                        _vc = get_style_scheme().colors
+                        painter.setPen(QPen(QColor(_vc.viz_ellipsis_color), 2))
                         for i in range(3):
                             painter.drawPoint(ellipsis_x + i * 8, ellipsis_y)
     
     def _draw_arrow(self, painter: QPainter, x: int, y: int, is_folded: bool):
         """绘制箭头"""
         size = 8
-        painter.setPen(QPen(QColor("#666666"), 1))
-        painter.setBrush(QBrush(QColor("#666666")))
+        from ...config.styles import get_style_scheme
+        _vc = get_style_scheme().colors
+        painter.setPen(QPen(QColor(_vc.viz_arrow_color), 1))
+        painter.setBrush(QBrush(QColor(_vc.viz_arrow_color)))
         
         if is_folded:
             # 绘制向右的箭头（折叠状态）
@@ -614,11 +844,17 @@ class RealtimePreviewWidget(QWidget):
         # 折叠状态
         self.folded_elements = set()  # {(element_type, peripheral_name, element_name)}
         
+        # 后台线程池（用于XML生成和解析）
+        self._thread_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="svd_xml")
+        self._generation_id = 0  # 用于丢弃过期的后台结果
+        self._xml_result_signals = _XMLResultSignals()
+        self._xml_result_signals.result_ready.connect(self._on_xml_result_ready)
+        
         # 防抖定时器（避免频繁更新）
         self.update_timer = QTimer()
         self.update_timer.setSingleShot(True)
         self.update_timer.timeout.connect(self._update_preview)
-        self.update_delay = 500  # 500ms延迟
+        self.update_delay = 800  # 800ms延迟（避免频繁XML重生成）
         
         # 编辑防抖定时器
         self.edit_timer = QTimer()
@@ -672,7 +908,10 @@ class RealtimePreviewWidget(QWidget):
         # 分隔线
         separator = QFrame()
         separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
+        separator.setFixedHeight(1)
+        from ...config.styles import get_style_scheme
+        _vc = get_style_scheme().colors
+        separator.setStyleSheet(f"background-color: {_vc.viz_separator_color}; border: none;")
         layout.addWidget(separator)
         
         # 预览文本编辑器（使用HighlightedTextEdit以支持高亮和折叠功能）
@@ -686,20 +925,23 @@ class RealtimePreviewWidget(QWidget):
         self.preview_edit.setFont(font)
         self.preview_edit.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         
-        # 设置样式
-        self.preview_edit.setStyleSheet("""
-            QPlainTextEdit {
-                background-color: #ffffff;
-                color: #000000;
-                selection-background-color: #d1e9ff;
-                selection-color: #000000;
-                border: 1px solid #d0d0d0;
+        # 使用全局样式方案的配色
+        from ...config.styles import get_style_scheme
+        scheme = get_style_scheme()
+        c = scheme.colors
+        self.preview_edit.setStyleSheet(f"""
+            QPlainTextEdit {{
+                background-color: {c.white};
+                color: {c.black};
+                selection-background-color: {c.selected};
+                selection-color: {c.black};
+                border: 1px solid {c.border};
                 border-radius: 4px;
                 padding: 4px;
-            }
-            QPlainTextEdit:focus {
-                border: 1px solid #90c8ff;
-            }
+            }}
+            QPlainTextEdit:focus {{
+                border: 1px solid {c.accent};
+            }}
         """)
         
         # 连接选择变化信号
@@ -720,7 +962,7 @@ class RealtimePreviewWidget(QWidget):
         
         # 状态栏
         self.status_label = QLabel("")
-        self.status_label.setStyleSheet("color: #666; font-size: 9pt;")
+        self.status_label.setStyleSheet(f"color: {c.text_secondary}; font-size: 9pt; padding: 2px 4px;")
         layout.addWidget(self.status_label)
     
     def refresh_preview(self, immediate: bool = False):
@@ -729,18 +971,9 @@ class RealtimePreviewWidget(QWidget):
         Args:
             immediate: 是否立即刷新（不使用防抖）
         """
-        self.logger.debug(f"refresh_preview 被调用，immediate={immediate}")
-        self.logger.debug(f"preview_edit 存在={hasattr(self, 'preview_edit')}, preview_edit={self.preview_edit if hasattr(self, 'preview_edit') else 'N/A'}")
-        if hasattr(self, 'preview_edit') and self.preview_edit:
-            self.logger.debug(f"preview_edit 可见={self.preview_edit.isVisible()}, 文本长度={len(self.preview_edit.toPlainText())}")
-        self.logger.debug(f"refresh_preview called, immediate={immediate}")
         if immediate:
-            # 立即刷新
-            self.logger.debug("立即刷新预览")
             self._update_preview()
         else:
-            # 使用防抖
-            self.logger.debug("使用防抖刷新预览")
             self.update_timer.start(self.update_delay)
     
     def _force_update_preview(self):
@@ -748,44 +981,34 @@ class RealtimePreviewWidget(QWidget):
         try:
             # 检查预览编辑器是否仍然有效
             if not hasattr(self, 'preview_edit') or self.preview_edit is None:
-                self.logger.debug("预览编辑器不存在，跳过更新")
                 return
-            
-            self.logger.info("=== _force_update_preview 开始 ===")
             
             # 检查device_info
             if not self.state_manager.device_info:
-                self.logger.warning("device_info为空，无法生成SVD")
                 return
-            
-            self.logger.info(f"device_info 存在，外设数量: {len(self.state_manager.device_info.peripherals)}")
             
             # 生成SVD XML
             generator = SVDGenerator(self.state_manager.device_info)
-            svd_xml = generator.generate(pretty_print=False)  # 不美化，我们自己处理
-            
-            self.logger.info(f"生成的原始XML长度: {len(svd_xml)} 字符")
+            svd_xml = generator.generate(pretty_print=False)
             
             # 美化XML
             pretty_svd = pretty_xml(svd_xml)
-            self.logger.info(f"美化后的XML长度: {len(pretty_svd)} 字符")
             
             # 更新文本
             self.preview_edit.setPlainText(pretty_svd)
             
             # 重建行号映射和折叠标记
             self._build_line_map(pretty_svd)
-            self.logger.info(f"_build_line_map 完成，element_ranges 数量: {len(self.element_ranges)}")
             
-            # 更新高亮编辑器的数据
+            # 批量更新高亮编辑器数据（避免每个setter都触发重绘）
+            self.preview_edit.begin_batch_update()
             self.preview_edit.set_folded_elements(self.folded_elements)
             self.preview_edit.set_element_line_ranges(self.element_ranges)
             self.preview_edit.set_element_children(self.element_children)
             self.preview_edit.set_element_ranges(self.element_ranges)
             self.preview_edit.set_fold_markers(self._build_fold_markers())
             self.preview_edit.set_highlight_ranges(self.element_ranges)
-            
-            self.logger.info("=== _force_update_preview 完成 ===")
+            self.preview_edit.end_batch_update()
             
             # 更新状态
             try:
@@ -793,11 +1016,8 @@ class RealtimePreviewWidget(QWidget):
                 if doc:
                     line_count = doc.blockCount()
                     self.status_label.setText(f"{t('status.lines')}: {line_count}")
-                    self.logger.debug(f"预览更新完成，共 {line_count} 行")
-                    self.logger.debug(f"元素范围映射: {len(self.element_ranges)} 个元素")
             except RuntimeError:
-                # 对象已被删除，跳过状态更新
-                self.logger.debug("状态标签已被删除，跳过更新")
+                pass
             
         except RuntimeError as e:
             # Qt对象已被删除
@@ -813,100 +1033,132 @@ class RealtimePreviewWidget(QWidget):
                 pass
     
     def _update_preview(self):
-        """更新预览内容（内部方法）"""
-        self.logger.debug("_update_preview 被调用")
+        """更新预览内容（使用后台线程生成XML，避免阻塞主线程）"""
         try:
-            # 检查预览编辑器是否仍然有效
             if not hasattr(self, 'preview_edit') or self.preview_edit is None:
-                self.logger.debug("预览编辑器不存在，跳过更新")
                 return
-            
-            # 检查Qt对象是否已被删除
             try:
                 _ = self.preview_edit.isVisible()
             except RuntimeError:
-                self.logger.debug("preview_edit对象已被删除，跳过更新")
                 return
             
-            # 获取设备信息
             device_info = self.state_manager.device_info
             if not device_info:
-                self.logger.debug("设备信息为空，无法更新预览")
                 return
             
-            self.logger.debug("开始更新预览内容...")
-            
-            # 设置更新标志，防止触发编辑处理
-            self._is_updating = True
-            
-            # 生成SVD XML
-            generator = SVDGenerator(device_info)
-            svd_xml = generator.generate(pretty_print=False)  # 不美化，我们自己处理
-            
-            # 美化XML
-            pretty_svd = pretty_xml(svd_xml)
-            
-            # 保存当前选择位置
+            # 保存当前选择位置（在主线程中获取）
             try:
                 current_cursor = self.preview_edit.textCursor()
                 current_position = current_cursor.position()
             except RuntimeError:
-                # 对象已被删除，跳过位置恢复
                 current_position = 0
             
-            # 更新文本
-            self.logger.debug(f"准备设置预览文本，长度={len(pretty_svd)}")
-            self.preview_edit.setPlainText(pretty_svd)
-            self.logger.debug("预览文本已设置")
+            # 递增生成ID，用于丢弃过期结果
+            self._generation_id += 1
+            gen_id = self._generation_id
             
-            # 重建行号映射和折叠标记
-            self._build_line_map(pretty_svd)
+            # 在后台线程中执行CPU密集型操作：XML生成 + 美化 + 行号映射解析
+            def _generate_xml_and_parse():
+                try:
+                    generator = SVDGenerator(device_info)
+                    svd_xml = generator.generate(pretty_print=False)
+                    pretty_svd = pretty_xml(svd_xml)
+                    line_map, element_ranges, element_hierarchy, element_children = _parse_xml_line_map(pretty_svd)
+                    return gen_id, pretty_svd, (line_map, element_ranges, element_hierarchy, element_children)
+                except Exception as e:
+                    return gen_id, None, e
             
-            # 更新高亮编辑器的数据
-            self.preview_edit.set_folded_elements(self.folded_elements)
-            self.preview_edit.set_element_line_ranges(self.element_ranges)
-            self.preview_edit.set_element_children(self.element_children)
-            self.preview_edit.set_element_ranges(self.element_ranges)
-            self.preview_edit.set_fold_markers(self._build_fold_markers())
-            self.preview_edit.set_highlight_ranges(self.element_ranges)
+            def _on_done(future: Future):
+                try:
+                    result = future.result()
+                    gen_id, pretty_svd, data = result
+                    # 通过信号传递到主线程
+                    self._xml_result_signals.result_ready.emit(gen_id, pretty_svd or "", data)
+                except Exception:
+                    pass
             
-            # 恢复选择位置
-            if current_position > 0 and current_position < len(pretty_svd):
-                new_cursor = QTextCursor(self.preview_edit.document())
-                new_cursor.setPosition(current_position)
-                self.preview_edit.setTextCursor(new_cursor)
+            future = self._thread_pool.submit(_generate_xml_and_parse)
+            future.add_done_callback(_on_done)
             
-            # 重新应用当前高亮
-            if self.current_selection.get('type'):
-                self._apply_highlight()
+            # 保存位置用于恢复
+            self._pending_cursor_position = current_position
             
-            # 更新状态
-            try:
-                doc = self.preview_edit.document()
-                if doc:
-                    line_count = doc.blockCount()
-                    self.status_label.setText(f"{t('status.lines')}: {line_count}")
-                    self.logger.debug(f"预览更新完成，共 {line_count} 行")
-                    self.logger.debug(f"元素范围映射: {len(self.element_ranges)} 个元素")
-            except RuntimeError:
-                # 对象已被删除，跳过状态更新
-                self.logger.debug("状态标签已被删除，跳过更新")
-            
-        except RuntimeError as e:
-            # Qt对象已被删除
-            self.logger.warning(f"Qt对象已被删除: {e}")
+        except RuntimeError:
+            pass
         except Exception as e:
-            self.logger.error(f"更新预览失败: {e}")
-            import traceback
-            self.logger.error(f"错误详情: {traceback.format_exc()}")
+            self.logger.error("提交XML生成任务失败: %s", e)
+    
+    def _on_xml_result_ready(self, gen_id: int, pretty_svd: str, data):
+        """后台XML生成完成后的回调（在主线程中执行）"""
+        # 丢弃过期的结果
+        if gen_id != self._generation_id:
+            return
+        
+        try:
+            if not hasattr(self, 'preview_edit') or self.preview_edit is None:
+                return
+            
+            # 检查是否为错误结果
+            if isinstance(data, Exception):
+                self.logger.error("后台XML生成失败: %s", data)
+                return
+            
+            if not pretty_svd:
+                return
+            
+            self._is_updating = True
+            
             try:
-                self.status_label.setText(f"{t('status.error')}: {str(e)}")
-            except RuntimeError:
-                # 状态标签也已被删除
-                pass
-        finally:
-            # 清除更新标志
+                # 恢复行号映射数据
+                line_map, element_ranges, element_hierarchy, element_children = data
+                self.line_map = line_map
+                self.element_ranges = element_ranges
+                self.element_hierarchy = element_hierarchy
+                self.element_children = element_children
+                
+                # 设置默认折叠（仅首次）
+                self._set_default_folding()
+                
+                # 更新文本
+                self.preview_edit.setPlainText(pretty_svd)
+                
+                # 批量更新高亮编辑器数据
+                self.preview_edit.begin_batch_update()
+                self.preview_edit.set_folded_elements(self.folded_elements)
+                self.preview_edit.set_element_line_ranges(self.element_ranges)
+                self.preview_edit.set_element_children(self.element_children)
+                self.preview_edit.set_element_ranges(self.element_ranges)
+                self.preview_edit.set_fold_markers(self._build_fold_markers())
+                self.preview_edit.set_highlight_ranges(self.element_ranges)
+                self.preview_edit.end_batch_update()
+                
+                # 恢复选择位置
+                current_position = getattr(self, '_pending_cursor_position', 0)
+                if current_position > 0 and current_position < len(pretty_svd):
+                    new_cursor = QTextCursor(self.preview_edit.document())
+                    new_cursor.setPosition(current_position)
+                    self.preview_edit.setTextCursor(new_cursor)
+                
+                # 重新应用当前高亮
+                if self.current_selection.get('type'):
+                    self._apply_highlight()
+                
+                # 更新状态
+                try:
+                    doc = self.preview_edit.document()
+                    if doc:
+                        line_count = doc.blockCount()
+                        self.status_label.setText(f"{t('status.lines')}: {line_count}")
+                except RuntimeError:
+                    pass
+            finally:
+                self._is_updating = False
+                
+        except RuntimeError:
             self._is_updating = False
+        except Exception as e:
+            self._is_updating = False
+            self.logger.error("应用XML预览结果失败: %s", e)
     
     def _build_fold_markers(self) -> Dict[int, Tuple[str, str, str]]:
         """构建折叠标记映射"""
@@ -920,21 +1172,14 @@ class RealtimePreviewWidget(QWidget):
     
     def on_fold_clicked(self, element_type: str, peripheral_name: str, element_name: str, is_expanded: bool):
         """折叠点击处理"""
-        self.logger.debug(f"on_fold_clicked 被调用，element_type={element_type}, peripheral_name={peripheral_name}, element_name={element_name}, is_expanded={is_expanded}")
         key = (element_type, peripheral_name, element_name)
         
         if is_expanded:
-            # 展开：从折叠集合中移除
             if key in self.folded_elements:
                 self.folded_elements.remove(key)
-            self.logger.debug(f"展开元素: {element_type} - {element_name}")
         else:
-            # 折叠：添加到折叠集合
             self.folded_elements.add(key)
-            self.logger.debug(f"折叠元素: {element_type} - {element_name}")
         
-        # 重新渲染
-        self.logger.debug("调用 _apply_folding")
         self._apply_folding()
     
     def sync_fold_from_tree(self, item_name: str, is_expanded: bool):
@@ -945,8 +1190,6 @@ class RealtimePreviewWidget(QWidget):
             item_name: 项目名称（外设名或寄存器名）
             is_expanded: True=展开, False=折叠
         """
-        self.logger.debug(f"sync_fold_from_tree: item_name={item_name}, is_expanded={is_expanded}")
-        
         # 尝试匹配外设
         peripheral_key = ('peripheral', item_name, item_name)
         if peripheral_key in self.element_ranges:
@@ -955,7 +1198,6 @@ class RealtimePreviewWidget(QWidget):
             else:
                 self.folded_elements.add(peripheral_key)
             self._apply_folding()
-            self.logger.debug(f"同步外设折叠状态: {item_name} -> {'展开' if is_expanded else '折叠'}")
             return
         
         # 尝试匹配寄存器（需要找到所属外设）
@@ -966,10 +1208,7 @@ class RealtimePreviewWidget(QWidget):
                 else:
                     self.folded_elements.add(key)
                 self._apply_folding()
-                self.logger.debug(f"同步寄存器折叠状态: {item_name} -> {'展开' if is_expanded else '折叠'}")
                 return
-        
-        self.logger.debug(f"sync_fold_from_tree: 未找到匹配元素 {item_name}")
     
     def collapse_peripheral_in_preview(self, peripheral_name: str):
         """折叠预览中指定外设"""
@@ -986,6 +1225,7 @@ class RealtimePreviewWidget(QWidget):
     
     def _draw_fold_blocks(self, painter: QPainter):
         """绘制折叠块（类似代码编辑器的折叠块）"""
+        from ...config.styles import get_style_scheme
         # 遍历所有外设
         for peripheral_key, children in self.element_children.items():
             if not children:
@@ -1036,7 +1276,7 @@ class RealtimePreviewWidget(QWidget):
             painter.drawRoundedRect(block_x, block_y, block_width, block_height, 8, 8)
             
             # 绘制外设名称
-            painter.setPen(QColor("#333333"))
+            painter.setPen(QColor(get_style_scheme().colors.viz_periph_text_color))
             font = painter.font()
             font.setBold(True)
             font.setPointSize(10)
@@ -1050,7 +1290,7 @@ class RealtimePreviewWidget(QWidget):
             # 如果外设被折叠，绘制省略号
             if is_folded:
                 ellipsis_y = block_y + block_height // 2
-                painter.setPen(QPen(QColor("#999999"), 1))
+                painter.setPen(QPen(QColor(get_style_scheme().colors.viz_ellipsis_color), 1))
                 painter.drawText(block_x + 10, ellipsis_y, "...")
             
             # 如果外设未折叠，绘制连接线和寄存器块
@@ -1059,7 +1299,7 @@ class RealtimePreviewWidget(QWidget):
                 line_x = block_x + 10
                 line_start_y = block_y + block_height
                 line_end_y = block_y + block_height + 10
-                painter.setPen(QPen(QColor("#CCCCCC"), 1))
+                painter.setPen(QPen(QColor(get_style_scheme().colors.viz_connection_line_color), 1))
                 painter.drawLine(line_x, line_start_y, line_x, line_end_y)
                 
                 for register_key in children:
@@ -1088,7 +1328,7 @@ class RealtimePreviewWidget(QWidget):
                     reg_block_height = int(reg_end_rect.bottom() - reg_start_rect.top())
                     
                     # 绘制外设到寄存器的水平连接线
-                    painter.setPen(QPen(QColor("#CCCCCC"), 1))
+                    painter.setPen(QPen(QColor(get_style_scheme().colors.viz_connection_line_color), 1))
                     painter.drawLine(line_x, line_end_y, reg_block_x + 10, line_end_y)
                     painter.drawLine(reg_block_x + 10, line_end_y, reg_block_x + 10, reg_block_y)
                     
@@ -1115,7 +1355,7 @@ class RealtimePreviewWidget(QWidget):
                     painter.drawRoundedRect(reg_block_x, reg_block_y, reg_block_width, reg_block_height, 6, 6)
                     
                     # 绘制寄存器名称
-                    painter.setPen(QColor("#333333"))
+                    painter.setPen(QColor(get_style_scheme().colors.viz_periph_text_color))
                     font = painter.font()
                     font.setBold(True)
                     font.setPointSize(9)
@@ -1129,7 +1369,7 @@ class RealtimePreviewWidget(QWidget):
                     # 如果寄存器被折叠，绘制省略号
                     if reg_is_folded:
                         reg_ellipsis_y = reg_block_y + reg_block_height // 2
-                        painter.setPen(QPen(QColor("#999999"), 1))
+                        painter.setPen(QPen(QColor(get_style_scheme().colors.viz_ellipsis_color), 1))
                         painter.drawText(reg_block_x + 10, reg_ellipsis_y, "...")
                     
                     # 如果寄存器未折叠且有子元素，绘制连接线和位域块
@@ -1138,7 +1378,7 @@ class RealtimePreviewWidget(QWidget):
                         reg_line_x = reg_block_x + 10
                         reg_line_start_y = reg_block_y + reg_block_height
                         reg_line_end_y = reg_block_y + reg_block_height + 10
-                        painter.setPen(QPen(QColor("#CCCCCC"), 1))
+                        painter.setPen(QPen(QColor(get_style_scheme().colors.viz_connection_line_color), 1))
                         painter.drawLine(reg_line_x, reg_line_start_y, reg_line_x, reg_line_end_y)
                         
                         for field_key in self.element_children[register_key]:
@@ -1167,7 +1407,7 @@ class RealtimePreviewWidget(QWidget):
                             field_block_height = int(field_end_rect.bottom() - field_start_rect.top())
                             
                             # 绘制寄存器到位域的水平连接线
-                            painter.setPen(QPen(QColor("#CCCCCC"), 1))
+                            painter.setPen(QPen(QColor(get_style_scheme().colors.viz_connection_line_color), 1))
                             painter.drawLine(reg_line_x, reg_line_end_y, field_block_x + 10, reg_line_end_y)
                             painter.drawLine(field_block_x + 10, reg_line_end_y, field_block_x + 10, field_block_y)
                             
@@ -1186,7 +1426,7 @@ class RealtimePreviewWidget(QWidget):
                             painter.drawRoundedRect(field_block_x, field_block_y, field_block_width, field_block_height, 4, 4)
                             
                             # 绘制位域名称
-                            painter.setPen(QColor("#333333"))
+                            painter.setPen(QColor(get_style_scheme().colors.viz_periph_text_color))
                             font = painter.font()
                             font.setPointSize(8)
                             painter.setFont(font)
@@ -1198,29 +1438,22 @@ class RealtimePreviewWidget(QWidget):
     
     def on_element_clicked(self, element_type: str, peripheral_name: str, element_name: str):
         """元素点击处理"""
-        self.logger.debug(f"点击元素: {element_type} - {element_name}")
-        # 发射选择信号
         self.element_selected.emit(element_type, peripheral_name, element_name)
     
     def _apply_folding(self):
         """应用折叠效果"""
-        self.logger.debug(f"_apply_folding 被调用，folded_elements数量={len(self.folded_elements)}")
-        # 更新高亮编辑器的数据
         self.preview_edit.set_folded_elements(self.folded_elements)
         self.preview_edit.update()
-        self.logger.debug("_apply_folding 完成")
     
     def _build_line_map(self, xml_text: str):
         """构建行号映射和元素范围映射"""
-        self.logger.info("=== 开始构建行号映射 ===")
-        self.logger.info(f"XML文本长度: {len(xml_text)} 字符")
+        self.logger.debug("构建行号映射, XML长度=%d", len(xml_text))
         
         self.line_map.clear()
         self.element_ranges.clear()
         self.element_hierarchy.clear()
         self.element_children.clear()
         lines = xml_text.split('\n')
-        self.logger.info(f"XML行数: {len(lines)}")
         
         # 用于跟踪元素范围
         element_stack = []  # [(element_type, peripheral_name, element_name, start_line)]
@@ -1372,7 +1605,7 @@ class RealtimePreviewWidget(QWidget):
                     current_register = register_match.group(1)
                     self.line_map[line_num] = ('register', current_peripheral, current_register)
                     element_stack.append(('register', current_peripheral, current_register, line_num))
-                    self.logger.debug(f"行 {line_num}: 检测到寄存器开始 - {current_peripheral}.{current_register}")
+                    self.logger.debug("行 %d: 检测到寄存器 - %s.%s", line_num, current_peripheral, current_register)
                 continue
             
             # 检测寄存器结束
@@ -1400,7 +1633,7 @@ class RealtimePreviewWidget(QWidget):
                     current_field = field_match.group(1)
                     self.line_map[line_num] = ('field', current_peripheral, f"{current_register}.{current_field}")
                     element_stack.append(('field', current_peripheral, f"{current_register}.{current_field}", line_num))
-                    self.logger.debug(f"行 {line_num}: 检测到位域开始 - {current_peripheral}.{current_register}.{current_field}")
+                    self.logger.debug("行 %d: 检测到位域 - %s.%s.%s", line_num, current_peripheral, current_register, current_field)
                 continue
             
             # 检测位域结束
@@ -1427,11 +1660,7 @@ class RealtimePreviewWidget(QWidget):
                 current_interrupt = None
                 continue
         
-        self.logger.info(f"=== 构建行号映射完成 ===")
-        self.logger.info(f"line_map 数量: {len(self.line_map)}")
-        self.logger.info(f"element_ranges 数量: {len(self.element_ranges)}")
-        if self.element_ranges:
-            self.logger.info(f"element_ranges 中的所有keys: {list(self.element_ranges.keys())}")
+        self.logger.debug("行号映射完成, element_ranges=%d", len(self.element_ranges))
         
         # 设置默认折叠：折叠所有外设
         self._set_default_folding()
@@ -1450,95 +1679,67 @@ class RealtimePreviewWidget(QWidget):
             
             folded_peripherals = len([k for k in self.folded_elements if k[0] == 'peripheral'])
             folded_registers = len([k for k in self.folded_elements if k[0] == 'register'])
-            self.logger.info(f"设置默认折叠，折叠了 {folded_peripherals} 个外设和 {folded_registers} 个寄存器")
+            self.logger.debug("设置默认折叠: %d 个外设, %d 个寄存器", folded_peripherals, folded_registers)
     
     def on_state_changed(self):
         """状态变化回调"""
-        self.refresh_preview(immediate=True)
+        # 使用防抖定时器，避免每次状态变化都立即执行昂贵的XML生成+解析
+        # immediate=True 会导致切换标签时频繁重建预览，造成严重卡顿
+        self.refresh_preview(immediate=False)
     
     def on_device_info_updated(self, device_info):
         """设备信息更新回调"""
-        self.logger.debug(f"on_device_info_updated 被调用，device_info={device_info.name if device_info else 'None'}")
         self.refresh_preview(immediate=True)
     
     def on_selection_changed(self):
         """选择变化回调（来自状态管理器）"""
         try:
-            # 检查对象是否仍然有效
             if not hasattr(self, 'preview_edit') or self.preview_edit is None:
-                self.logger.debug("preview_edit 不存在，跳过选择变化处理")
                 return
-            
-            # 检查 Qt 对象是否已被删除
             try:
                 _ = self.preview_edit.isVisible()
             except RuntimeError:
-                self.logger.debug("preview_edit 对象已被删除，跳过选择变化处理")
                 return
-            
             selection = self.state_manager.get_selection()
             self.highlight_element(selection)
-        except RuntimeError as e:
-            self.logger.warning(f"Qt对象已被删除: {e}")
+        except RuntimeError:
+            pass
         except Exception as e:
-            self.logger.error(f"处理选择变化时出错: {e}")
+            self.logger.error("处理选择变化时出错: %s", e)
     
     def on_coordinator_selection_changed(self, selection: Dict[str, Any]):
         """选择变化回调（来自协调器）"""
         try:
-            # 检查对象是否仍然有效
             if not hasattr(self, 'preview_edit') or self.preview_edit is None:
-                self.logger.debug("preview_edit 不存在，跳过选择变化处理")
                 return
-            
-            # 检查 Qt 对象是否已被删除
             try:
                 _ = self.preview_edit.isVisible()
             except RuntimeError:
-                self.logger.debug("preview_edit 对象已被删除，跳过选择变化处理")
                 return
-            
             self.highlight_element(selection)
-        except RuntimeError as e:
-            self.logger.warning(f"Qt对象已被删除: {e}")
+        except RuntimeError:
+            pass
         except Exception as e:
-            self.logger.error(f"处理选择变化时出错: {e}")
+            self.logger.error("处理选择变化时出错: %s", e)
     
     def highlight_element(self, selection: Dict[str, Any]):
         """高亮显示指定元素"""
         try:
-            # 检查对象是否仍然有效
             if not hasattr(self, 'preview_edit') or self.preview_edit is None:
-                self.logger.debug("preview_edit 不存在，跳过高亮元素")
                 return
-            
-            # 检查 Qt 对象是否已被删除
             try:
                 _ = self.preview_edit.isVisible()
             except RuntimeError:
-                self.logger.debug("preview_edit 对象已被删除，跳过高亮元素")
                 return
-            
-            self.logger.info("=== highlight_element 被调用 ===")
-            self.logger.info(f"选择信息: {selection}")
             
             if not selection:
-                self.logger.debug("选择信息为空，无法高亮")
                 return
-            
-            self.logger.debug(f"高亮元素: {selection}")
             
             # 如果element_ranges为空，先更新预览（即使窗口不可见）
             if not self.element_ranges:
-                self.logger.info("element_ranges为空，调用 _force_update_preview()")
-                # 强制更新预览，忽略窗口可见性检查
                 self._force_update_preview()
-                # 检查更新后element_ranges是否仍然为空
                 if not self.element_ranges:
-                    self.logger.warning("更新预览后element_ranges仍然为空，无法跳转")
                     return
-            else:
-                self.logger.info(f"element_ranges 不为空，共 {len(self.element_ranges)} 个元素")
             
             # 更新当前选择
             self.current_selection = selection
@@ -1574,63 +1775,47 @@ class RealtimePreviewWidget(QWidget):
                 line_num = self._find_line_for_selection(selection)
                 if line_num:
                     self._jump_to_line(line_num)
-        except RuntimeError as e:
-            self.logger.warning(f"Qt对象已被删除: {e}")
+        except RuntimeError:
+            pass
         except Exception as e:
-            self.logger.error(f"高亮元素时出错: {e}")
+            self.logger.error("高亮元素时出错: %s", e)
     
     def _auto_expand_for_element(self, element_type: str, peripheral_name: str, element_name: str):
         """自动展开父级元素"""
         try:
-            # 检查对象是否仍然有效
             if not hasattr(self, 'preview_edit') or self.preview_edit is None:
-                self.logger.debug("preview_edit 不存在，跳过自动展开")
                 return
-            
-            # 检查 Qt 对象是否已被删除
             try:
                 _ = self.preview_edit.isVisible()
             except RuntimeError:
-                self.logger.debug("preview_edit 对象已被删除，跳过自动展开")
                 return
             
-            # 如果选中的是寄存器，确保外设是展开的
             if element_type in ['register', 'field', 'interrupt']:
                 peripheral_key = ('peripheral', peripheral_name, peripheral_name)
                 if peripheral_key in self.folded_elements:
                     self.folded_elements.remove(peripheral_key)
-                    self.logger.debug(f"自动展开外设: {peripheral_name}")
             
-            # 如果选中的是位域，确保寄存器是展开的
             if element_type == 'field':
-                # 从element_name中提取寄存器名
                 if '.' in element_name:
                     register_name = element_name.split('.')[0]
                     register_key = ('register', peripheral_name, register_name)
                     if register_key in self.folded_elements:
                         self.folded_elements.remove(register_key)
-                        self.logger.debug(f"自动展开寄存器: {register_name}")
             
-            # 更新折叠编辑器的数据
             self.preview_edit.set_folded_elements(self.folded_elements)
-        except RuntimeError as e:
-            self.logger.warning(f"Qt对象已被删除: {e}")
+        except RuntimeError:
+            pass
         except Exception as e:
-            self.logger.error(f"自动展开元素时出错: {e}")
+            self.logger.error("自动展开元素时出错: %s", e)
     
     def _apply_highlight(self):
         """应用高亮显示"""
         try:
-            # 检查对象是否仍然有效
             if not hasattr(self, 'preview_edit') or self.preview_edit is None:
-                self.logger.debug("preview_edit 不存在，跳过高亮应用")
                 return
-            
-            # 检查 Qt 对象是否已被删除
             try:
                 _ = self.preview_edit.isVisible()
             except RuntimeError:
-                self.logger.debug("preview_edit 对象已被删除，跳过高亮应用")
                 return
             
             element_type = self.current_selection.get('type')
@@ -1650,29 +1835,20 @@ class RealtimePreviewWidget(QWidget):
             elif element_type == 'interrupt':
                 element_name = interrupt
             
-            self.logger.debug(f"应用高亮: type={element_type}, peripheral={peripheral}, element_name={element_name}")
-            
             if element_name and peripheral and element_type:
-                # 设置当前高亮
                 self.preview_edit.set_current_highlight(element_type, peripheral, element_name)
-                
-                # 更新状态栏
                 try:
                     self.status_label.setText(
                         f"{t('status.selected')}: {element_type} - {element_name}"
                     )
                 except RuntimeError:
-                    # 状态标签也已被删除
                     pass
-                self.logger.debug(f"高亮已应用: {element_type} - {element_name}")
             else:
-                # 清除高亮
                 self.preview_edit.clear_highlight()
-                self.logger.debug("已清除高亮")
-        except RuntimeError as e:
-            self.logger.warning(f"Qt对象已被删除: {e}")
+        except RuntimeError:
+            pass
         except Exception as e:
-            self.logger.error(f"应用高亮时出错: {e}")
+            self.logger.error("应用高亮时出错: %s", e)
     
     def _find_line_for_selection(self, selection: Dict[str, Any]) -> Optional[int]:
         """根据选择信息查找对应的行号"""
@@ -1699,20 +1875,17 @@ class RealtimePreviewWidget(QWidget):
     def _jump_to_element(self, element_type: str, peripheral_name: str, element_name: str):
         """跳转到指定元素"""
         key = (element_type, peripheral_name, element_name)
-        self.logger.info(f"尝试跳转到元素: key={key}")
-        self.logger.info(f"element_ranges 中的所有keys: {list(self.element_ranges.keys())[:5]}...")  # 只显示前5个
+        self.logger.debug("跳转到元素: %s", key)
         
         if key not in self.element_ranges:
-            self.logger.warning(f"key {key} 不在 element_ranges 中，无法跳转")
             return
         
         start_line, end_line = self.element_ranges[key]
-        self.logger.info(f"找到元素，跳转到行 {start_line}")
         self._jump_to_line(start_line)
     
     def _jump_to_line(self, line_num: int):
         """跳转到指定行（带平滑滚动动画和居中）"""
-        self.logger.info(f"跳转到行 {line_num}")
+        self.logger.debug("跳转到行 %d", line_num)
         
         # 保存当前滚动位置
         scrollbar = self.preview_edit.verticalScrollBar()
@@ -1730,14 +1903,11 @@ class RealtimePreviewWidget(QWidget):
         
         # 如果位置没变，无需动画
         if abs(old_value - target_value) < 5:
-            self.logger.info(f"已跳转到行 {line_num}，位置不变")
             return
         
         # 先滚回原位，然后用动画平滑滚动到目标位置
         scrollbar.setValue(old_value)
         self._animate_scroll_to(target_value)
-        
-        self.logger.info(f"已跳转到行 {line_num}，从 {old_value} 滚动到 {target_value}")
     
     def _animate_scroll_to(self, target_value: int):
         """平滑滚动到目标位置"""
@@ -1834,7 +2004,6 @@ class RealtimePreviewWidget(QWidget):
             
             # 更新状态栏
             self.status_label.setText(t("status.xml_saved"))
-            self.logger.debug("XML已保存并同步到树状图")
             
         except Exception as e:
             # 解析失败，显示错误信息
@@ -1869,7 +2038,6 @@ class RealtimePreviewWidget(QWidget):
             
             # 更新状态栏
             self.status_label.setText(f"{t('status.xml_edited')}")
-            self.logger.debug("XML已编辑并同步到树状图")
             
         except Exception as e:
             # 解析失败，只发射编辑信号
@@ -1938,25 +2106,12 @@ class RealtimePreviewWidget(QWidget):
     
     def jump_to_selection(self):
         """跳转到当前选中的元素"""
-        self.logger.info("=== jump_to_selection 被调用 ===")
-        self.logger.info(f"element_ranges 数量: {len(self.element_ranges)}")
-        if self.element_ranges:
-            self.logger.info(f"element_ranges 中的所有keys: {list(self.element_ranges.keys())}")
-        
-        # 如果element_ranges为空，先更新预览
         if not self.element_ranges:
-            self.logger.info("element_ranges为空，调用 _force_update_preview()")
             self._force_update_preview()
-            self.logger.info(f"更新后 element_ranges 数量: {len(self.element_ranges)}")
-            if self.element_ranges:
-                self.logger.info(f"更新后 element_ranges 中的所有keys: {list(self.element_ranges.keys())}")
         
         selection = self.state_manager.get_selection()
-        self.logger.info(f"当前选择: {selection}")
         if selection:
             self.highlight_element(selection)
-        else:
-            self.logger.warning("没有选择信息，无法跳转")
     
     def get_selected_element(self) -> Optional[Tuple[str, str, str]]:
         """获取当前选中的元素"""
@@ -1971,30 +2126,25 @@ class RealtimePreviewWidget(QWidget):
     
     def cleanup(self):
         """清理资源，注销回调"""
-        self.logger.debug("开始清理 RealtimePreviewWidget 资源")
-        
-        # 停止定时器
         if hasattr(self, 'update_timer'):
             self.update_timer.stop()
         if hasattr(self, 'edit_timer'):
             self.edit_timer.stop()
         
-        # 注销状态管理器回调
+        # 关闭后台线程池
+        if hasattr(self, '_thread_pool'):
+            self._thread_pool.shutdown(wait=False)
+        
         if self.state_manager:
             try:
                 self.state_manager.unregister_state_change_callback(self.on_state_changed)
                 self.state_manager.unregister_selection_change_callback(self.on_selection_changed)
-                self.logger.debug("已注销状态管理器回调")
             except Exception as e:
-                self.logger.warning(f"注销状态管理器回调时出错: {e}")
+                self.logger.warning("注销回调时出错: %s", e)
         
-        # 断开协调器信号
         if self.coordinator:
             try:
                 self.coordinator.device_info_updated.disconnect(self.on_device_info_updated)
                 self.coordinator.selection_changed.disconnect(self.on_coordinator_selection_changed)
-                self.logger.debug("已断开协调器信号")
             except Exception as e:
-                self.logger.warning(f"断开协调器信号时出错: {e}")
-        
-        self.logger.debug("RealtimePreviewWidget 资源清理完成")
+                self.logger.warning("断开协调器信号时出错: %s", e)

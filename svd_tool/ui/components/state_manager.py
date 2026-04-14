@@ -58,18 +58,54 @@ class StateManager:
     def resume_notifications(self):
         """恢复状态变更通知，并触发一次通知"""
         self._notifications_paused = False
-        self._notify_state_change()
-        self._notify_selection_change()
+        self._notify_state_change_immediate()  # 批量操作后立即通知，不使用防抖
+        self._notify_selection_change_immediate()
     
     def _notify_state_change(self):
-        """通知状态变更"""
+        """通知状态变更（带防抖：合并快速连续的状态变更）"""
+        if getattr(self, '_notifications_paused', False):
+            return
+        # 使用定时器防抖，合并快速连续的状态变更
+        if not hasattr(self, '_state_notify_timer'):
+            from PyQt6.QtCore import QTimer
+            self._state_notify_timer = QTimer()
+            self._state_notify_timer.setSingleShot(True)
+            self._state_notify_timer.setInterval(30)  # 30ms 防抖
+            self._state_notify_timer.timeout.connect(self._do_notify_state_change)
+        self._state_notify_timer.start()
+    
+    def _do_notify_state_change(self):
+        """实际执行状态变更通知"""
+        for callback in self._state_change_callbacks:
+            callback()
+    
+    def _notify_state_change_immediate(self):
+        """立即通知状态变更（不带防抖）"""
         if getattr(self, '_notifications_paused', False):
             return
         for callback in self._state_change_callbacks:
             callback()
     
     def _notify_selection_change(self):
-        """通知选择变更"""
+        """通知选择变更（防抖：合并快速选择操作）"""
+        if getattr(self, '_notifications_paused', False):
+            return
+        # 使用定时器防抖，合并快速连续的选择操作（如树导航）
+        if not hasattr(self, '_selection_notify_timer'):
+            from PyQt6.QtCore import QTimer
+            self._selection_notify_timer = QTimer()
+            self._selection_notify_timer.setSingleShot(True)
+            self._selection_notify_timer.setInterval(30)  # 30ms 防抖
+            self._selection_notify_timer.timeout.connect(self._do_notify_selection_change)
+        self._selection_notify_timer.start()
+    
+    def _do_notify_selection_change(self):
+        """实际执行选择变更通知"""
+        for callback in self._selection_change_callbacks:
+            callback()
+    
+    def _notify_selection_change_immediate(self):
+        """立即通知选择变更（不带防抖，用于需要立即响应的场景）"""
         if getattr(self, '_notifications_paused', False):
             return
         for callback in self._selection_change_callbacks:
@@ -145,9 +181,8 @@ class StateManager:
         """设置当前选中项"""
         import logging
         logger = logging.getLogger("StateManager")
-        logger.info(f"=== set_selection 被调用 ===")
-        logger.info(f"参数: peripheral={peripheral}, register={register}, field={field}, interrupt={interrupt}, element_type={element_type}")
-        logger.info(f"当前状态: peripheral={self.current_peripheral}, register={self.current_register}, field={self.current_field}, interrupt={self.current_interrupt}, type={self.current_type}")
+        logger.debug("set_selection(peripheral=%s, register=%s, field=%s, interrupt=%s, type=%s)",
+                     peripheral, register, field, interrupt, element_type)
         
         changed = False
         
@@ -221,10 +256,7 @@ class StateManager:
             changed = True
         
         if changed:
-            logger.info(f"选择已变化，通知回调")
             self._notify_selection_change()
-        else:
-            logger.info(f"选择未变化，不通知回调")
     
     def clear_selection(self):
         """清除所有选中项"""

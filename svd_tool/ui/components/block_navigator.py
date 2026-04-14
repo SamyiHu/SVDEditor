@@ -13,6 +13,8 @@ from PyQt6.QtGui import QIcon
 
 from ...core.block_manager import BlockManager, BlockType, BlockInfo
 from ...i18n.i18n import t
+from ...config.styles import get_style_scheme
+from ...config.tree_branch_style import apply_tree_branch_style
 
 
 class BlockNavigatorWidget(QWidget):
@@ -83,11 +85,14 @@ class BlockNavigatorWidget(QWidget):
         self.block_tree.setAlternatingRowColors(True)
         self.block_tree.itemClicked.connect(self.on_item_clicked)
         self.block_tree.itemDoubleClicked.connect(self.on_item_double_clicked)
+        # 应用自定义分支箭头样式
+        apply_tree_branch_style(self.block_tree)
         layout.addWidget(self.block_tree)
         
         # 状态栏
         self.status_label = QLabel("")
-        self.status_label.setStyleSheet("color: #666; font-size: 9pt;")
+        _c = get_style_scheme().colors
+        self.status_label.setStyleSheet(f"color: {_c.text_secondary}; font-size: 9pt;")
         layout.addWidget(self.status_label)
     
     def build_tree(self):

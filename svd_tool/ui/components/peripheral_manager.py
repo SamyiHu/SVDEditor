@@ -46,6 +46,12 @@ class PeripheralManager(QObject):
         self.state_manager.register_state_change_callback(self.on_state_changed)
         self.state_manager.register_selection_change_callback(self.on_selection_changed)
         
+        # 标记：跳过下一次 on_state_changed 中的树重建（用于文档切换优化）
+        self._skip_next_tree_rebuild = False
+        
+        # 名称→QTreeWidgetItem 缓存（避免 select_* 方法线性遍历整棵树）
+        self._tree_item_cache = {}  # path -> QTreeWidgetItem
+        
         # 连接UI信号
         self.connect_ui_signals()
     
@@ -62,6 +68,12 @@ class PeripheralManager(QObject):
     
     def on_state_changed(self):
         """状态变更时的处理"""
+        # 如果标记跳过（文档切换时已在 _restore_document_state 中手动重建过树），
+        # 则只更新 UI 状态，不重建树
+        if self._skip_next_tree_rebuild:
+            self._skip_next_tree_rebuild = False
+            self.update_ui_state()
+            return
         self.update_peripheral_tree()
         self.update_ui_state()
     
@@ -71,21 +83,14 @@ class PeripheralManager(QObject):
     
     def on_periph_tree_selection_changed(self):
         """外设树选择变更"""
-        import logging
-        logger = logging.getLogger("PeripheralManager")
-        logger.info("=== on_periph_tree_selection_changed 被调用 ===")
-        
         periph_tree = self.layout_manager.get_widget('periph_tree')
         if not periph_tree:
-            logger.warning("periph_tree 不存在")
             return
         
         selected_items = periph_tree.selectedItems()
-        logger.info(f"选中项数量: {len(selected_items)}")
         
         if not selected_items:
             # 清除选择
-            logger.info("没有选中项，清除选择")
             self.state_manager.set_selection()
             self.selection_changed.emit(None, None, None)
             return
@@ -145,87 +150,111 @@ class PeripheralManager(QObject):
                     if hasattr(self.layout_manager, 'main_window'):
                         self.layout_manager.main_window.edit_field(item_name)
     
-    def update_peripheral_tree(self):
-        """更新外设树"""
+    def is_compact_tree(self) -> bool:
+        """检查是否为紧凑模式（只显示到寄存器级别）"""
+        compact_tree_cb = self.layout_manager.get_widget('compact_tree_cb')
+        return compact_tree_cb is not None and compact_tree_cb.isChecked()
+    
+    def update_peripheral_tree(self, preserve_expanded=True):
+        """更新外设树
+        
+        Args:
+            preserve_expanded: 是否保留当前展开状态。
+                True: 正常编辑操作，保留展开状态。
+                False: 文档切换时使用，不保留旧文档的展开状态。
+        """
         periph_tree = self.layout_manager.get_widget('periph_tree')
         if not periph_tree:
             return
         
+        # 检查紧凑模式
+        compact = self.is_compact_tree()
+        
         # 阻塞信号，防止重建过程中触发选择变更导致展开/跳转
         periph_tree.blockSignals(True)
         
-        # 保存当前展开状态
-        expanded_paths = self._get_expanded_items(periph_tree)
+        # 暂停UI更新，避免重建过程中的逐行重绘导致卡顿
+        periph_tree.setUpdatesEnabled(False)
         
-        periph_tree.clear()
-        
-        # 重新设置列标题（重要：语言切换时需要更新）
-        from ...i18n.i18n import t
-        periph_tree.setHeaderLabels([t("label.name_column"), t("label.offset_column"), t("label.description_column"), t("label.access_column"), t("label.reset_value_column")])
-        
-        # 创建项目映射，便于后续查找
-        item_map = {}  # 路径 -> 项目
-        
-        # 添加外设
-        for periph_name, peripheral in self.state_manager.device_info.peripherals.items():
-            periph_item = QTreeWidgetItem(periph_tree)
-            periph_item.setText(0, periph_name)
-            periph_item.setText(1, peripheral.base_address)
-            periph_item.setText(2, peripheral.description)
-            periph_item.setData(0, Qt.ItemDataRole.UserRole, 'peripheral')
-            periph_item.setData(0, Qt.ItemDataRole.UserRole + 1, periph_name)  # 设置名称数据
+        try:
+            # 保存当前展开状态（仅在保留模式下）
+            expanded_paths = self._get_expanded_items(periph_tree) if preserve_expanded else []
             
-            # 默认折叠外设
-            periph_item.setExpanded(False)
+            periph_tree.clear()
             
-            # 保存到映射
-            item_map[periph_name] = periph_item
+            # 重新设置列标题（重要：语言切换时需要更新）
+            from ...i18n.i18n import t
+            periph_tree.setHeaderLabels([t("label.name_column"), t("label.offset_column"), t("label.description_column"), t("label.access_column"), t("label.reset_value_column")])
             
-            # 添加寄存器子项
-            for reg_name, register in peripheral.registers.items():
-                reg_item = QTreeWidgetItem(periph_item)
-                reg_item.setText(0, reg_name)
-                reg_item.setText(1, register.offset)
-                reg_item.setText(2, register.description)  # 改为描述
-                reg_item.setText(3, register.access or "")
-                reg_item.setText(4, register.reset_value)
-                reg_item.setData(0, Qt.ItemDataRole.UserRole, 'register')
-                reg_item.setData(0, Qt.ItemDataRole.UserRole + 1, reg_name)  # 设置名称数据
+            # 创建项目映射，便于后续查找
+            item_map = {}  # 路径 -> 项目
+            
+            # 添加外设
+            for periph_name, peripheral in self.state_manager.device_info.peripherals.items():
+                periph_item = QTreeWidgetItem(periph_tree)
+                periph_item.setText(0, periph_name)
+                periph_item.setText(1, peripheral.base_address)
+                periph_item.setText(2, peripheral.description)
+                periph_item.setData(0, Qt.ItemDataRole.UserRole, 'peripheral')
+                periph_item.setData(0, Qt.ItemDataRole.UserRole + 1, periph_name)  # 设置名称数据
                 
-                # 默认折叠寄存器
-                reg_item.setExpanded(False)
+                # 默认折叠外设（不调用setExpanded，减少不必要的信号）
                 
                 # 保存到映射
-                reg_path = f"{periph_name}/{reg_name}"
-                item_map[reg_path] = reg_item
+                item_map[periph_name] = periph_item
                 
-                # 添加位域子项
-                for field_name, field in register.fields.items():
-                    field_item = QTreeWidgetItem(reg_item)
-                    field_item.setText(0, field_name)
-                    # 偏移列显示偏移和位宽（例如："0-3"表示从位0开始，宽度为3）
-                    field_item.setText(1, f"[{field.bit_offset}:{field.bit_offset + field.bit_width - 1}]")
-                    # 描述列显示描述
-                    field_item.setText(2, field.description or "")
-                    field_item.setText(3, field.access or "")
-                    field_item.setText(4, field.reset_value)
-                    field_item.setData(0, Qt.ItemDataRole.UserRole, 'field')
-                    field_item.setData(0, Qt.ItemDataRole.UserRole + 1, field_name)  # 设置名称数据
-        
-        # 恢复展开状态
-        for path in expanded_paths:
-            if path in item_map:
-                item = item_map[path]
-                item.setExpanded(True)
-                
-                # 如果这是一个寄存器路径，还需要确保其父外设也是展开的
-                if '/' in path:
-                    periph_name = path.split('/')[0]
-                    if periph_name in item_map:
-                        item_map[periph_name].setExpanded(True)
-        
-        # 恢复树信号
-        periph_tree.blockSignals(False)
+                # 添加寄存器子项
+                for reg_name, register in peripheral.registers.items():
+                    reg_item = QTreeWidgetItem(periph_item)
+                    reg_item.setText(0, reg_name)
+                    reg_item.setText(1, register.offset)
+                    reg_item.setText(2, register.description)  # 改为描述
+                    reg_item.setText(3, register.access or "")
+                    reg_item.setText(4, register.reset_value)
+                    reg_item.setData(0, Qt.ItemDataRole.UserRole, 'register')
+                    reg_item.setData(0, Qt.ItemDataRole.UserRole + 1, reg_name)  # 设置名称数据
+                    
+                    # 默认折叠寄存器
+                    
+                    # 保存到映射
+                    reg_path = f"{periph_name}/{reg_name}"
+                    item_map[reg_path] = reg_item
+                    
+                    # 紧凑模式下不添加位域子项（位域在右侧表格中查看）
+                    if compact:
+                        continue
+                    
+                    # 添加位域子项
+                    for field_name, field in register.fields.items():
+                        field_item = QTreeWidgetItem(reg_item)
+                        field_item.setText(0, field_name)
+                        # 偏移列显示偏移和位宽（例如："0-3"表示从位0开始，宽度为3）
+                        field_item.setText(1, f"[{field.bit_offset}:{field.bit_offset + field.bit_width - 1}]")
+                        # 描述列显示描述
+                        field_item.setText(2, field.description or "")
+                        field_item.setText(3, field.access or "")
+                        field_item.setText(4, field.reset_value)
+                        field_item.setData(0, Qt.ItemDataRole.UserRole, 'field')
+                        field_item.setData(0, Qt.ItemDataRole.UserRole + 1, field_name)  # 设置名称数据
+            
+            # 更新名称→节点缓存（供 select_* 方法使用，避免线性遍历）
+            self._tree_item_cache = item_map
+            
+            # 恢复展开状态（批量处理，减少重绘）
+            for path in expanded_paths:
+                if path in item_map:
+                    item = item_map[path]
+                    item.setExpanded(True)
+                    
+                    # 如果这是一个寄存器路径，还需要确保其父外设也是展开的
+                    if '/' in path:
+                        periph_name = path.split('/')[0]
+                        if periph_name in item_map:
+                            item_map[periph_name].setExpanded(True)
+        finally:
+            # 恢复UI更新和信号
+            periph_tree.setUpdatesEnabled(True)
+            periph_tree.blockSignals(False)
     
     def _get_expanded_items(self, tree: QTreeWidget):
         """获取当前展开的项目名称（包括外设和寄存器）
@@ -294,9 +323,8 @@ class PeripheralManager(QObject):
         from svd_tool.ui.dialog_factories import DialogFactory
         
         dialog_factory = DialogFactory(self.layout_manager.main_window)
-        # 设置已存在的外设列表，用于继承关系选择
-        existing_peripherals = list(self.state_manager.device_info.peripherals.keys())
-        dialog_factory.set_existing_peripherals(existing_peripherals)
+        # 传递完整外设字典（用于继承关系选择 + 地址冲突检测）
+        dialog_factory.set_existing_peripherals(self.state_manager.device_info.peripherals)
         dialog = dialog_factory.create_peripheral_dialog()
         
         if dialog.exec():
@@ -326,11 +354,10 @@ class PeripheralManager(QObject):
                 return
             
             # 添加到状态管理器
+            # 注意：add_peripheral 内部通过 execute_command → _notify_state_change → on_state_changed → update_peripheral_tree
+            # 不需要在这里再次调用 update_peripheral_tree()（避免双重树重建）
             self.state_manager.add_peripheral(peripheral)
             self.peripheral_added.emit(peripheral.name)
-            
-            # 更新UI
-            self.update_peripheral_tree()
             
             # 选中新添加的外设
             self.state_manager.set_selection(peripheral=peripheral.name)
@@ -354,9 +381,8 @@ class PeripheralManager(QObject):
             return
         
         dialog_factory = DialogFactory(self.layout_manager.main_window)
-        # 设置已存在的外设列表，用于继承关系选择
-        existing_peripherals = list(self.state_manager.device_info.peripherals.keys())
-        dialog_factory.set_existing_peripherals(existing_peripherals)
+        # 传递完整外设字典（用于继承关系选择 + 地址冲突检测）
+        dialog_factory.set_existing_peripherals(self.state_manager.device_info.peripherals)
         dialog = dialog_factory.create_peripheral_dialog(peripheral, is_edit=True)
         
         if dialog.exec():
@@ -408,8 +434,8 @@ class PeripheralManager(QObject):
             
             self.peripheral_updated.emit(updated_peripheral.name)
             
-            # 更新UI
-            self.update_peripheral_tree()
+            # 注意：update_peripheral/rename_peripheral 内部已通过 _notify_state_change 触发树重建
+            # 不需要在这里再次调用 update_peripheral_tree()（避免双重树重建）
     
     def delete_selected_peripheral(self):
         """删除选中的外设"""
@@ -572,6 +598,15 @@ class PeripheralManager(QObject):
                 # 调用主窗口的排序功能
                 if hasattr(main_window, 'sort_items_alphabetically'):
                     main_window.sort_items_alphabetically()
+            elif action_data == "move_field_up":
+                if hasattr(main_window, 'move_field_up_down'):
+                    main_window.move_field_up_down(item_name, direction="up")
+            elif action_data == "move_field_down":
+                if hasattr(main_window, 'move_field_up_down'):
+                    main_window.move_field_up_down(item_name, direction="down")
+            elif action_data == "sort_fields_by_offset":
+                if hasattr(main_window, 'sort_fields_by_offset'):
+                    main_window.sort_fields_by_offset(item_name)
             elif action_data == "copy_peripheral":
                 # 复制外设数据
                 self.copy_peripheral(item_name)
@@ -790,7 +825,7 @@ class PeripheralManager(QObject):
             )
     
     def _select_peripheral_in_tree(self, periph_name: str):
-        """在树中选中指定外设（不改变展开状态）"""
+        """在树中选中指定外设（不改变展开状态）— 使用缓存 O(1) 查找"""
         periph_tree = self.layout_manager.get_widget('periph_tree')
         if not periph_tree:
             return
@@ -798,13 +833,17 @@ class PeripheralManager(QObject):
         # 阻塞信号，避免选中触发不必要的状态变更
         periph_tree.blockSignals(True)
         
-        # 遍历树查找外设项目
-        for i in range(periph_tree.topLevelItemCount()):
-            item = periph_tree.topLevelItem(i)
-            if item.text(0) == periph_name:
-                periph_tree.setCurrentItem(item)
-                # 不改变展开状态，保持原有状态
-                break
+        # 优先使用缓存查找（O(1)），回退到线性遍历（O(n)）
+        item = self._tree_item_cache.get(periph_name)
+        if item:
+            periph_tree.setCurrentItem(item)
+        else:
+            # 缓存未命中，遍历树查找
+            for i in range(periph_tree.topLevelItemCount()):
+                tree_item = periph_tree.topLevelItem(i)
+                if tree_item.text(0) == periph_name:
+                    periph_tree.setCurrentItem(tree_item)
+                    break
         
         periph_tree.blockSignals(False)
     
@@ -815,57 +854,90 @@ class PeripheralManager(QObject):
         self.state_manager.set_selection(peripheral=periph_name, element_type='peripheral')
     
     def select_register(self, periph_name: str, reg_name: str):
-        """选中指定寄存器"""
+        """选中指定寄存器 — 使用缓存 O(1) 查找"""
         periph_tree = self.layout_manager.get_widget('periph_tree')
         if not periph_tree:
             return
         
-        # 查找外设项目
-        for i in range(periph_tree.topLevelItemCount()):
-            periph_item = periph_tree.topLevelItem(i)
-            if periph_item.text(0) == periph_name:
-                # 展开外设
-                periph_item.setExpanded(True)
-                # 查找寄存器项目
-                for j in range(periph_item.childCount()):
-                    reg_item = periph_item.child(j)
-                    if reg_item.text(0) == reg_name:
-                        # 展开寄存器
-                        reg_item.setExpanded(True)
-                        periph_tree.setCurrentItem(reg_item)
-                        # 更新状态管理器的当前选中
-                        self.state_manager.set_selection(peripheral=periph_name, register=reg_name, element_type='register')
-                        return
-                break
+        # 阻塞信号，避免 setCurrentItem 触发 itemSelectionChanged 导致双重通知
+        periph_tree.blockSignals(True)
+        
+        try:
+            # 使用缓存查找寄存器节点（O(1)）
+            reg_path = f"{periph_name}/{reg_name}"
+            reg_item = self._tree_item_cache.get(reg_path)
+            if reg_item:
+                # 确保父外设展开
+                periph_item = reg_item.parent()
+                if periph_item:
+                    periph_item.setExpanded(True)
+                reg_item.setExpanded(True)
+                periph_tree.setCurrentItem(reg_item)
+            else:
+                # 缓存未命中，回退到线性遍历
+                for i in range(periph_tree.topLevelItemCount()):
+                    periph_item = periph_tree.topLevelItem(i)
+                    if periph_item.text(0) == periph_name:
+                        periph_item.setExpanded(True)
+                        for j in range(periph_item.childCount()):
+                            tree_reg_item = periph_item.child(j)
+                            if tree_reg_item.text(0) == reg_name:
+                                tree_reg_item.setExpanded(True)
+                                periph_tree.setCurrentItem(tree_reg_item)
+                                break
+                        break
+        finally:
+            periph_tree.blockSignals(False)
+        
+        # 手动更新状态管理器并发射信号（只通知一次）
+        self.state_manager.set_selection(peripheral=periph_name, register=reg_name, element_type='register')
+        self.selection_changed.emit(periph_name, reg_name, None)
     
     def select_field(self, periph_name: str, reg_name: str, field_name: str):
-        """选中指定位域"""
+        """选中指定位域 — 使用缓存 O(1) 查找"""
         periph_tree = self.layout_manager.get_widget('periph_tree')
         if not periph_tree:
             return
         
-        # 查找外设项目
-        for i in range(periph_tree.topLevelItemCount()):
-            periph_item = periph_tree.topLevelItem(i)
-            if periph_item.text(0) == periph_name:
-                # 展开外设
-                periph_item.setExpanded(True)
-                # 查找寄存器项目
-                for j in range(periph_item.childCount()):
-                    reg_item = periph_item.child(j)
-                    if reg_item.text(0) == reg_name:
-                        # 展开寄存器
-                        reg_item.setExpanded(True)
-                        # 查找位域项目
-                        for k in range(reg_item.childCount()):
-                            field_item = reg_item.child(k)
-                            if field_item.text(0) == field_name:
-                                periph_tree.setCurrentItem(field_item)
-                                # 更新状态管理器的当前选中
-                                self.state_manager.set_selection(peripheral=periph_name, register=reg_name, field=field_name, element_type='field')
-                                return
+        # 阻塞信号，避免 setCurrentItem 触发 itemSelectionChanged 导致双重通知
+        periph_tree.blockSignals(True)
+        
+        try:
+            # 使用缓存查找位域节点（O(1)）
+            field_path = f"{periph_name}/{reg_name}/{field_name}"
+            field_item = self._tree_item_cache.get(field_path)
+            if field_item:
+                # 确保父寄存器和祖父外设展开
+                reg_item = field_item.parent()
+                if reg_item:
+                    reg_item.setExpanded(True)
+                    periph_item = reg_item.parent()
+                    if periph_item:
+                        periph_item.setExpanded(True)
+                periph_tree.setCurrentItem(field_item)
+            else:
+                # 缓存未命中，回退到线性遍历
+                for i in range(periph_tree.topLevelItemCount()):
+                    periph_item = periph_tree.topLevelItem(i)
+                    if periph_item.text(0) == periph_name:
+                        periph_item.setExpanded(True)
+                        for j in range(periph_item.childCount()):
+                            tree_reg_item = periph_item.child(j)
+                            if tree_reg_item.text(0) == reg_name:
+                                tree_reg_item.setExpanded(True)
+                                for k in range(tree_reg_item.childCount()):
+                                    tree_field_item = tree_reg_item.child(k)
+                                    if tree_field_item.text(0) == field_name:
+                                        periph_tree.setCurrentItem(tree_field_item)
+                                        break
+                                break
                         break
-                break
+        finally:
+            periph_tree.blockSignals(False)
+        
+        # 手动更新状态管理器并发射信号（只通知一次）
+        self.state_manager.set_selection(peripheral=periph_name, register=reg_name, field=field_name, element_type='field')
+        self.selection_changed.emit(periph_name, reg_name, field_name)
     
     def export_peripheral(self, periph_name: str) -> Dict[str, Any]:
         """导出外设数据为字典"""
@@ -1094,10 +1166,8 @@ class PeripheralManager(QObject):
                 register.fields[field.name] = field
             
             # 使用StateManager添加寄存器
+            # 注意：add_register 内部通过 execute_command → _notify_state_change → on_state_changed → update_peripheral_tree
             self.state_manager.add_register(periph_name, register)
-            
-            # 更新UI
-            self.update_peripheral_tree()
             
             # 显示状态消息
             main_window = self.layout_manager.main_window
@@ -1219,10 +1289,8 @@ class PeripheralManager(QObject):
             )
             
             # 使用StateManager添加位域
+            # 注意：add_field 内部通过 execute_command → _notify_state_change → on_state_changed → update_peripheral_tree
             self.state_manager.add_field(periph_name, reg_name, field)
-            
-            # 更新UI
-            self.update_peripheral_tree()
             
             # 显示状态消息
             main_window = self.layout_manager.main_window

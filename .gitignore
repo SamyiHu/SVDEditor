@@ -57,6 +57,11 @@ version_info.txt
 *.exe
 *.zip
 
+# Temporary fix/verify scripts
+_fix_*.py
+_verify*.py
+_verify*.txt
+
 # Logs
 *.log
 logs/

@@ -4,6 +4,7 @@
 """
 import sys
 import os
+import copy
 from typing import Dict, List, Optional, Any
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -42,12 +43,15 @@ from .components.preview_manager import PreviewManager
 from .managers.file_operations import FileOperations
 from .managers.device_info_manager import DeviceInfoManager
 from .managers.search_manager import SearchManager
+from .managers.batch_operations_manager import BatchOperationsManager
 from .coordinator import Coordinator
 from ..i18n.i18n import I18nManager, get_i18n_manager, set_i18n_manager, t
 
 from ..utils.helpers import pretty_xml, format_hex
 from ..utils.logger import Logger
 from ..core.chain_rules import ChainRulesEngine
+from ..core.address_conflict_detector import AddressConflictDetector, ConflictType, ConflictSeverity
+from ..core.document_manager import DocumentManager, DocumentState
 
 
 class MainWindowRefactored(QMainWindow):
@@ -70,6 +74,7 @@ class MainWindowRefactored(QMainWindow):
         # 初始化协调器
         self.coordinator = Coordinator()
         
+        
         # 初始化国际化管理器
         self.i18n_manager = I18nManager()
         set_i18n_manager(self.i18n_manager)
@@ -89,6 +94,8 @@ class MainWindowRefactored(QMainWindow):
         
         # 初始化预览管理器
         self.preview_manager = PreviewManager(self, self.state_manager, self.coordinator)
+        # 连接预览可见性变化信号，同步菜单勾选状态
+        self.preview_manager.preview_visibility_changed.connect(self._on_preview_visibility_changed)
         
         # 初始化搜索管理器
         self.search_manager = SearchManager(coordinator=self.coordinator)
@@ -116,6 +123,12 @@ class MainWindowRefactored(QMainWindow):
         # GUI 日志处理器
         self._gui_log_handler = None
         self.auto_save_error = True
+        
+        # 初始化地址冲突检测器
+        self.conflict_detector = AddressConflictDetector()
+        
+        # 初始化多文档管理器
+        self.document_manager = DocumentManager(self)
         
         self.init_ui()
         self.logger.debug(f"init_ui完成，窗口大小: {self.size()}")
@@ -180,6 +193,254 @@ class MainWindowRefactored(QMainWindow):
         
         # 初始化中断表格（如果有数据）
         self._update_interrupt_table()
+        
+        # 设置多文档标签栏
+        self.layout_manager.setup_document_tab_bar(self.document_manager)
+        tab_bar = self.layout_manager.get_document_tab_bar()
+        if tab_bar:
+            tab_bar.tab_clicked.connect(self._on_document_tab_clicked)
+            tab_bar.tab_close_requested.connect(self._on_document_tab_close)
+            tab_bar.close_others_requested.connect(self._on_close_others)
+            tab_bar.close_all_requested.connect(self._on_close_all)
+            tab_bar.new_tab_requested.connect(self.new_file)
+            # 比较标签信号
+            tab_bar.diff_tab_clicked.connect(self._on_diff_tab_clicked)
+            tab_bar.diff_tab_close_requested.connect(self._on_diff_tab_close)
+        
+        # 比较视图存储: diff_id -> DiffViewWidget
+        self._diff_views = {}
+        self._active_diff_id = None
+        
+        # 连接文档管理器的所有关闭信号
+        self.document_manager.all_documents_closed.connect(self._on_all_documents_closed_show_welcome)
+    
+    def _save_current_document_state(self):
+        """保存当前文档的UI状态到DocumentManager"""
+        doc = self.document_manager.active_document
+        if not doc:
+            return
+        
+        # 保存选择状态
+        selection = self.state_manager.get_selection()
+        doc.selection = selection.copy()
+        
+        # 保存树展开状态
+        periph_tree = self.layout_manager.get_widget('periph_tree')
+        if periph_tree:
+            expanded_periphs = {}
+            expanded_regs = {}
+            for i in range(periph_tree.topLevelItemCount()):
+                periph_item = periph_tree.topLevelItem(i)
+                periph_name = periph_item.text(0)
+                expanded_periphs[periph_name] = periph_item.isExpanded()
+                for j in range(periph_item.childCount()):
+                    reg_item = periph_item.child(j)
+                    reg_key = f"{periph_name}/{reg_item.text(0)}"
+                    expanded_regs[reg_key] = reg_item.isExpanded()
+            doc.tree_expanded_periphs = expanded_periphs
+            doc.tree_expanded_regs = expanded_regs
+        
+        # 保存当前标签页索引
+        tab_widget = self.layout_manager.get_widget('tab_widget')
+        if tab_widget:
+            doc.current_tab_index = tab_widget.currentIndex()
+        
+        # 保存中断表滚动位置
+        irq_table = self.layout_manager.get_widget('irq_table')
+        if irq_table:
+            doc.irq_table_scroll = irq_table.verticalScrollBar().value()
+        
+        # 仅在数据被修改时才深拷贝（大幅减少切换文档时的开销）
+        if doc.modified or doc.device_info is None:
+            doc.device_info = copy.deepcopy(self.state_manager.device_info)
+        else:
+            # 未修改时直接引用（文档切换时不会修改 device_info）
+            doc.device_info = self.state_manager.device_info
+        
+        # 保存命令历史（每个文档独立维护撤销/重做栈）
+        doc.command_history = self.state_manager.command_history
+        
+        # 保存预览器折叠状态和选中状态
+        if self.preview_manager and self.preview_manager.preview_widget:
+            pw = self.preview_manager.preview_widget
+            doc.preview_folded_elements = set(pw.folded_elements)
+            if hasattr(pw, 'current_selection'):
+                doc.preview_selection = dict(pw.current_selection)
+    
+    def _restore_document_state(self, doc: 'DocumentState'):
+        """从DocumentState恢复文档的UI状态（优化：减少不必要的UI刷新）"""
+        if not doc:
+            return
+        
+        # 暂停通知，避免恢复过程中多次触发UI刷新
+        self.state_manager.pause_notifications()
+        
+        try:
+            # 恢复设备数据
+            # 如果文档未修改，doc.device_info 就是 state_manager 原来的引用，可以直接使用
+            # 如果文档已修改，doc.device_info 是之前保存时的深拷贝，需要再拷贝一份保证隔离
+            if doc.modified:
+                self.state_manager.device_info = copy.deepcopy(doc.device_info)
+            else:
+                # 未修改时直接使用引用（_save_current_document_state 保证了数据一致性）
+                self.state_manager.device_info = doc.device_info
+            
+            # 恢复命令历史（每个文档独立维护撤销/重做栈）
+            if doc.command_history is not None:
+                self.state_manager.command_history = doc.command_history
+            
+            self.state_manager.clear_selection()
+            
+            # 恢复树（单次重建，不保留旧文档的展开状态）
+            self.peripheral_manager.update_peripheral_tree(preserve_expanded=False)
+            
+            # 恢复树展开状态
+            periph_tree = self.layout_manager.get_widget('periph_tree')
+            if periph_tree:
+                periph_tree.blockSignals(True)
+                for i in range(periph_tree.topLevelItemCount()):
+                    periph_item = periph_tree.topLevelItem(i)
+                    periph_name = periph_item.text(0)
+                    if doc.tree_expanded_periphs.get(periph_name, False):
+                        periph_item.setExpanded(True)
+                    for j in range(periph_item.childCount()):
+                        reg_item = periph_item.child(j)
+                        reg_key = f"{periph_name}/{reg_item.text(0)}"
+                        if doc.tree_expanded_regs.get(reg_key, False):
+                            reg_item.setExpanded(True)
+                periph_tree.blockSignals(False)
+            
+            # 恢复选择
+            if doc.selection:
+                sel = doc.selection
+                self.state_manager.set_selection(
+                    peripheral=sel.get('peripheral'),
+                    register=sel.get('register'),
+                    field=sel.get('field'),
+                    element_type=sel.get('element_type')
+                )
+                # 在树中选中对应项
+                if sel.get('peripheral'):
+                    self.peripheral_manager.select_peripheral(sel['peripheral'])
+                    if sel.get('register'):
+                        self.peripheral_manager.select_register(sel['peripheral'], sel['register'])
+            
+            # 恢复标签页索引
+            tab_widget = self.layout_manager.get_widget('tab_widget')
+            if tab_widget and doc.current_tab_index < tab_widget.count():
+                tab_widget.setCurrentIndex(doc.current_tab_index)
+            
+            # 恢复中断表滚动位置
+            irq_table = self.layout_manager.get_widget('irq_table')
+            if irq_table:
+                irq_table.verticalScrollBar().setValue(doc.irq_table_scroll)
+            
+            # 批量更新UI（只刷新一次）
+            self.update_data_stats()
+            self._update_interrupt_table()
+            if hasattr(self.layout_manager, 'update_basic_info'):
+                self.layout_manager.update_basic_info(doc.device_info)
+            
+            self.update_visualization(
+                (doc.selection or {}).get('peripheral') or '',
+                (doc.selection or {}).get('register') or '',
+                (doc.selection or {}).get('field') or ''
+            )
+            
+            # 恢复预览器状态（折叠状态和选中状态）
+            if self.preview_manager and self.preview_manager.preview_widget:
+                pw = self.preview_manager.preview_widget
+                # 恢复折叠状态
+                pw.folded_elements = set(doc.preview_folded_elements)
+                # 恢复选中状态
+                if hasattr(pw, 'current_selection'):
+                    pw.current_selection = dict(doc.preview_selection)
+                # 清除预览高亮，避免残留
+                if hasattr(pw, 'preview_edit') and pw.preview_edit:
+                    pw.preview_edit.clear_highlight()
+                # 刷新预览内容（使用新文档的数据）
+                pw.refresh_preview(immediate=True)
+                # 如果有选中状态，重新应用高亮
+                if doc.preview_selection.get('type') and hasattr(pw, '_apply_highlight'):
+                    pw._apply_highlight()
+                    pw.jump_to_selection()
+        finally:
+            # 恢复通知前，标记跳过下一次树重建（避免 resume_notifications 触发的
+            # on_state_changed 再次重建树——我们在上面已经重建过了）
+            self.peripheral_manager._skip_next_tree_rebuild = True
+            self.state_manager.resume_notifications()
+        
+        # 重新应用树选中状态
+        if doc and doc.selection:
+            sel = doc.selection
+            periph = sel.get('peripheral')
+            reg = sel.get('register')
+            if periph:
+                if reg:
+                    self.peripheral_manager.select_register(periph, reg)
+                else:
+                    self.peripheral_manager.select_peripheral(periph)
+    
+    def _on_document_tab_clicked(self, doc_id: str):
+        """文档标签点击 - 切换文档（保存旧状态，恢复新状态）"""
+        # 如果点击的是当前活动文档，且没有在对比视图中，忽略
+        if doc_id == self.document_manager.active_doc_id and self._active_diff_id is None:
+            return
+        
+        # 保存当前文档状态
+        self._save_current_document_state()
+        
+        # 清除活动diff ID（切换到文档模式）
+        self._active_diff_id = None
+        
+        # 切换文档
+        self.document_manager.switch_to(doc_id)
+        doc = self.document_manager.get_document(doc_id)
+        if doc:
+            self._restore_document_state(doc)
+        
+        # 确保editor_stack显示正常编辑器（页面0）
+        editor_stack = self.layout_manager.get_widget('editor_stack')
+        if editor_stack:
+            editor_stack.setCurrentIndex(0)
+    
+    def _on_document_tab_close(self, doc_id: str):
+        """文档标签关闭请求"""
+        doc = self.document_manager.get_document(doc_id)
+        if doc and doc.modified:
+            reply = QMessageBox.question(self, "关闭文档",
+                f"文档 '{doc.display_name}' 有未保存的修改，确定关闭吗？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        self.document_manager.close_document(doc_id)
+    
+    def _on_close_others(self, keep_doc_id: str):
+        """关闭其他文档"""
+        # 先保存当前文档状态
+        self._save_current_document_state()
+        
+        for doc_id in self.document_manager.document_ids[:]:
+            if doc_id != keep_doc_id:
+                self.document_manager.close_document(doc_id)
+        
+        # 确保留下的文档被激活并恢复其状态
+        doc = self.document_manager.get_document(keep_doc_id)
+        if doc:
+            if self.document_manager.active_doc_id != keep_doc_id:
+                self.document_manager.switch_to(keep_doc_id)
+            self._restore_document_state(doc)
+    
+    def _on_close_all(self):
+        """关闭所有文档"""
+        # 保存当前文档状态
+        self._save_current_document_state()
+        self.document_manager.clear_all()
+    
+    def _on_all_documents_closed_show_welcome(self):
+        """所有文档关闭时，切换回欢迎页"""
+        self.layout_manager.show_welcome()
+        self.layout_manager.update_status("所有文档已关闭")
     
     def init_data(self):
         """初始化数据"""
@@ -188,6 +449,13 @@ class MainWindowRefactored(QMainWindow):
     
     def setup_signals(self):
         """设置信号连接"""
+        # ===== 欢迎页信号连接 =====
+        welcome_page = self.layout_manager.get_widget('welcome_page')
+        if welcome_page:
+            welcome_page.new_file_requested.connect(self.new_file)
+            welcome_page.open_file_requested.connect(self.open_svd_file)
+            welcome_page.open_recent_requested.connect(self._open_recent_file)
+        
         # 连接搜索功能（使用search_manager）
         self.search_manager.connect_search_signals()
         
@@ -242,10 +510,17 @@ class MainWindowRefactored(QMainWindow):
             # 连接选择变化信号以更新按钮状态
             irq_table.itemSelectionChanged.connect(self.update_interrupt_buttons_state)
         
-        # 连接位域表格双击编辑
+        # 连接位域表格双击编辑 + 选择联动
         field_table = self.layout_manager.get_widget('field_table')
         if field_table:
             field_table.doubleClicked.connect(self.on_field_table_double_clicked)
+            # 位域表格行选择 → 高亮位域图
+            field_table.itemSelectionChanged.connect(self.on_field_table_selection_changed)
+        
+        # 连接紧凑模式复选框
+        compact_tree_cb = self.layout_manager.get_widget('compact_tree_cb')
+        if compact_tree_cb:
+            compact_tree_cb.stateChanged.connect(self.on_compact_tree_changed)
         
         # 连接中断表格双击编辑
         irq_table = self.layout_manager.get_widget('irq_table')
@@ -287,6 +562,9 @@ class MainWindowRefactored(QMainWindow):
         delete_irq_btn = self.layout_manager.get_widget('delete_irq_btn')
         if delete_irq_btn:
             delete_irq_btn.clicked.connect(lambda: self.delete_interrupt())
+        
+        # 设置地址冲突实时检测
+        self._setup_conflict_detection()
     
     def update_interrupt_buttons_state(self):
         """更新中断按钮状态（根据表格选择）"""
@@ -304,17 +582,31 @@ class MainWindowRefactored(QMainWindow):
         edit_irq_btn.setEnabled(has_selection)
         delete_irq_btn.setEnabled(has_selection)
 
+    def toggle_preview_window(self, checked: bool):
+        """切换预览窗口显示/隐藏（与显示菜单的勾选状态同步）"""
+        self.preview_manager.set_preview_visible(checked)
+        self.logger.info(f"预览窗口{'已打开' if checked else '已关闭'}")
+    
     def open_preview_window(self):
         """打开预览窗口（使用预览管理器）"""
-        # 只唤起预览窗口，不改变当前的布局模式
-        # 布局模式应该通过预览窗口的工具栏来切换
         self.preview_manager.set_preview_visible(True)
+        # 同步菜单勾选状态
+        if hasattr(self, 'toggle_preview_action') and self.toggle_preview_action:
+            self.toggle_preview_action.setChecked(True)
         self.logger.info("预览窗口已打开")
     
+    def _on_preview_visibility_changed(self, visible: bool):
+        """预览可见性变化时同步菜单勾选状态"""
+        if hasattr(self, 'toggle_preview_action') and self.toggle_preview_action:
+            self.toggle_preview_action.setChecked(visible)
+        self.logger.info(f"预览可见性变化: {visible}")
+
     def _on_preview_window_closed(self):
         """预览窗口关闭事件"""
         self.logger.info("预览窗口已关闭")
-        # 预览管理器处理关闭逻辑
+        # 同步菜单勾选状态
+        if hasattr(self, 'toggle_preview_action') and self.toggle_preview_action:
+            self.toggle_preview_action.setChecked(False)
     
     def _on_main_window_selection_changed(self, item_type: str, item_name: str):
         """主窗口选择变化时更新预览"""
@@ -348,7 +640,7 @@ class MainWindowRefactored(QMainWindow):
             peripheral or register or field or ''
         )
         
-        # 更新可视化控件
+        # StateManager 已有 30ms 防抖，这里直接更新可视化控件
         self.update_visualization(peripheral, register, field)
         
         # 更新位域表格
@@ -481,7 +773,7 @@ class MainWindowRefactored(QMainWindow):
         self.layout_manager.update_data_stats(stats)
     
     def on_field_clicked(self, field):
-        """位域点击事件处理"""
+        """位域点击事件处理（位域图 → 树 + 表格联动）"""
         # 获取当前选择
         selection = self.state_manager.get_selection()
         peripheral = selection.get('peripheral')
@@ -490,41 +782,122 @@ class MainWindowRefactored(QMainWindow):
         if not peripheral or not register:
             return
             
+        field_name = field.name if field else None
+        
         # 设置选择
         self.state_manager.set_selection(
             peripheral=peripheral,
             register=register,
-            field=field.name if field else None
+            field=field_name
         )
         
         # 更新树控件中的选择
         if field and peripheral and register:
-            # 在树中选中对应的位域
             periph_tree = self.layout_manager.get_widget('periph_tree')
             if periph_tree:
+                # 紧凑模式下树中没有位域节点，只选中寄存器
+                compact = self.peripheral_manager.is_compact_tree()
+                
                 # 查找外设项
                 for i in range(periph_tree.topLevelItemCount()):
                     periph_item = periph_tree.topLevelItem(i)
                     if periph_item.text(0) == peripheral:
-                        # 展开外设项
                         periph_item.setExpanded(True)
                         # 查找寄存器项
                         for j in range(periph_item.childCount()):
                             reg_item = periph_item.child(j)
                             if reg_item.text(0) == register:
-                                # 展开寄存器项显示位域
-                                reg_item.setExpanded(True)
-                                # 查找位域项
-                                for k in range(reg_item.childCount()):
-                                    field_item = reg_item.child(k)
-                                    if field_item.text(0) == field.name:
-                                        # 选中位域项
-                                        periph_tree.setCurrentItem(field_item)
-                                        # 确保位域项可见
-                                        periph_tree.scrollToItem(field_item)
-                                        break
+                                if compact:
+                                    # 紧凑模式：选中寄存器即可
+                                    periph_tree.setCurrentItem(reg_item)
+                                    periph_tree.scrollToItem(reg_item)
+                                else:
+                                    # 完整模式：展开并选到位域
+                                    reg_item.setExpanded(True)
+                                    for k in range(reg_item.childCount()):
+                                        field_item = reg_item.child(k)
+                                        if field_item.text(0) == field.name:
+                                            periph_tree.setCurrentItem(field_item)
+                                            periph_tree.scrollToItem(field_item)
+                                            break
                                 break
                         break
+            
+            # 同步高亮位域表格中对应的行
+            self._highlight_field_in_table(field_name)
+    
+    def on_field_table_selection_changed(self):
+        """位域表格行选择变化 → 高亮位域图 + 更新状态"""
+        field_table = self.layout_manager.get_widget('field_table')
+        if not field_table:
+            return
+        
+        selected_rows = field_table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+        
+        row = selected_rows[0].row()
+        field_name_item = field_table.item(row, 0)
+        if not field_name_item:
+            return
+        
+        field_name = field_name_item.text()
+        
+        # 获取当前选择（外设和寄存器）
+        selection = self.state_manager.get_selection()
+        peripheral = selection.get('peripheral')
+        register = selection.get('register')
+        
+        if not peripheral or not register:
+            return
+        
+        # 更新状态管理器选择（不触发树重建）
+        self.state_manager.set_selection(
+            peripheral=peripheral,
+            register=register,
+            field=field_name
+        )
+        
+        # 高亮位域图中对应的位域
+        visualization_widget = self.layout_manager.get_widget('visualization_widget')
+        if visualization_widget and hasattr(visualization_widget, 'bit_field'):
+            device_info = self.state_manager.device_info
+            if (peripheral in device_info.peripherals and
+                register in device_info.peripherals[peripheral].registers and
+                field_name in device_info.peripherals[peripheral].registers[register].fields):
+                field_obj = device_info.peripherals[peripheral].registers[register].fields[field_name]
+                visualization_widget.bit_field.highlight_field(field_name)
+    
+    def _highlight_field_in_table(self, field_name: str):
+        """在位域表格中高亮指定位域所在的行"""
+        field_table = self.layout_manager.get_widget('field_table')
+        if not field_table or not field_name:
+            return
+        
+        # 阻塞信号避免循环触发
+        field_table.blockSignals(True)
+        
+        for row in range(field_table.rowCount()):
+            item = field_table.item(row, 0)
+            if item and item.text() == field_name:
+                field_table.selectRow(row)
+                field_table.scrollToItem(item)
+                break
+        
+        field_table.blockSignals(False)
+    
+    def on_compact_tree_changed(self, state):
+        """紧凑模式复选框状态变化 → 重建树"""
+        from PyQt6.QtCore import Qt
+        checked = (state == Qt.CheckState.Checked.value)
+        self.logger.info(f"紧凑模式: {'启用' if checked else '禁用'}")
+        
+        # 重建树（保留展开状态）
+        self.peripheral_manager.update_peripheral_tree(preserve_expanded=True)
+        
+        # 更新状态栏
+        status = "紧凑模式已启用（树状图只显示到寄存器级别）" if checked else "完整模式（树状图显示所有级别）"
+        self.layout_manager.update_status(status)
     
     def on_field_table_double_clicked(self, index):
         """位域表格双击事件处理 - 打开编辑界面"""
@@ -828,12 +1201,144 @@ class MainWindowRefactored(QMainWindow):
     
     # ===================== 文件操作 =====================
     def new_file(self):
-        """新建文件"""
-        self.file_operations.new_file()
+        """新建文件 - 使用向导引导创建"""
+        from .dialogs.new_svd_wizard import NewSVDWizard
+        from ..core.data_model import DeviceInfo, CPUInfo
+        
+        wizard = NewSVDWizard(self)
+        if wizard.exec() == NewSVDWizard.DialogCode.Accepted:
+            # 先保存当前文档状态（确保数据隔离）
+            self._save_current_document_state()
+            
+            # 从向导获取数据
+            chip_name = wizard.field("chip_name") or ""
+            vendor = wizard.field("vendor") or ""
+            version = wizard.field("version") or "1.0"
+            description = wizard.field("description") or ""
+            series = wizard.field("series") or ""
+            copyright_text = wizard.field("copyright") or ""
+            cpu_type = wizard.field("cpu_type") or "CM4"
+            cpu_revision = wizard.field("cpu_revision") or "r0p0"
+            endian = wizard.field("endian") or "little"
+            width = int(wizard.field("width") or 32)
+            reset_value = wizard.field("reset_value") or "0x00000000"
+            reset_mask = wizard.field("reset_mask") or "0xFFFFFFFF"
+            access = wizard.field("access") or "read-write"
+            
+            # 创建 CPUInfo
+            cpu_info = CPUInfo(name=cpu_type)
+            cpu_info.revision = cpu_revision
+            cpu_info.endian = endian
+            cpu_info.mpu_present = 1
+            cpu_info.fpu_present = 1
+            cpu_info.nvic_prio_bits = 4
+            cpu_info.vendor_systick_config = 0
+            
+            # 创建 DeviceInfo
+            device_info = DeviceInfo(name=chip_name)
+            device_info.vendor = vendor
+            device_info.version = version
+            device_info.description = description
+            device_info.cpu = cpu_info
+            device_info.width = width
+            device_info.reset_value = reset_value
+            device_info.reset_mask = reset_mask
+            
+            # 暂停通知，防止旧文档的树展开状态泄漏到新文档
+            self.state_manager.pause_notifications()
+            
+            try:
+                # 更新状态管理器
+                self.state_manager.device_info = device_info
+                self.state_manager.clear_selection()
+                self.state_manager.command_history.clear()
+                
+                # 重置预览器状态（新文档不应该继承旧文档的选中/折叠状态）
+                if self.preview_manager and self.preview_manager.preview_widget:
+                    pw = self.preview_manager.preview_widget
+                    pw.folded_elements = set()
+                    pw.current_selection = {
+                        'type': None, 'peripheral': None, 'register': None,
+                        'field': None, 'interrupt': None
+                    }
+                    if hasattr(pw, 'preview_edit') and pw.preview_edit:
+                        pw.preview_edit.clear_highlight()
+                
+                # 更新UI（不保留旧文档的展开状态）
+                self.peripheral_manager.update_peripheral_tree(preserve_expanded=False)
+                self.update_data_stats()
+                self._update_interrupt_table()
+            finally:
+                # 恢复通知（此时树已正确重建，不会泄漏展开状态）
+                self.state_manager.resume_notifications()
+            
+            if hasattr(self.layout_manager, 'update_basic_info'):
+                self.layout_manager.update_basic_info(device_info)
+            
+            self.layout_manager.update_status(f"已创建新文件: {chip_name}")
+            
+            # 注册到文档管理器
+            try:
+                self.document_manager.open_document(
+                    device_info, file_path=None, display_name=chip_name or "未命名")
+            except Exception as e:
+                self.logger.warning(f"注册文档到DocumentManager失败: {e}")
+            
+            # 切换到编辑器视图
+            self.layout_manager.show_editor()
+        else:
+            # 用户取消向导，创建空白文件
+            self.file_operations.new_file()
+            self.layout_manager.show_editor()
 
-    def open_svd_file(self):
-        """打开SVD文件"""
-        self.file_operations.open_svd_file()
+    def _open_recent_file(self, file_path: str):
+        """从欢迎页打开最近文件"""
+        if os.path.exists(file_path):
+            try:
+                self._load_svd_from_path(file_path)
+                self.layout_manager.show_editor()
+                self.layout_manager.add_recent_file(file_path)
+            except Exception as e:
+                QMessageBox.critical(self, "错误", f"无法打开文件:\n{e}")
+
+    def _load_svd_from_path(self, file_path: str):
+        """从指定路径加载SVD文件"""
+        # 先保存当前文档状态（确保数据隔离）
+        self._save_current_document_state()
+        
+        parser = SVDParser()
+        device_info = parser.parse(file_path)
+        
+        # 暂停通知，防止旧文档的树展开状态泄漏到新文档
+        self.state_manager.pause_notifications()
+        
+        try:
+            self.state_manager.device_info = device_info
+            self.state_manager.clear_selection()
+            self.state_manager.command_history.clear()
+            
+            # 重置预览器状态（新打开的文件不应该继承旧文件的选中/折叠状态）
+            if self.preview_manager and self.preview_manager.preview_widget:
+                pw = self.preview_manager.preview_widget
+                pw.folded_elements = set()
+                pw.current_selection = {
+                    'type': None, 'peripheral': None, 'register': None,
+                    'field': None, 'interrupt': None
+                }
+                if hasattr(pw, 'preview_edit') and pw.preview_edit:
+                    pw.preview_edit.clear_highlight()
+            
+            # 更新UI（不保留旧文档的展开状态）
+            self.peripheral_manager.update_peripheral_tree(preserve_expanded=False)
+            self.update_data_stats()
+            self._update_interrupt_table()
+        finally:
+            # 恢复通知（此时树已正确重建，不会泄漏展开状态）
+            self.state_manager.resume_notifications()
+        
+        if hasattr(self.layout_manager, 'update_basic_info'):
+            self.layout_manager.update_basic_info(device_info)
+        self.layout_manager.update_status(f"已打开: {os.path.basename(file_path)}")
 
     def save_svd_file(self):
         """保存SVD文件"""
@@ -858,58 +1363,473 @@ class MainWindowRefactored(QMainWindow):
     def export_file(self):
         """导出文件"""
         self.file_operations.export_file()
+
+    def validate_data(self):
+        """验证 SVD 数据（CMSIS-SVD Schema 完整验证）"""
+        self.file_operations.validate_svd()
+
+    def export_document(self, format_type: str = "markdown"):
+        """导出文档（CSV/Markdown/HTML）"""
+        self.file_operations.export_document(format_type)
     
+    def export_header_file(self):
+        """导出C语言头文件"""
+        from ..core.header_generator import HeaderGenerator
+        
+        if not self.state_manager.device_info or not self.state_manager.device_info.peripherals:
+            QMessageBox.warning(self, "提示", "请先加载或创建SVD数据")
+            return
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "导出C头文件", 
+            f"{self.state_manager.device_info.name or 'device'}.h",
+            "C头文件 (*.h);;所有文件 (*.*)"
+        )
+        
+        if file_path:
+            generator = HeaderGenerator(self.state_manager.device_info)
+            if generator.save_to_file(file_path):
+                QMessageBox.information(self, "导出成功", f"C头文件已保存到:\n{file_path}")
+                self.layout_manager.update_status(f"头文件已导出: {file_path}")
+            else:
+                QMessageBox.critical(self, "导出失败", "头文件生成失败")
+
+    def show_advanced_search(self):
+        """显示高级搜索对话框"""
+        self.search_manager.show_advanced_search_dialog(self)
+
+    def show_goto_address(self):
+        """显示跳转到地址对话框"""
+        self.search_manager.show_goto_address_dialog(self)
+
+    def show_batch_modify(self):
+        """显示批量修改属性对话框"""
+        mgr = BatchOperationsManager(self.state_manager, self.coordinator)
+        mgr.operation_completed.connect(lambda desc, n: self._on_batch_completed(desc, n))
+        mgr.show_batch_modify_dialog(self)
+
+    def show_batch_generate(self):
+        """显示批量生成寄存器对话框"""
+        mgr = BatchOperationsManager(self.state_manager, self.coordinator)
+        mgr.operation_completed.connect(lambda desc, n: self._on_batch_completed(desc, n))
+        mgr.show_batch_generate_dialog(self)
+
+    def show_batch_clone(self):
+        """显示批量克隆寄存器对话框"""
+        mgr = BatchOperationsManager(self.state_manager, self.coordinator)
+        mgr.operation_completed.connect(lambda desc, n: self._on_batch_completed(desc, n))
+        mgr.show_batch_clone_dialog(self)
+
+    def _on_batch_completed(self, desc: str, count: int):
+        """批量操作完成后的 UI 刷新"""
+        self.peripheral_manager.update_peripheral_tree()
+        self.update_data_stats()
+        self.layout_manager.update_status(desc)
+        self.logger.info(desc)
+
+    def show_svd_diff(self):
+        """显示 SVD 差异比较（支持多标签页联动，结果在标签页中展示）"""
+        # 检查是否打开了多个文档，可以自动比较
+        doc_ids = self.document_manager.document_ids
+        if len(doc_ids) >= 2:
+            # 多文档打开：提供选择比较两个已打开文档的选项
+            from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QComboBox, QDialogButtonBox
+            
+            select_dialog = QDialog(self)
+            select_dialog.setWindowTitle("SVD 文件比较")
+            select_dialog.setMinimumWidth(450)
+            layout = QVBoxLayout(select_dialog)
+            
+            layout.addWidget(QLabel("检测到已打开多个文档，可以直接比较："))
+            
+            # 文档A选择
+            layout.addWidget(QLabel("文档 A（基准）："))
+            combo_a = QComboBox()
+            for doc_id in doc_ids:
+                doc = self.document_manager.get_document(doc_id)
+                if doc:
+                    combo_a.addItem(doc.display_name or "未命名", doc_id)
+            combo_a.setCurrentIndex(0)
+            layout.addWidget(combo_a)
+            
+            # 文档B选择
+            layout.addWidget(QLabel("文档 B（比较）："))
+            combo_b = QComboBox()
+            for doc_id in doc_ids:
+                doc = self.document_manager.get_document(doc_id)
+                if doc:
+                    combo_b.addItem(doc.display_name or "未命名", doc_id)
+            combo_b.setCurrentIndex(min(1, combo_b.count() - 1))
+            layout.addWidget(combo_b)
+            
+            # 按钮组（使用自定义result值：1=标签页显示, 2=弹窗显示）
+            btn_box = QDialogButtonBox()
+            compare_tab_btn = QPushButton("比较并在标签页显示")
+            compare_tab_btn.clicked.connect(lambda: select_dialog.done(1))
+            compare_dialog_btn = QPushButton("比较(弹窗)")
+            compare_dialog_btn.clicked.connect(lambda: select_dialog.done(2))
+            browse_btn = QPushButton("从文件选择...")
+            browse_btn.clicked.connect(lambda: select_dialog.done(0))
+            btn_box.addButton(compare_tab_btn, QDialogButtonBox.ButtonRole.AcceptRole)
+            btn_box.addButton(compare_dialog_btn, QDialogButtonBox.ButtonRole.ActionRole)
+            btn_box.addButton(browse_btn, QDialogButtonBox.ButtonRole.RejectRole)
+            layout.addWidget(btn_box)
+            
+            result = select_dialog.exec()
+            
+            if result == 1:
+                # 在标签页中显示比较结果
+                doc_a_id = combo_a.currentData()
+                doc_b_id = combo_b.currentData()
+                
+                if doc_a_id == doc_b_id:
+                    QMessageBox.warning(self, "提示", "请选择两个不同的文档进行比较")
+                    return
+                
+                doc_a = self.document_manager.get_document(doc_a_id)
+                doc_b = self.document_manager.get_document(doc_b_id)
+                
+                if doc_a and doc_b:
+                    self._show_diff_in_tab(doc_a.device_info, doc_b.device_info,
+                                           doc_a.display_name, doc_b.display_name)
+                return
+            elif result == 2:
+                # 在弹窗中显示
+                doc_a_id = combo_a.currentData()
+                doc_b_id = combo_b.currentData()
+                
+                if doc_a_id == doc_b_id:
+                    QMessageBox.warning(self, "提示", "请选择两个不同的文档进行比较")
+                    return
+                
+                doc_a = self.document_manager.get_document(doc_a_id)
+                doc_b = self.document_manager.get_document(doc_b_id)
+                
+                if doc_a and doc_b:
+                    from .dialogs.svd_diff_dialog import SVDDiffDialog
+                    dialog = SVDDiffDialog(self, current_device=doc_a.device_info)
+                    dialog.other_device = doc_b.device_info
+                    name_b = doc_b.display_name or "未命名"
+                    n_periphs = len(doc_b.device_info.peripherals) if doc_b.device_info else 0
+                    dialog.file_label.setText(f"比较文件: {name_b} ({n_periphs} 外设)")
+                    dialog.file_label.setStyleSheet("color: black;")
+                    dialog.compare_btn.setEnabled(True)
+                    dialog.setWindowTitle(f"SVD 比较: {doc_a.display_name} vs {name_b}")
+                    dialog.exec()
+                return
+        
+        # 单文档或无文档：使用文件选择后标签页显示
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择要比较的SVD文件", "", "SVD文件 (*.svd);;XML文件 (*.xml)")
+        if file_path:
+            try:
+                parser = SVDParser()
+                other_device = parser.parse_file(file_path)
+                other_name = os.path.basename(file_path)
+                current_name = "当前文档"
+                doc = self.document_manager.active_document
+                if doc:
+                    current_name = doc.display_name or "当前文档"
+                self._show_diff_in_tab(
+                    self.state_manager.device_info, other_device,
+                    current_name, other_name)
+            except Exception as e:
+                QMessageBox.critical(self, "错误", f"无法加载比较文件:\n{e}")
+    
+    def _show_diff_in_tab(self, device_a, device_b, name_a="文档A", name_b="文档B"):
+        """在主内容区域显示SVD差异比较结果（不创建次级标签页）"""
+        from .widgets.diff_view_widget import DiffViewWidget
+        
+        # 创建差异视图组件
+        diff_view = DiffViewWidget(self)
+        diff_view.set_diff_data(device_a, device_b, name_a, name_b)
+        
+        # 在顶部文档标签栏中添加比较标签（与SVD文档同级）
+        tab_bar = self.layout_manager.get_document_tab_bar()
+        diff_name = f"{name_a} vs {name_b}"
+        diff_id = None
+        if tab_bar:
+            diff_id = tab_bar.add_diff_tab(diff_name)
+            self._diff_views[diff_id] = diff_view
+        
+        # 将差异视图添加到主分割器的编辑区域（不使用tab_widget的次级标签）
+        # 先确保编辑器视图可见（不是欢迎页）
+        self.layout_manager.show_editor()
+        
+        editor_stack = self.layout_manager.get_widget('editor_stack')
+        self.logger.info(f"editor_stack found: {editor_stack is not None}")
+        if editor_stack:
+            editor_stack.addWidget(diff_view)
+            editor_stack.setCurrentWidget(diff_view)
+            self.logger.info(f"diff_view added to editor_stack, index={editor_stack.indexOf(diff_view)}")
+        else:
+            # 回退方案：如果editor_stack不存在，直接替换中央区域
+            central = self.centralWidget()
+            if central:
+                main_layout = central.layout()
+                if main_layout:
+                    # 隐藏当前编辑器内容，显示diff_view
+                    diff_view.setParent(central)
+                    main_layout.addWidget(diff_view)
+                    diff_view.show()
+        
+        self._active_diff_id = diff_id
+        
+        # 统计信息
+        summary = ""
+        if hasattr(diff_view, '_differ') and diff_view._differ:
+            summary = diff_view._differ.generate_summary(diff_view._diffs)
+        total = summary.count('\n') if summary else 0
+        
+        self.layout_manager.update_status(f"SVD比较完成: {diff_name}")
+    
+    def _on_diff_tab_clicked(self, diff_id: str):
+        """比较标签被点击 - 显示对应的比较结果"""
+        if diff_id not in self._diff_views:
+            return
+        
+        # 保存当前文档状态
+        if self.document_manager.active_doc_id:
+            self._save_current_document_state()
+        
+        diff_view = self._diff_views[diff_id]
+        
+        # 在editor_stack中显示diff_view
+        editor_stack = self.layout_manager.get_widget('editor_stack')
+        if editor_stack:
+            editor_stack.setCurrentWidget(diff_view)
+        
+        self._active_diff_id = diff_id
+        
+        # 确保编辑器视图可见
+        self.layout_manager.show_editor()
+    
+    def _on_diff_tab_close(self, diff_id: str):
+        """比较标签被关闭"""
+        if diff_id not in self._diff_views:
+            return
+        
+        diff_view = self._diff_views.pop(diff_id)
+        
+        # 从editor_stack中移除
+        editor_stack = self.layout_manager.get_widget('editor_stack')
+        if editor_stack:
+            idx = editor_stack.indexOf(diff_view)
+            if idx >= 0:
+                editor_stack.removeWidget(diff_view)
+        
+        diff_view.deleteLater()
+        
+        # 从标签栏移除
+        tab_bar = self.layout_manager.get_document_tab_bar()
+        if tab_bar:
+            tab_bar.remove_diff_tab(diff_id)
+        
+        if self._active_diff_id == diff_id:
+            self._active_diff_id = None
+            # 切换回最后活动的文档
+            if self.document_manager.document_ids:
+                last_id = self.document_manager.active_doc_id or self.document_manager.document_ids[-1]
+                self._on_document_tab_clicked(last_id)
+    
+    def _diff_has_type(self, item, diff_type):
+        """递归检查差异类型"""
+        from ..core.svd_differ import DiffType
+        if item.diff_type == diff_type:
+            return True
+        return any(self._diff_has_type(c, diff_type) for c in item.children)
+    
+    def _populate_diff_tree(self, parent, items, 
+                            color_added, color_removed, color_modified,
+                            color_added_text, color_removed_text, color_modified_text):
+        """递归填充差异树"""
+        from ..core.svd_differ import DiffType
+        
+        for item in items:
+            tree_item = QTreeWidgetItem()
+            path_parts = item.path.rsplit('.', 1)
+            display_name = path_parts[-1] if len(path_parts) > 1 else item.path
+            tree_item.setText(0, display_name)
+            
+            type_text = {
+                DiffType.ADDED: "新增 [+]",
+                DiffType.REMOVED: "删除 [-]",
+                DiffType.MODIFIED: "修改 [~]",
+                DiffType.UNCHANGED: "",
+            }.get(item.diff_type, "")
+            tree_item.setText(1, type_text)
+            
+            old_str = str(item.old_value) if item.old_value is not None else ""
+            new_str = str(item.new_value) if item.new_value is not None else ""
+            if len(old_str) > 100: old_str = old_str[:97] + "..."
+            if len(new_str) > 100: new_str = new_str[:97] + "..."
+            tree_item.setText(2, old_str)
+            tree_item.setText(3, new_str)
+            
+            if item.diff_type == DiffType.ADDED:
+                bg, fg = color_added, color_added_text
+            elif item.diff_type == DiffType.REMOVED:
+                bg, fg = color_removed, color_removed_text
+            elif item.diff_type == DiffType.MODIFIED:
+                bg, fg = color_modified, color_modified_text
+            else:
+                bg = fg = None
+            
+            if bg and fg:
+                for col in range(4):
+                    tree_item.setBackground(col, QBrush(bg))
+                    tree_item.setForeground(col, QBrush(fg))
+            
+            tree_item.setToolTip(0, item.path)
+            
+            if item.children:
+                self._populate_diff_tree(tree_item, item.children,
+                                          color_added, color_removed, color_modified,
+                                          color_added_text, color_removed_text, color_modified_text)
+            
+            parent.addChild(tree_item)
+        
+        if isinstance(parent, QTreeWidgetItem):
+            parent.setExpanded(True)
+    
+    def show_svd_merge(self):
+        """显示 SVD 导入合并对话框（非模态，不阻塞主窗口）"""
+        from .dialogs.svd_merge_dialog import SVDMergeDialog
+        if not self.state_manager.device_info:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "提示", "请先打开或新建一个 SVD 文件")
+            return
+        
+        # 保存引用防止被垃圾回收
+        self._merge_dialog = SVDMergeDialog(self, self.state_manager.device_info)
+        self._merge_dialog.merge_completed.connect(self._on_merge_completed)
+        self._merge_dialog.finished.connect(lambda: self._cleanup_merge_dialog())
+        self._merge_dialog.setWindowFlags(
+            self._merge_dialog.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint
+        )
+        self._merge_dialog.show()
+    
+    def _cleanup_merge_dialog(self):
+        """清理合并对话框引用"""
+        if hasattr(self, '_merge_dialog'):
+            self._merge_dialog = None
+    
+    def _on_merge_completed(self, merged_device):
+        """合并完成后的回调"""
+        from PyQt6.QtWidgets import QApplication
+        
+        # 更新状态管理器
+        self.state_manager.device_info = merged_device
+        self.state_manager.clear_selection()
+        
+        # 通知状态变更
+        self.state_manager._notify_state_change()
+        
+        # 发射事件
+        if hasattr(self, 'coordinator') and self.coordinator:
+            self.coordinator.emit_event("device_info_updated", merged_device)
+        
+        # 刷新 UI
+        self.peripheral_manager.update_peripheral_tree()
+        self.update_data_stats()
+        self._update_interrupt_table()
+        
+        # 更新预览
+        if self.preview_manager:
+            self.preview_manager.refresh_preview(immediate=True)
+        
+        # 更新基础信息
+        if hasattr(self.layout_manager, 'update_basic_info'):
+            self.layout_manager.update_basic_info(merged_device)
+        
+        self.layout_manager.update_status("SVD 导入合并完成")
+        self.logger.info("SVD 导入合并完成")
+
     def open_svd_file(self):
-        """打开SVD文件"""
+        """打开SVD文件（支持多选）"""
         # 检查未保存的更改
         if self.check_unsaved_changes():
-            file_path, _ = QFileDialog.getOpenFileName(
+            file_paths, _ = QFileDialog.getOpenFileNames(
                 self, "选择SVD文件", "", "SVD文件 (*.svd);;XML文件 (*.xml)"
             )
             
-            if file_path:
-                try:
-                    self.layout_manager.update_status("正在解析SVD文件...")
-                    QApplication.processEvents()  # 更新UI
+            if file_paths:
+                for file_path in file_paths:
+                    try:
+                        # 先保存当前文档状态（确保数据隔离）
+                        self._save_current_document_state()
+                        
+                        self.layout_manager.update_status(f"正在解析SVD文件: {os.path.basename(file_path)}...")
+                        QApplication.processEvents()  # 更新UI
+                        
+                        # 解析文件
+                        parser = SVDParser()
+                        device_info = parser.parse_file(file_path)
+                        
+                        # 暂停通知，防止旧文档的树展开状态泄漏到新文档
+                        self.state_manager.pause_notifications()
+                        
+                        try:
+                            # 更新状态管理器
+                            self.state_manager.device_info = device_info
+                            self.state_manager.clear_selection()
+                            self.state_manager.command_history.clear()
+                            
+                            # 重置预览器状态（新打开的文件不应该继承旧文件的选中/折叠状态）
+                            if self.preview_manager and self.preview_manager.preview_widget:
+                                pw = self.preview_manager.preview_widget
+                                pw.folded_elements = set()
+                                pw.current_selection = {
+                                    'type': None, 'peripheral': None, 'register': None,
+                                    'field': None, 'interrupt': None
+                                }
+                                if hasattr(pw, 'preview_edit') and pw.preview_edit:
+                                    pw.preview_edit.clear_highlight()
+                            
+                            # 更新UI（不保留旧文档的展开状态）
+                            self.peripheral_manager.update_peripheral_tree(preserve_expanded=False)
+                            self.update_data_stats()
+                            self._update_interrupt_table()
+                        finally:
+                            # 恢复通知（此时树已正确重建，不会泄漏展开状态）
+                            self.state_manager.resume_notifications()
+                        
+                        # 发射文件加载信号（触发实时预览刷新）
+                        if hasattr(self, 'coordinator') and self.coordinator:
+                            self.logger.debug("调用coordinator.emit_event(device_info_updated)")
+                            self.coordinator.emit_event("device_info_updated", device_info)
+                        
+                        # 更新基础信息
+                        if hasattr(self.layout_manager, 'update_basic_info'):
+                            self.layout_manager.update_basic_info(device_info)
+                        
+                        self.layout_manager.update_status(f"已加载: {os.path.basename(file_path)}")
+                        
+                        # 注册到文档管理器
+                        try:
+                            self.document_manager.open_document(
+                                device_info, file_path=file_path)
+                        except Exception as e:
+                            self.logger.warning(f"注册文档到DocumentManager失败: {e}")
+                        
+                        # 切换到编辑器视图
+                        self.layout_manager.show_editor()
+                        self.layout_manager.add_recent_file(file_path)
+                        
+                        # 显示警告
+                        if parser.warnings:
+                            warning_msg = "\n".join(parser.warnings[:10])
+                            if len(parser.warnings) > 10:
+                                warning_msg += t("msg.more_warnings", count=len(parser.warnings)-10)
+                            QMessageBox.warning(self, t("msg.parse_warning"), warning_msg)
                     
-                    # 解析文件
-                    parser = SVDParser()
-                    device_info = parser.parse_file(file_path)
-                    
-                    # 更新状态管理器
-                    self.state_manager.device_info = device_info
-                    self.state_manager.clear_selection()
-                    self.state_manager.command_history.clear()
-                    
-                    # 通知状态变更（触发预览更新）
-                    self.state_manager._notify_state_change()
-                    
-                    # 发射文件加载信号（触发实时预览刷新）
-                    if hasattr(self, 'coordinator') and self.coordinator:
-                        self.logger.debug("调用coordinator.emit_event(device_info_updated)")
-                        self.coordinator.emit_event("device_info_updated", device_info)
-                    
-                    # 更新UI
-                    self.peripheral_manager.update_peripheral_tree()
-                    self.update_data_stats()
-                    self._update_interrupt_table()
-                    
-                    # 更新基础信息
-                    if hasattr(self.layout_manager, 'update_basic_info'):
-                        self.layout_manager.update_basic_info(device_info)
-                    
-                    self.layout_manager.update_status(f"已加载: {os.path.basename(file_path)}")
-                    
-                    # 显示警告
-                    if parser.warnings:
-                        warning_msg = "\n".join(parser.warnings[:10])
-                        if len(parser.warnings) > 10:
-                            warning_msg += t("msg.more_warnings", count=len(parser.warnings)-10)
-                        QMessageBox.warning(self, t("msg.parse_warning"), warning_msg)
+                    except Exception as e:
+                        self.logger.error(f"文件加载失败: {str(e)}")
+                        QMessageBox.critical(self, t("msg.load_error"), t("msg.file_load_failed_detail", error=str(e)))
                 
-                except Exception as e:
-                    self.logger.error(f"文件加载失败: {str(e)}")
-                    QMessageBox.critical(self, t("msg.load_error"), t("msg.file_load_failed_detail", error=str(e)))
+                # 多文件加载完成后更新状态
+                if len(file_paths) > 1:
+                    self.layout_manager.update_status(f"已加载 {len(file_paths)} 个SVD文件")
     
     def save_svd_file(self):
         """保存SVD文件"""
@@ -1067,25 +1987,23 @@ class MainWindowRefactored(QMainWindow):
             periph_tree.dropEvent = self.custom_drop_event
     
     def custom_drag_enter_event(self, event):
-        """自定义拖拽进入事件 - 只允许外设之间的同级拖放"""
+        """自定义拖拽进入事件 - 允许外设之间和位域之间的拖放"""
         periph_tree = self.layout_manager.get_widget('periph_tree')
         if not periph_tree:
             event.ignore()
             return
         
-        # 获取源项目
         source_item = periph_tree.currentItem()
         if not source_item:
             event.ignore()
             return
         
-        # 只允许外设拖放
         source_type = self.tree_manager.get_item_type(source_item)
-        if source_type != "peripheral":
+        # 允许外设和位域拖放
+        if source_type not in ("peripheral", "field"):
             event.ignore()
             return
         
-        # 允许拖放
         event.accept()
     
     def custom_drag_move_event(self, event):
@@ -1095,60 +2013,83 @@ class MainWindowRefactored(QMainWindow):
             event.ignore()
             return
         
-        # 获取源项目
         source_item = periph_tree.currentItem()
         if not source_item:
             event.ignore()
             return
         
-        # 只允许外设拖放
         source_type = self.tree_manager.get_item_type(source_item)
-        if source_type != "peripheral":
-            event.ignore()
-            return
         
-        # 获取目标位置
-        target_index = periph_tree.indexAt(event.position().toPoint())
-        if not target_index.isValid():
-            # 拖到空白区域，允许
+        # 外设拖放验证
+        if source_type == "peripheral":
+            target_index = periph_tree.indexAt(event.position().toPoint())
+            if not target_index.isValid():
+                event.accept()
+                return
+            target_item = periph_tree.itemFromIndex(target_index)
+            if not target_item:
+                event.ignore()
+                return
+            target_type = self.tree_manager.get_item_type(target_item)
+            if target_type != "peripheral":
+                event.ignore()
+                return
             event.accept()
-            return
         
-        target_item = periph_tree.itemFromIndex(target_index)
-        if not target_item:
+        # 位域拖放验证：只允许在同一寄存器内拖放
+        elif source_type == "field":
+            target_index = periph_tree.indexAt(event.position().toPoint())
+            if not target_index.isValid():
+                event.ignore()
+                return
+            target_item = periph_tree.itemFromIndex(target_index)
+            if not target_item:
+                event.ignore()
+                return
+            target_type = self.tree_manager.get_item_type(target_item)
+            # 目标必须是位域或寄存器（允许放在寄存器的空白区域）
+            if target_type not in ("field", "register"):
+                event.ignore()
+                return
+            # 如果目标是位域，检查是否同一寄存器
+            if target_type == "field":
+                source_parent = source_item.parent()
+                target_parent = target_item.parent()
+                if source_parent is not target_parent:
+                    event.ignore()
+                    return
+            elif target_type == "register":
+                # 拖到寄存器上，检查是否是源位域的父寄存器
+                source_parent = source_item.parent()
+                if source_parent is not target_item:
+                    event.ignore()
+                    return
+            event.accept()
+        
+        else:
             event.ignore()
-            return
-        
-        # 检查目标项目类型
-        target_type = self.tree_manager.get_item_type(target_item)
-        
-        # 只允许拖到外设节点上（同级拖放）
-        if target_type != "peripheral":
-            event.ignore()
-            return
-        
-        # 允许拖放
-        event.accept()
     
     def custom_drop_event(self, event):
-        """自定义拖放事件处理 - 只允许外设之间的同级拖放"""
-        # 获取树控件
+        """自定义拖放事件处理 - 支持外设之间和位域之间的拖放"""
         periph_tree = self.layout_manager.get_widget('periph_tree')
         if not periph_tree:
             event.ignore()
             return
-            
-        # 在拖放前保存源项目信息
+        
         source_item = periph_tree.currentItem()
         if not source_item:
             event.ignore()
             return
-            
-        # 获取源项目信息（在拖放前保存）
+        
         source_type = self.tree_manager.get_item_type(source_item)
         source_name = self.tree_manager.get_item_name(source_item)
         
-        # 只允许外设拖放
+        # ===== 位域拖放处理 =====
+        if source_type == "field":
+            self._handle_field_drop(event, periph_tree, source_item, source_name)
+            return
+        
+        # ===== 外设拖放处理 =====
         if source_type != "peripheral":
             event.ignore()
             return
@@ -1159,7 +2100,6 @@ class MainWindowRefactored(QMainWindow):
             target_item = periph_tree.itemFromIndex(target_index)
             if target_item:
                 target_type = self.tree_manager.get_item_type(target_item)
-                # 只允许拖到外设节点上（同级拖放）
                 if target_type != "peripheral":
                     event.ignore()
                     return
@@ -1168,7 +2108,6 @@ class MainWindowRefactored(QMainWindow):
             event.ignore()
             return
         
-        # 如果拖到自身，忽略
         if source_name == target_name:
             event.ignore()
             return
@@ -1188,12 +2127,10 @@ class MainWindowRefactored(QMainWindow):
         
         # 恢复展开状态
         periph_tree_block = periph_tree.blockSignals(True)
-        # 重新应用展开状态
         for i in range(periph_tree.topLevelItemCount()):
             item = periph_tree.topLevelItem(i)
             if item and item.text(0) in expanded_paths:
                 item.setExpanded(True)
-            # 检查子项
             for j in range(item.childCount() if item else 0):
                 child = item.child(j)
                 child_path = f"{item.text(0)}/{child.text(0)}" if item else ""
@@ -1204,13 +2141,11 @@ class MainWindowRefactored(QMainWindow):
         # 记录拖放操作到命令历史（支持撤销）
         new_order = list(self.state_manager.device_info.peripherals.keys())
         if old_order != new_order:
-            # 捕获当前状态用于闭包
             captured_old_order = old_order[:]
             captured_new_order = new_order[:]
             state_mgr = self.state_manager
             
             def execute_reorder():
-                """重做拖放：恢复为拖放后的顺序"""
                 peripherals = state_mgr.device_info.peripherals
                 reordered = {name: peripherals[name] for name in captured_new_order if name in peripherals}
                 state_mgr.device_info.peripherals = reordered
@@ -1218,7 +2153,6 @@ class MainWindowRefactored(QMainWindow):
                 return True
             
             def undo_reorder():
-                """撤销拖放：恢复为拖放前的顺序"""
                 peripherals = state_mgr.device_info.peripherals
                 reordered = {name: peripherals[name] for name in captured_old_order if name in peripherals}
                 state_mgr.device_info.peripherals = reordered
@@ -1231,10 +2165,118 @@ class MainWindowRefactored(QMainWindow):
                 undo=undo_reorder,
                 description=f"拖放调整外设顺序: {source_name}"
             )
-            # 直接推入历史栈，不重新执行（拖放已经生效）
             state_mgr.command_history.history.append(command)
             state_mgr.command_history.current_index = len(state_mgr.command_history.history) - 1
             state_mgr.command_history.redo_stack.clear()
+    
+    def _handle_field_drop(self, event, periph_tree, source_item, source_name):
+        """处理位域拖放事件"""
+        target_index = periph_tree.indexAt(event.position().toPoint())
+        if not target_index.isValid():
+            event.ignore()
+            return
+        
+        target_item = periph_tree.itemFromIndex(target_index)
+        if not target_item:
+            event.ignore()
+            return
+        
+        target_type = self.tree_manager.get_item_type(target_item)
+        
+        # 确定目标位域和父寄存器
+        reg_item = source_item.parent()
+        if not reg_item:
+            event.ignore()
+            return
+        periph_item = reg_item.parent()
+        if not periph_item:
+            event.ignore()
+            return
+        
+        periph_name = self.tree_manager.get_item_name(periph_item)
+        reg_name = self.tree_manager.get_item_name(reg_item)
+        
+        # 确定目标位域名称和目标位置
+        target_field_name = None
+        if target_type == "field":
+            target_parent = target_item.parent()
+            if target_parent is not reg_item:
+                event.ignore()
+                return
+            target_field_name = self.tree_manager.get_item_name(target_item)
+        elif target_type == "register":
+            if target_item is not reg_item:
+                event.ignore()
+                return
+            # 拖到寄存器末尾
+        else:
+            event.ignore()
+            return
+        
+        # 获取当前位域顺序
+        register = self.state_manager.device_info.peripherals.get(periph_name, {}).registers.get(reg_name)
+        if not register:
+            event.ignore()
+            return
+        
+        old_field_names = list(register.fields.keys())
+        if source_name not in old_field_names:
+            event.ignore()
+            return
+        
+        # 执行Qt默认的拖放（移动树节点）
+        from PyQt6.QtWidgets import QTreeWidget
+        QTreeWidget.dropEvent(periph_tree, event)
+        
+        # 从树中读取新的位域顺序
+        new_field_names = []
+        for k in range(reg_item.childCount()):
+            child = reg_item.child(k)
+            child_type = self.tree_manager.get_item_type(child)
+            child_name = self.tree_manager.get_item_name(child)
+            if child_type == "field" and child_name in old_field_names:
+                new_field_names.append(child_name)
+        
+        # 如果顺序没变，不记录
+        if new_field_names == old_field_names or not new_field_names:
+            return
+        
+        # 记录到命令历史
+        captured_old = old_field_names[:]
+        captured_new = new_field_names[:]
+        captured_periph = periph_name
+        captured_reg = reg_name
+        state_mgr = self.state_manager
+        
+        def execute_field_reorder():
+            reg = state_mgr.device_info.peripherals.get(captured_periph, {}).registers.get(captured_reg)
+            if reg is None:
+                return False
+            old_fields = reg.fields
+            reg.fields = {name: old_fields[name] for name in captured_new if name in old_fields}
+            state_mgr._notify_state_change()
+            return True
+        
+        def undo_field_reorder():
+            reg = state_mgr.device_info.peripherals.get(captured_periph, {}).registers.get(captured_reg)
+            if reg is None:
+                return False
+            old_fields = reg.fields
+            reg.fields = {name: old_fields[name] for name in captured_old if name in old_fields}
+            state_mgr._notify_state_change()
+            return True
+        
+        from ..core.command_history import Command
+        command = Command(
+            execute=execute_field_reorder,
+            undo=undo_field_reorder,
+            description=f"拖放调整位域顺序: {source_name}"
+        )
+        state_mgr.command_history.history.append(command)
+        state_mgr.command_history.current_index = len(state_mgr.command_history.history) - 1
+        state_mgr.command_history.redo_stack.clear()
+        
+        self.layout_manager.update_status(f"已调整位域顺序: {source_name}")
     
     def _validate_and_fix_tree_structure_after_drop(self, moved_periph_name):
         """拖放后验证并修正树结构"""
@@ -1305,8 +2347,22 @@ class MainWindowRefactored(QMainWindow):
     
     def apply_styles(self):
         """应用样式"""
-        # 这里可以添加样式设置
-        pass
+        from ..config.styles import get_current_stylesheet
+        self.setStyleSheet(get_current_stylesheet())
+    
+    def toggle_dark_mode(self, checked: bool):
+        """切换深色模式"""
+        from ..config.styles import set_dark_mode, get_current_stylesheet
+        set_dark_mode(checked)
+        self.setStyleSheet(get_current_stylesheet())
+        
+        # 更新可视化控件背景
+        visualization_widget = self.layout_manager.get_widget('visualization_widget')
+        if visualization_widget:
+            visualization_widget.update()
+        
+        status = "深色模式已启用" if checked else "浅色模式已启用"
+        self.layout_manager.update_status(status)
     
     # ===================== 撤销/重做功能 =====================
     def undo(self):
@@ -1355,6 +2411,200 @@ class MainWindowRefactored(QMainWindow):
         self.logger.info("重做操作完成")
     
     # ===================== 排序功能 =====================
+    def move_field_up_down(self, field_name: str, direction: str = "up"):
+        """上移或下移位域（在同一个寄存器内调整顺序）
+        
+        Args:
+            field_name: 位域名称
+            direction: "up" 或 "down"
+        """
+        try:
+            selection = self.state_manager.get_selection()
+            periph_name = selection.get('peripheral')
+            reg_name = selection.get('register')
+            
+            if not periph_name or not reg_name:
+                # 尝试从树控件获取上下文
+                periph_tree = self.layout_manager.get_widget('periph_tree')
+                if not periph_tree:
+                    return
+                current_item = periph_tree.currentItem()
+                if not current_item:
+                    return
+                item_type = self.tree_manager.get_item_type(current_item)
+                if item_type != "field":
+                    return
+                reg_item = current_item.parent()
+                if not reg_item:
+                    return
+                periph_item = reg_item.parent()
+                if not periph_item:
+                    return
+                periph_name = self.tree_manager.get_item_name(periph_item)
+                reg_name = self.tree_manager.get_item_name(reg_item)
+            
+            peripheral = self.state_manager.device_info.peripherals.get(periph_name)
+            if not peripheral:
+                return
+            register = peripheral.registers.get(reg_name)
+            if not register:
+                return
+            
+            field_names = list(register.fields.keys())
+            if field_name not in field_names:
+                return
+            
+            current_idx = field_names.index(field_name)
+            
+            if direction == "up" and current_idx <= 0:
+                self.layout_manager.update_status(f"位域 '{field_name}' 已在最上方")
+                return
+            elif direction == "down" and current_idx >= len(field_names) - 1:
+                self.layout_manager.update_status(f"位域 '{field_name}' 已在最下方")
+                return
+            
+            # 计算交换后的顺序
+            new_field_names = field_names[:]
+            swap_idx = current_idx - 1 if direction == "up" else current_idx + 1
+            new_field_names[current_idx], new_field_names[swap_idx] = new_field_names[swap_idx], new_field_names[current_idx]
+            
+            captured_old = field_names[:]
+            captured_new = new_field_names[:]
+            captured_periph = periph_name
+            captured_reg = reg_name
+            state_mgr = self.state_manager
+            
+            def execute_reorder():
+                """重做：应用新顺序"""
+                reg = state_mgr.device_info.peripherals.get(captured_periph, {}).registers.get(captured_reg)
+                if reg is None:
+                    return False
+                old_fields = reg.fields
+                reg.fields = {name: old_fields[name] for name in captured_new if name in old_fields}
+                state_mgr._notify_state_change()
+                return True
+            
+            def undo_reorder():
+                """撤销：恢复旧顺序"""
+                reg = state_mgr.device_info.peripherals.get(captured_periph, {}).registers.get(captured_reg)
+                if reg is None:
+                    return False
+                old_fields = reg.fields
+                reg.fields = {name: old_fields[name] for name in captured_old if name in old_fields}
+                state_mgr._notify_state_change()
+                return True
+            
+            from svd_tool.core.command_history import Command
+            command = Command(
+                execute=execute_reorder,
+                undo=undo_reorder,
+                description=f"{'上移' if direction == 'up' else '下移'}位域: {field_name}"
+            )
+            result = self.state_manager.execute_command(command)
+            
+            if result:
+                # 延迟选中位域
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(50, lambda: self.peripheral_manager.select_field(periph_name, reg_name, field_name))
+                self.layout_manager.update_status(f"已{'上移' if direction == 'up' else '下移'}位域: {field_name}")
+            else:
+                self.layout_manager.update_status(f"位域 '{field_name}' 已在最{'上方' if direction == 'up' else '下方'}")
+                
+        except Exception as e:
+            self.logger.error(f"移动位域失败: {str(e)}")
+    
+    def sort_fields_by_offset(self, field_name: str = None):
+        """将当前寄存器中的位域按位偏移排序
+        
+        Args:
+            field_name: 当前选中的位域名（用于定位寄存器），可为None
+        """
+        try:
+            selection = self.state_manager.get_selection()
+            periph_name = selection.get('peripheral')
+            reg_name = selection.get('register')
+            
+            if not periph_name or not reg_name:
+                # 尝试从树控件获取上下文
+                periph_tree = self.layout_manager.get_widget('periph_tree')
+                if not periph_tree:
+                    return
+                current_item = periph_tree.currentItem()
+                if not current_item:
+                    return
+                item_type = self.tree_manager.get_item_type(current_item)
+                if item_type == "field":
+                    reg_item = current_item.parent()
+                elif item_type == "register":
+                    reg_item = current_item
+                else:
+                    return
+                if not reg_item:
+                    return
+                periph_item = reg_item.parent()
+                if not periph_item:
+                    return
+                periph_name = self.tree_manager.get_item_name(periph_item)
+                reg_name = self.tree_manager.get_item_name(reg_item)
+            
+            peripheral = self.state_manager.device_info.peripherals.get(periph_name)
+            if not peripheral:
+                return
+            register = peripheral.registers.get(reg_name)
+            if not register:
+                return
+            
+            # 保存旧顺序
+            old_field_names = list(register.fields.keys())
+            # 按bit_offset降序排序（高位在前）
+            new_field_names = [
+                name for name, _ in sorted(
+                    register.fields.items(),
+                    key=lambda x: x[1].bit_offset,
+                    reverse=True
+                )
+            ]
+            
+            if old_field_names == new_field_names:
+                self.layout_manager.update_status("位域已按位偏移排序，无需调整")
+                return
+            
+            captured_old = old_field_names[:]
+            captured_new = new_field_names[:]
+            captured_periph = periph_name
+            captured_reg = reg_name
+            state_mgr = self.state_manager
+            
+            def execute_sort():
+                reg = state_mgr.device_info.peripherals.get(captured_periph, {}).registers.get(captured_reg)
+                if reg is None:
+                    return False
+                old_fields = reg.fields
+                reg.fields = {name: old_fields[name] for name in captured_new if name in old_fields}
+                state_mgr._notify_state_change()
+                return True
+            
+            def undo_sort():
+                reg = state_mgr.device_info.peripherals.get(captured_periph, {}).registers.get(captured_reg)
+                if reg is None:
+                    return False
+                old_fields = reg.fields
+                reg.fields = {name: old_fields[name] for name in captured_old if name in old_fields}
+                state_mgr._notify_state_change()
+                return True
+            
+            from svd_tool.core.command_history import Command
+            command = Command(
+                execute=execute_sort,
+                undo=undo_sort,
+                description=f"按位偏移排序位域: {periph_name}/{reg_name}"
+            )
+            self.state_manager.execute_command(command)
+            self.layout_manager.update_status(f"已按位偏移排序 {reg_name} 的位域")
+            
+        except Exception as e:
+            self.logger.error(f"按位偏移排序位域失败: {str(e)}")
+
     def sort_items_alphabetically(self):
         """按字母顺序排序"""
         try:
@@ -1448,12 +2698,15 @@ class MainWindowRefactored(QMainWindow):
             QMessageBox.warning(self, t("message.warning"), t("msg.select_peripheral_first"))
             return
         
-        # 获取当前外设的寄存器列表
+        # 获取当前外设的寄存器列表和数据
         existing_registers = []
+        existing_regs_data = {}
         if current_peripheral in self.state_manager.device_info.peripherals:
-            existing_registers = list(self.state_manager.device_info.peripherals[current_peripheral].registers.keys())
+            periph = self.state_manager.device_info.peripherals[current_peripheral]
+            existing_registers = list(periph.registers.keys())
+            existing_regs_data = periph.registers
         
-        self.dialog_factory.set_existing_registers(existing_registers)
+        self.dialog_factory.set_existing_registers(existing_regs_data)
         
         # 创建对话框
         dialog = self.dialog_factory.create_register_dialog()
@@ -1476,10 +2729,8 @@ class MainWindowRefactored(QMainWindow):
             )
             
             # 使用StateManager添加寄存器
+            # 注意：add_register 内部通过 execute_command → _notify_state_change → on_state_changed → update_peripheral_tree
             self.state_manager.add_register(current_peripheral, register)
-            
-            # 更新UI
-            self.peripheral_manager.update_peripheral_tree()
             
             # 选中新添加的寄存器
             self.peripheral_manager.select_register(current_peripheral, register.name)
@@ -1516,12 +2767,9 @@ class MainWindowRefactored(QMainWindow):
         # 获取寄存器对象
         register = self.state_manager.device_info.peripherals[current_peripheral].registers[reg_name]
         
-        # 获取当前外设的寄存器列表（排除当前寄存器）
-        existing_registers = [
-            name for name in self.state_manager.device_info.peripherals[current_peripheral].registers.keys()
-            if name != reg_name
-        ]
-        self.dialog_factory.set_existing_registers(existing_registers)
+        # 获取当前外设的寄存器数据（用于偏移冲突检测）
+        periph_obj = self.state_manager.device_info.peripherals[current_peripheral]
+        self.dialog_factory.set_existing_registers(periph_obj.registers)
         
         # 创建对话框
         dialog = self.dialog_factory.create_register_dialog(register, is_edit=True)
@@ -1561,9 +2809,7 @@ class MainWindowRefactored(QMainWindow):
                 # 直接更新
                 self.state_manager.update_register(current_peripheral, old_name, updated_register)
             
-            # 更新UI
-            self.peripheral_manager.update_peripheral_tree()
-            
+            # 注意：state_manager 操作内部已通过 _notify_state_change 触发树重建
             # 选中更新后的寄存器
             self.peripheral_manager.select_register(current_peripheral, new_name)
             
@@ -1681,8 +2927,8 @@ class MainWindowRefactored(QMainWindow):
             except Exception as e:
                 self.logger.error(f"删除寄存器 '{reg_name}' 失败: {str(e)}")
         
-        # 更新UI
-        self.peripheral_manager.update_peripheral_tree()
+        # 注意：每次 delete_register 内部已通过 _notify_state_change 触发树重建
+        # 不需要再次调用 update_peripheral_tree()
         
         # 清除寄存器选择
         self.state_manager.set_selection(register=None, field=None)
@@ -1713,6 +2959,10 @@ class MainWindowRefactored(QMainWindow):
             current_register not in self.state_manager.device_info.peripherals[current_peripheral].registers):
             QMessageBox.warning(self, t("message.warning"), t("msg.register_not_exist", name=current_register))
             return
+        
+        # 设置当前寄存器的位域数据（用于位范围冲突检测）
+        current_register_obj = self.state_manager.device_info.peripherals[current_peripheral].registers[current_register]
+        self.dialog_factory.set_existing_fields(current_register_obj.fields)
         
         # 创建对话框
         dialog = self.dialog_factory.create_field_dialog()
@@ -1780,6 +3030,10 @@ class MainWindowRefactored(QMainWindow):
         
         # 获取位域对象
         field = self.state_manager.device_info.peripherals[current_peripheral].registers[current_register].fields[field_name]
+        
+        # 设置当前寄存器的位域数据（用于位范围冲突检测）
+        register_obj = self.state_manager.device_info.peripherals[current_peripheral].registers[current_register]
+        self.dialog_factory.set_existing_fields(register_obj.fields)
         
         # 创建对话框
         dialog = self.dialog_factory.create_field_dialog(field, is_edit=True)
@@ -2359,6 +3613,10 @@ class MainWindowRefactored(QMainWindow):
         except Exception as e:
             self.logger.error(f"切换日志面板时出错: {str(e)}")
     
+    def toggle_left_panel(self):
+        """切换左侧面板显示/隐藏"""
+        self.layout_manager.toggle_left_panel()
+    
     def toggle_bit_field_visibility(self, checked: bool):
         """切换位域图显示/隐藏"""
         try:
@@ -2725,35 +3983,6 @@ class MainWindowRefactored(QMainWindow):
         
         dialog.exec()
 
-    def validate_data(self):
-        """验证数据"""
-        try:
-            # 使用StateManager的验证功能
-            validation_result = self.state_manager.validate_and_get_summary()
-            
-            if validation_result['valid']:
-                QMessageBox.information(self, t("msg.validation_passed"), t("msg.all_data_validated"))
-                self.layout_manager.update_status(t("status.validation_passed"))
-            else:
-                # 构建错误消息
-                error_count = validation_result['error_count']
-                errors = validation_result['errors']
-                
-                error_message = t("status.validation_failed", count=error_count) + ":\n\n"
-                for i, error in enumerate(errors[:10], 1):  # 最多显示10个错误
-                    error_message += f"{i}. {error}\n"
-                
-                if error_count > 10:
-                    error_message += f"\n... 还有 {error_count - 10} 个错误未显示"
-                
-                QMessageBox.warning(self, t("msg.validation_failed"), error_message)
-                self.layout_manager.update_status(t("msg.data_validation_failed", count=error_count))
-                
-        except Exception as e:
-            self.logger.error(f"验证过程中发生错误: {str(e)}")
-            QMessageBox.warning(self, t("msg.validation_error"), t("msg.validation_error_detail", error=str(e)))
-            self.layout_manager.update_status(t("status.validation_error"))
-    
     def set_language(self, locale: str):
         """设置语言"""
         if hasattr(self, 'i18n_manager') and self.i18n_manager:
@@ -3051,9 +4280,112 @@ class MainWindowRefactored(QMainWindow):
             import traceback
             traceback.print_exc()
 
+    # ===================== 地址冲突实时检测 =====================
+    def _setup_conflict_detection(self):
+        """设置冲突检测（在数据变更时自动触发）"""
+        # 注册状态变更回调
+        self.state_manager.register_state_change_callback(self._on_data_changed_detect_conflicts)
+        # 注册冲突回调
+        self.conflict_detector.register_callback(self._on_conflicts_updated)
+
+    def _on_data_changed_detect_conflicts(self):
+        """数据变更时执行冲突检测"""
+        if hasattr(self, 'conflict_detector') and hasattr(self, 'state_manager'):
+            try:
+                self.conflict_detector.detect_all(self.state_manager.device_info)
+            except Exception as e:
+                self.logger.error(f"冲突检测失败: {e}")
+
+    def _on_conflicts_updated(self, conflicts):
+        """冲突列表更新时的回调"""
+        try:
+            summary = self.conflict_detector.get_summary()
+            error_count = summary.get('errors', 0)
+
+            # 更新状态栏
+            if error_count > 0:
+                self.layout_manager.update_status(
+                    f"⚠ 检测到 {error_count} 个地址冲突"
+                )
+            elif hasattr(self, 'layout_manager'):
+                pass  # 不覆盖其他状态消息
+
+        except Exception as e:
+            self.logger.error(f"冲突回调处理失败: {e}")
+
+    def show_address_conflicts(self):
+        """显示地址冲突检测面板"""
+        from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+            QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox)
+
+        # 运行检测
+        self.conflict_detector.detect_all(self.state_manager.device_info)
+        conflicts = self.conflict_detector.conflicts
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("地址冲突检测")
+        dialog.setMinimumSize(800, 500)
+        layout = QVBoxLayout(dialog)
+
+        # 摘要
+        summary = self.conflict_detector.get_summary()
+        summary_label = QLabel(
+            f"检测完成：共 {summary['total']} 个冲突 "
+            f"({summary['errors']} 错误, {summary['warnings']} 警告)"
+        )
+        if summary['errors'] > 0:
+            summary_label.setStyleSheet("color: red; font-weight: bold; font-size: 14px;")
+        else:
+            summary_label.setStyleSheet("color: green; font-weight: bold; font-size: 14px;")
+        layout.addWidget(summary_label)
+
+        # 冲突表格
+        table = QTableWidget()
+        table.setColumnCount(5)
+        table.setHorizontalHeaderLabels(["严重程度", "类型", "位置", "消息", "详情"])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setRowCount(len(conflicts))
+
+        for row, c in enumerate(conflicts):
+            severity_item = QTableWidgetItem("🔴 错误" if c.severity == ConflictSeverity.ERROR else "🟡 警告")
+            type_map = {
+                ConflictType.PERIPHERAL_ADDRESS_OVERLAP: "外设地址重叠",
+                ConflictType.PERIPHERAL_BASE_DUPLICATE: "外设基地址重复",
+                ConflictType.REGISTER_OFFSET_DUPLICATE: "寄存器偏移重复",
+                ConflictType.FIELD_BIT_OVERLAP: "位域位重叠",
+                ConflictType.INTERRUPT_VALUE_DUPLICATE: "中断号重复",
+            }
+            table.setItem(row, 0, severity_item)
+            table.setItem(row, 1, QTableWidgetItem(type_map.get(c.conflict_type, str(c.conflict_type))))
+            table.setItem(row, 2, QTableWidgetItem(c.location))
+            table.setItem(row, 3, QTableWidgetItem(c.message))
+            table.setItem(row, 4, QTableWidgetItem(c.detail))
+
+        layout.addWidget(table)
+
+        # 按钮
+        btn_layout = QHBoxLayout()
+        refresh_btn = QPushButton("刷新检测")
+        refresh_btn.clicked.connect(lambda: (
+            self.conflict_detector.detect_all(self.state_manager.device_info),
+            dialog.accept(),
+            self.show_address_conflicts()
+        ))
+        close_btn = QPushButton("关闭")
+        close_btn.clicked.connect(dialog.accept)
+        btn_layout.addStretch()
+        btn_layout.addWidget(refresh_btn)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+
+        dialog.exec()
+
     def closeEvent(self, event):
-        """关闭事件"""
-        # 可以在这里添加保存确认逻辑
+        """关闭事件 - 保存窗口偏好设置"""
+        # 保存窗口几何信息到配置
+        if hasattr(self, 'layout_manager'):
+            self.layout_manager.save_window_geometry()
         event.accept()
 
 

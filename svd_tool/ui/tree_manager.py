@@ -8,6 +8,8 @@ from PyQt6.QtGui import QColor, QBrush, QFont, QDrag, QPalette
 from ..core.data_model import DeviceInfo, Peripheral, Register, Field
 from ..core.constants import NODE_TYPES, COLORS
 from ..i18n.i18n import t
+from ..config.icons import get_icon
+from ..config.tree_branch_style import apply_tree_branch_style
 
 
 class TreeManager:
@@ -26,10 +28,15 @@ class TreeManager:
         tree = QTreeWidget()
         tree.setHeaderLabels([t("label.tree_name"), t("label.tree_detail")])
         
+        # 性能优化：统一行高，避免 Qt 逐行计算高度
+        tree.setUniformRowHeights(True)
+        
         # 设置列宽策略
         header = tree.header()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        # 使用 Interactive 模式避免 ResizeToContents 遍历所有节点计算宽度
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.resizeSection(0, 200)  # 默认列宽
         
         # 设置字体
         font = QFont()
@@ -48,50 +55,173 @@ class TreeManager:
         # 设置选择模式（支持 Ctrl/Shift 多选）
         tree.setSelectionMode(QTreeWidget.SelectionMode.ExtendedSelection)
         
+        # 应用自定义分支箭头样式
+        apply_tree_branch_style(tree)
+        
         return tree
     
     def update_tree(self, tree: QTreeWidget, device_info: DeviceInfo, sort_by_name: bool = False):
-        """更新树控件"""
+        """更新树控件 — 增量更新模式
         
-        expanded_items = self.get_expanded_items(tree)# 保存当前展开状态
-        tree.clear()
-        
-         # 根据参数决定是否排序
+        对比现有树节点与 device_info 中的数据：
+        - 新增的外设/寄存器/位域 → 插入
+        - 已删除的外设/寄存器/位域 → 移除
+        - 已存在的 → 原地更新文本和数据
+        这样可以保留展开/折叠状态和选中状态，避免全量重建导致的闪烁。
+        """
+        # 构建期望的外设名有序列表
         if sort_by_name:
-            peripherals = sorted(device_info.peripherals.items(), key=lambda x: x[0])
+            periph_list = sorted(device_info.peripherals.items(), key=lambda x: x[0])
         else:
-            # 保持原有顺序（按照字典插入顺序，在Python 3.7+中是有序的）
-            peripherals = device_info.peripherals.items()
-        
-        for periph_name, peripheral in peripherals:
-            periph_item = self.create_peripheral_item(peripheral)
-            tree.addTopLevelItem(periph_item)
-            
-            # 按照偏移地址排序寄存器
+            periph_list = list(device_info.peripherals.items())
+
+        # ---- 第一步：同步顶层外设节点 ----
+        existing_names = set()
+        for i in range(tree.topLevelItemCount()):
+            item = tree.topLevelItem(i)
+            existing_names.add(self.get_item_name(item))
+
+        desired_names = [name for name, _ in periph_list]
+        desired_set = set(desired_names)
+
+        # 删除不再存在的外设节点
+        i = 0
+        while i < tree.topLevelItemCount():
+            item = tree.topLevelItem(i)
+            if self.get_item_name(item) not in desired_set:
+                tree.takeTopLevelItem(i)
+            else:
+                i += 1
+
+        # 构建 "名称 -> topLevelItem index" 映射
+        name_to_index = {}
+        for i in range(tree.topLevelItemCount()):
+            item = tree.topLevelItem(i)
+            name_to_index[self.get_item_name(item)] = i
+
+        # 按目标顺序逐个确保位置正确，并更新/插入
+        for seq, (periph_name, peripheral) in enumerate(periph_list):
+            if periph_name in name_to_index:
+                # 已存在 → 更新文本
+                idx = name_to_index[periph_name]
+                periph_item = tree.topLevelItem(idx)
+                self._update_peripheral_item(periph_item, peripheral)
+                # 如果位置不对，移动
+                if idx != seq:
+                    tree.takeTopLevelItem(idx)
+                    tree.insertTopLevelItem(seq, periph_item)
+            else:
+                # 新增
+                periph_item = self.create_peripheral_item(peripheral)
+                tree.insertTopLevelItem(seq, periph_item)
+
+            # 获取最终的外设节点
+            periph_item = tree.topLevelItem(seq)
+
+            # ---- 第二步：同步该外设下的寄存器节点 ----
             sorted_registers = sorted(
                 peripheral.registers.items(),
                 key=lambda x: int(x[1].offset, 16) if x[1].offset.lower().startswith('0x') else int(x[1].offset)
             )
-            
-            # 添加寄存器
-            for reg_name, register in sorted_registers:
-                reg_item = self.create_register_item(register)
-                periph_item.addChild(reg_item)
+            self._sync_children(periph_item, sorted_registers,
+                                lambda reg: self.create_register_item(reg),
+                                lambda item, reg: self._update_register_item(item, reg),
+                                NODE_TYPES["REGISTER"])
 
-                # 按照起始位排序位域
-                sorted_fields = sorted(
-                    register.fields.items(),
-                    key=lambda x: x[1].bit_offset
-                )
-                
-                # 添加位域
-                for field_name, field in sorted_fields:
-                    field_item = self.create_field_item(field)
-                    reg_item.addChild(field_item)
-                    
-            # 恢复展开状态
-            if periph_name in expanded_items:
-                periph_item.setExpanded(True)
+            # ---- 第三步：同步每个寄存器下的位域节点 ----
+            for ri in range(periph_item.childCount()):
+                reg_item = periph_item.child(ri)
+                reg_name = self.get_item_name(reg_item)
+                if reg_name in peripheral.registers:
+                    register = peripheral.registers[reg_name]
+                    sorted_fields = sorted(
+                        register.fields.items(),
+                        key=lambda x: x[1].bit_offset
+                    )
+                    self._sync_children(reg_item, sorted_fields,
+                                        lambda f: self.create_field_item(f),
+                                        lambda item, f: self._update_field_item(item, f),
+                                        NODE_TYPES["FIELD"])
+
+    def _sync_children(self, parent_item, sorted_items, create_fn, update_fn, node_type):
+        """通用增量同步子节点 — O(n) 复杂度
+        
+        使用名称→索引映射表代替线性查找，将每个子节点的定位从 O(n) 降为 O(1)，
+        整体复杂度从 O(n²) 降为 O(n)。
+        
+        Args:
+            parent_item: 父节点
+            sorted_items: [(name, data_obj), ...] 有序列表
+            create_fn:    创建新节点的工厂函数
+            update_fn:    更新已有节点的函数 (item, data_obj) -> None
+            node_type:    节点类型常量
+        """
+        desired_set = {name for name, _ in sorted_items}
+
+        # 删除不存在的子节点
+        ci = 0
+        while ci < parent_item.childCount():
+            child = parent_item.child(ci)
+            if self.get_item_name(child) not in desired_set:
+                parent_item.takeChild(ci)
+            else:
+                ci += 1
+
+        # 构建 名称→(索引, 节点) 映射表（O(n)），避免后续线性查找
+        name_to_item = {}
+        for ci in range(parent_item.childCount()):
+            child = parent_item.child(ci)
+            name_to_item[self.get_item_name(child)] = (ci, child)
+
+        # 按目标顺序逐个确保位置正确（每步 O(1) 查找，整体 O(n)）
+        for seq, (item_name, data_obj) in enumerate(sorted_items):
+            entry = name_to_item.get(item_name)
+            if entry is not None:
+                existing_idx, existing_child = entry
+                # 更新节点内容
+                update_fn(existing_child, data_obj)
+                # 如果位置不对，移动到正确位置
+                if existing_idx != seq:
+                    parent_item.takeChild(existing_idx)
+                    parent_item.insertChild(seq, existing_child)
+                    # 移动后重建映射表（索引已变化）
+                    name_to_item.clear()
+                    for ci in range(parent_item.childCount()):
+                        child = parent_item.child(ci)
+                        name_to_item[self.get_item_name(child)] = (ci, child)
+            else:
+                # 插入新节点
+                new_item = create_fn(data_obj)
+                parent_item.insertChild(seq, new_item)
+                # 插入后重建映射表
+                name_to_item.clear()
+                for ci in range(parent_item.childCount()):
+                    child = parent_item.child(ci)
+                    name_to_item[self.get_item_name(child)] = (ci, child)
+
+    def _update_peripheral_item(self, item: QTreeWidgetItem, peripheral: Peripheral):
+        """原地更新外设节点文本"""
+        item.setText(0, peripheral.name)
+        item.setIcon(0, get_icon("tree_peripheral"))
+        detail_text = t("label.base_address_prefix") + str(peripheral.base_address)
+        if peripheral.derived_from:
+            detail_text += " | " + t("label.derived_from") + ": " + peripheral.derived_from
+        item.setText(1, detail_text)
+        item.setData(0, Qt.ItemDataRole.UserRole + 1, peripheral.name)
+
+    def _update_register_item(self, item: QTreeWidgetItem, register: Register):
+        """原地更新寄存器节点文本"""
+        item.setText(0, register.name)
+        item.setIcon(0, get_icon("tree_register"))
+        item.setText(1, t("label.offset_prefix") + str(register.offset))
+        item.setData(0, Qt.ItemDataRole.UserRole + 1, register.name)
+
+    def _update_field_item(self, item: QTreeWidgetItem, field: Field):
+        """原地更新位域节点文本"""
+        item.setText(0, field.name)
+        item.setIcon(0, get_icon("tree_field"))
+        item.setText(1, t("label.bit_range", start=field.bit_offset, width=field.bit_width))
+        item.setData(0, Qt.ItemDataRole.UserRole + 1, field.name)
 
     def get_expanded_items(self, tree: QTreeWidget):
         """获取当前展开的项目"""
@@ -107,6 +237,7 @@ class TreeManager:
         """创建外设节点"""
         item = QTreeWidgetItem()
         item.setText(0, peripheral.name)
+        item.setIcon(0, get_icon("tree_peripheral"))
         
         # 构建详细信息文本：基地址 + 继承关系
         detail_text = t("label.base_address_prefix") + str(peripheral.base_address)
@@ -131,6 +262,7 @@ class TreeManager:
         """创建寄存器节点"""
         item = QTreeWidgetItem()
         item.setText(0, register.name)
+        item.setIcon(0, get_icon("tree_register"))
         item.setText(1, t("label.offset_prefix") + str(register.offset))
         
         # ... 详细信息设置 ...
@@ -148,15 +280,19 @@ class TreeManager:
         """创建位域节点"""
         item = QTreeWidgetItem()
         item.setText(0, field.name)
+        item.setIcon(0, get_icon("tree_field"))
         item.setText(1, t("label.bit_range", start=field.bit_offset, width=field.bit_width))
         
         # ... 详细信息设置 ...
         
         item.setData(0, Qt.ItemDataRole.UserRole, NODE_TYPES["FIELD"])
         item.setData(0, Qt.ItemDataRole.UserRole + 1, field.name)
-        
-        # 位域不能拖动，也不能接受放置
-        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsDragEnabled & ~Qt.ItemFlag.ItemIsDropEnabled)
+
+        # 位域可以拖动，但只允许在同级寄存器内拖放排序
+        item.setFlags(
+            item.flags() |
+            Qt.ItemFlag.ItemIsDragEnabled
+        )
         
         return item
     
@@ -356,7 +492,13 @@ class TreeManager:
             action.setData("copy_field")
             action = menu.addAction(t("menu.paste_field"))
             action.setData("paste_field")
-            # menu.addSeparator()
-            # menu.addAction("按起始位排序")  # 为位域添加排序选项
+            menu.addSeparator()
+            action = menu.addAction(t("button.move_up"))
+            action.setData("move_field_up")
+            action = menu.addAction(t("button.move_down"))
+            action.setData("move_field_down")
+            menu.addSeparator()
+            action = menu.addAction(t("menu.sort_by_bit_offset", default="按位偏移排序"))
+            action.setData("sort_fields_by_offset")
         
         return menu

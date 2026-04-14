@@ -2,12 +2,14 @@
 UI布局管理组件
 负责创建主窗口的UI布局，包括标签页、搜索栏、状态栏等
 """
+import os
 import logging
 from typing import Dict, Any
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QLabel,
-    QLineEdit, QPushButton, QStatusBar, QSplitter
+    QLineEdit, QPushButton, QStatusBar, QSplitter, QApplication,
+    QStackedWidget, QSizePolicy
 )
 from PyQt6.QtCore import Qt
 
@@ -40,25 +42,44 @@ class LayoutManager:
         # 如果WidgetManager需要访问main_window，可通过方法参数传递或在UIUpdater中处理
 
     def create_layout(self) -> Dict[str, Any]:
-        """创建主布局"""
+        """创建主布局（使用QStackedWidget支持欢迎页/编辑器切换）"""
         self.logger.debug("create_layout开始")
-        self.logger.debug(f"create_layout开始，当前窗口大小: {self.main_window.size()}")
 
-        # 设置窗口标题和大小
+        # 设置窗口标题
         self.main_window.setWindowTitle("SVD工具 - 专业版")
-        self.logger.debug(f"设置窗口大小前: {self.main_window.size()}")
-        self.main_window.setGeometry(100, 100, 1600, 900)
-        self.logger.debug(f"设置窗口大小后: {self.main_window.size()}")
+        
+        # 自适应窗口大小（基于屏幕分辨率）
+        self._restore_window_geometry()
 
         # 创建中央部件
         central_widget = QWidget()
         self.main_window.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setSpacing(5)  # 设置固定的布局间距，拉伸时保持不变
-        main_layout.setContentsMargins(5, 5, 5, 5)  # 设置固定的边距，拉伸时保持不变
-        self.logger.debug("中央部件和布局创建完成")
+        central_layout = QVBoxLayout(central_widget)
+        central_layout.setSpacing(0)
+        central_layout.setContentsMargins(0, 0, 0, 0)
 
-        # 创建菜单栏（如果主窗口有相应方法）
+        # ===== 创建堆叠页面 =====
+        self._stacked_widget = QStackedWidget()
+        central_layout.addWidget(self._stacked_widget)
+        
+        # --- 页面0：欢迎页 ---
+        from ..widgets.welcome_page import WelcomePage
+        self._welcome_page = WelcomePage()
+        self._stacked_widget.addWidget(self._welcome_page)
+        self.widget_manager.register_widget('welcome_page', self._welcome_page)
+        
+        # --- 页面1：编辑器 ---
+        editor_page = QWidget()
+        self._editor_layout = QVBoxLayout(editor_page)
+        self._editor_layout.setSpacing(0)
+        self._editor_layout.setContentsMargins(0, 0, 0, 0)
+        self._stacked_widget.addWidget(editor_page)
+        self.widget_manager.register_widget('editor_page', editor_page)
+        
+        # --- 文档标签栏（在编辑器页面顶部，搜索栏上方） ---
+        self._document_tab_bar = None  # 延迟创建，需要DocumentManager
+
+        # 创建菜单栏
         try:
             menu_builder = MenuBarBuilder(self.main_window, self.main_window)
             menu_builder.create()
@@ -66,7 +87,7 @@ class LayoutManager:
         except Exception as e:
             self.logger.debug(f"菜单栏创建失败（可忽略）: {e}")
 
-        # 创建工具栏（如果主窗口有相应方法）
+        # 创建工具栏
         try:
             toolbar_builder = ToolBarBuilder(self.main_window, self.main_window)
             toolbar_builder.create()
@@ -76,28 +97,43 @@ class LayoutManager:
 
         # 创建状态栏
         self._create_status_bar()
-        self.logger.debug("状态栏创建完成")
 
-        # 搜索栏
-        self._create_search_bar(main_layout)
-        self.logger.debug("搜索栏创建完成")
+        # 搜索栏（在编辑器页面内）
+        self._create_search_bar(self._editor_layout)
 
-        # 创建主分割器（用于支持底部预览模式）
+        # 创建编辑器堆叠（用于在编辑器和diff视图之间切换）
+        editor_stack = QStackedWidget()
+        self._editor_layout.addWidget(editor_stack)
+        self._editor_layout.setStretchFactor(editor_stack, 1)
+        self.widget_manager.register_widget('editor_stack', editor_stack)
+        
+        # --- 编辑器页面（页面0：正常编辑器） ---
+        editor_content = QWidget()
+        editor_content_layout = QVBoxLayout(editor_content)
+        editor_content_layout.setSpacing(0)
+        editor_content_layout.setContentsMargins(0, 0, 0, 0)
+        editor_stack.addWidget(editor_content)
+        
+        # 创建主分割器
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        main_splitter.setChildrenCollapsible(False)
+        main_splitter.setChildrenCollapsible(True)
         main_splitter.setHandleWidth(5)
-        main_layout.addWidget(main_splitter)
-        main_layout.setStretchFactor(main_splitter, 1)  # 设置拉伸因子，使主分割器占据剩余空间
+        editor_content_layout.addWidget(main_splitter)
+        editor_content_layout.setStretchFactor(main_splitter, 1)
         self.widget_manager.register_widget('main_splitter', main_splitter)
-        self.logger.debug("主分割器创建并添加到布局")
 
         # 创建标签页
-        from PyQt6.QtWidgets import QSizePolicy
-        tab_widget = QTabWidget(central_widget)
+        tab_widget = QTabWidget(editor_content)
         tab_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         main_splitter.addWidget(tab_widget)
         self.widget_manager.register_widget('tab_widget', tab_widget)
-        self.logger.debug("标签页控件创建并添加到主分割器")
+
+        # 默认显示欢迎页
+        self._stacked_widget.setCurrentIndex(0)
+        self._editor_visible = False
+        
+        # 加载最近文件列表
+        self._load_recent_files()
 
         return self.widget_manager.get_all_widgets()
 
@@ -141,19 +177,7 @@ class LayoutManager:
         search_type_combo.addItem(t("search_type.register"), "register")
         search_type_combo.addItem(t("search_type.field"), "field")
         search_type_combo.addItem(t("search_type.interrupt"), "interrupt")
-        search_type_combo.setStyleSheet("""
-            QComboBox {
-                padding: 3px 8px;
-                border: 1px solid #ccc;
-                border-radius: 3px;
-                background-color: white;
-                font-size: 9pt;
-                min-height: 18px;
-            }
-            QComboBox:focus {
-                border: 1px solid #4a90e2;
-            }
-        """)
+        search_type_combo.setObjectName("searchTypeCombo")
         search_layout.addWidget(search_type_combo)
         
         search_prev_btn = QPushButton(t("search.prev"))
@@ -235,3 +259,137 @@ class LayoutManager:
             register: 寄存器对象（如果提供，则忽略peripheral_name和register_name）
         """
         self.ui_updater.update_field_table(peripheral_name, register_name, register)
+
+    def _restore_window_geometry(self):
+        """恢复窗口几何信息（自适应屏幕 + 用户偏好记忆）"""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("SVDEditor", "MainWindow")
+        
+        # 尝试恢复上次的窗口几何信息
+        geometry = settings.value("geometry")
+        if geometry is not None:
+            self.main_window.restoreGeometry(geometry)
+        else:
+            # 首次启动：根据屏幕分辨率自适应
+            screen = QApplication.primaryScreen()
+            if screen:
+                available = screen.availableGeometry()
+                # 占屏幕80%大小，居中显示
+                w = int(available.width() * 0.8)
+                h = int(available.height() * 0.8)
+                x = available.x() + (available.width() - w) // 2
+                y = available.y() + (available.height() - h) // 2
+                self.main_window.setGeometry(x, y, w, h)
+            else:
+                # 回退默认值
+                self.main_window.setGeometry(100, 100, 1280, 720)
+    
+    def save_window_geometry(self):
+        """保存窗口几何信息到配置"""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("SVDEditor", "MainWindow")
+        
+        # 保存窗口位置和大小
+        settings.setValue("geometry", self.main_window.saveGeometry())
+        
+        # 保存分割器比例
+        main_splitter = self.widget_manager.get_widget('main_splitter')
+        if main_splitter:
+            settings.setValue("main_splitter_sizes", main_splitter.sizes())
+        
+        # 保存可视化分割器比例
+        vis_widget = self.widget_manager.get_widget('visualization_widget')
+        if vis_widget and hasattr(vis_widget, 'vis_splitter'):
+            settings.setValue("vis_splitter_sizes", vis_widget.vis_splitter.sizes())
+    
+    def toggle_left_panel(self):
+        """切换左侧面板（标签页）的显示/隐藏"""
+        main_splitter = self.widget_manager.get_widget('main_splitter')
+        tab_widget = self.widget_manager.get_widget('tab_widget')
+        if not main_splitter or not tab_widget:
+            return
+        
+        if tab_widget.isVisible():
+            # 记住当前大小，然后隐藏
+            self._left_panel_sizes = main_splitter.sizes()
+            tab_widget.hide()
+            self.update_status(t("status.left_panel_hidden", default="左侧面板已隐藏（F9恢复）"))
+        else:
+            tab_widget.show()
+            # 恢复之前的大小
+            if hasattr(self, '_left_panel_sizes') and self._left_panel_sizes:
+                main_splitter.setSizes(self._left_panel_sizes)
+            self.update_status(t("status.left_panel_shown", default="左侧面板已显示"))
+    
+    # ===================== 欢迎页/编辑器切换 =====================
+    
+    def show_editor(self):
+        """切换到编辑器视图"""
+        if hasattr(self, '_stacked_widget'):
+            self._stacked_widget.setCurrentIndex(1)
+            self._editor_visible = True
+    
+    def show_welcome(self):
+        """切换到欢迎页"""
+        if hasattr(self, '_stacked_widget'):
+            self._stacked_widget.setCurrentIndex(0)
+            self._editor_visible = False
+    
+    def is_editor_visible(self) -> bool:
+        """编辑器是否可见"""
+        return getattr(self, '_editor_visible', False)
+    
+    def _load_recent_files(self):
+        """从配置加载最近文件列表"""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("SVDEditor", "MainWindow")
+        recent = settings.value("recent_files", [])
+        if isinstance(recent, list):
+            # 过滤不存在的文件
+            valid = [f for f in recent if os.path.exists(f)] if recent else []
+            self._welcome_page.set_recent_files(valid)
+    
+    def add_recent_file(self, file_path: str):
+        """添加最近打开的文件"""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("SVDEditor", "MainWindow")
+        recent = settings.value("recent_files", [])
+        if not isinstance(recent, list):
+            recent = []
+        # 去重并放到最前面
+        if file_path in recent:
+            recent.remove(file_path)
+        recent.insert(0, file_path)
+        recent = recent[:10]  # 最多保存10个
+        settings.setValue("recent_files", recent)
+        self._welcome_page.set_recent_files(recent)
+    
+    # ===================== 文档标签栏 =====================
+    
+    def setup_document_tab_bar(self, document_manager):
+        """设置文档标签栏（由主窗口调用）"""
+        from ..widgets.document_tab_bar import DocumentTabBar
+        
+        self._document_tab_bar = DocumentTabBar(document_manager, self.main_window)
+        # 插入到编辑器布局的最顶部（搜索栏之前）
+        if hasattr(self, '_editor_layout'):
+            self._editor_layout.insertWidget(0, self._document_tab_bar)
+        self.widget_manager.register_widget('document_tab_bar', self._document_tab_bar)
+        return self._document_tab_bar
+    
+    def get_document_tab_bar(self):
+        """获取文档标签栏"""
+        return self._document_tab_bar
+    
+    def restore_vis_splitter(self):
+        """恢复可视化分割器比例"""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("SVDEditor", "MainWindow")
+        vis_widget = self.widget_manager.get_widget('visualization_widget')
+        if vis_widget and hasattr(vis_widget, 'vis_splitter'):
+            vis_sizes = settings.value("vis_splitter_sizes")
+            if vis_sizes is not None:
+                try:
+                    vis_widget.vis_splitter.setSizes([int(s) for s in vis_sizes])
+                except Exception:
+                    vis_widget.vis_splitter.setSizes([250, 250])

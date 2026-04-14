@@ -34,23 +34,25 @@ class XMLHighlighter(QSyntaxHighlighter):
         
         # XML标签
         tag_format = QTextCharFormat()
-        tag_format.setForeground(QColor("#0000FF"))
+        from ...config.styles import get_style_scheme
+        _sc = get_style_scheme().colors
+        tag_format.setForeground(QColor(_sc.syntax_tag_color))
         tag_format.setFontWeight(QFont.Weight.Bold)
         self.highlighting_rules.append((re.compile(r'<[^>]+>'), tag_format))
         
         # 属性名
         attr_format = QTextCharFormat()
-        attr_format.setForeground(QColor("#FF00FF"))
+        attr_format.setForeground(QColor(_sc.syntax_attr_color))
         self.highlighting_rules.append((re.compile(r'\s\w+='), attr_format))
         
         # 属性值
         value_format = QTextCharFormat()
-        value_format.setForeground(QColor("#FF0000"))
+        value_format.setForeground(QColor(_sc.syntax_value_color))
         self.highlighting_rules.append((re.compile(r'"[^"]*"'), value_format))
         
         # 注释
         comment_format = QTextCharFormat()
-        comment_format.setForeground(QColor("#008000"))
+        comment_format.setForeground(QColor(_sc.syntax_comment_color))
         comment_format.setFontItalic(True)
         self.highlighting_rules.append((re.compile(r'<!--.*?-->', re.DOTALL), comment_format))
     
@@ -186,19 +188,21 @@ class ChunkedPreviewWidget(QWidget):
         self.preview_edit.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         
         # 设置样式
-        self.preview_edit.setStyleSheet("""
-            QTextEdit {
-                background-color: #ffffff;
-                color: #000000;
-                selection-background-color: #d1e9ff;
-                selection-color: #000000;
-                border: 1px solid #d0d0d0;
+        from ...config.styles import get_style_scheme
+        _pc = get_style_scheme().colors
+        self.preview_edit.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {_pc.white};
+                color: {_pc.text_primary};
+                selection-background-color: {_pc.selected};
+                selection-color: {_pc.text_primary};
+                border: 1px solid {_pc.border};
                 border-radius: 4px;
                 padding: 4px;
-            }
-            QTextEdit:focus {
-                border: 1px solid #90c8ff;
-            }
+            }}
+            QTextEdit:focus {{
+                border: 1px solid {_pc.accent};
+            }}
         """)
         
         # 连接选择变化信号
@@ -215,7 +219,9 @@ class ChunkedPreviewWidget(QWidget):
         
         # 状态栏
         self.status_label = QLabel("")
-        self.status_label.setStyleSheet("color: #666; font-size: 9pt;")
+        from ...config.styles import get_style_scheme
+        _c = get_style_scheme().colors
+        self.status_label.setStyleSheet(f"color: {_c.text_secondary}; font-size: 9pt;")
         layout.addWidget(self.status_label)
     
     def set_block_manager(self, block_manager: BlockManager):

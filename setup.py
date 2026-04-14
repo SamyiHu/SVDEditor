@@ -43,7 +43,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "svd-editor=svd_tool.main:main",
+            "svd-editor=svd_tool.cli:main",
         ],
         "gui_scripts": [
             "svd-editor-gui=svd_tool.main:main",

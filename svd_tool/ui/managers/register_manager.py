@@ -107,12 +107,8 @@ class RegisterManager:
             )
             
             # 使用StateManager添加寄存器
+            # 注意：add_register 内部通过 execute_command → _notify_state_change → on_state_changed → update_peripheral_tree
             state_manager.add_register(peripheral, register)
-            
-            # 更新外设树
-            peripheral_manager = self.get_peripheral_manager()
-            if peripheral_manager:
-                peripheral_manager.update_peripheral_tree()
             
             # 更新状态
             layout_manager = self.get_layout_manager()
@@ -191,6 +187,7 @@ class RegisterManager:
             )
             
             # 使用StateManager更新寄存器
+            # 注意：所有 state_manager 操作内部通过 _notify_state_change → on_state_changed → update_peripheral_tree
             if name_changed:
                 # 先删除旧的，再添加新的
                 state_manager.delete_register(peripheral, old_name)
@@ -198,11 +195,6 @@ class RegisterManager:
             else:
                 # 直接更新
                 state_manager.update_register(peripheral, old_name, updated_register)
-            
-            # 更新外设树
-            peripheral_manager = self.get_peripheral_manager()
-            if peripheral_manager:
-                peripheral_manager.update_peripheral_tree()
             
             # 更新状态
             layout_manager = self.get_layout_manager()
@@ -256,12 +248,8 @@ class RegisterManager:
             return
         
         # 使用StateManager删除寄存器
+        # 注意：delete_register 内部通过 _notify_state_change → on_state_changed → update_peripheral_tree
         state_manager.delete_register(peripheral, reg_name)
-        
-        # 更新外设树
-        peripheral_manager = self.get_peripheral_manager()
-        if peripheral_manager:
-            peripheral_manager.update_peripheral_tree()
         
         # 更新状态
         layout_manager = self.get_layout_manager()
@@ -297,6 +285,8 @@ class RegisterManager:
             return
         
         # 删除所有选中的寄存器
+        # 注意：每次 delete_register 内部都会触发 _notify_state_change → on_state_changed → update_peripheral_tree
+        # 但为了性能，应该使用 pause/resume_notifications 来合并
         deleted_count = 0
         for reg_name in reg_names:
             try:
@@ -304,11 +294,6 @@ class RegisterManager:
                 deleted_count += 1
             except Exception as e:
                 self.logger.error(f"删除寄存器 '{reg_name}' 失败: {e}")
-        
-        # 更新外设树
-        peripheral_manager = self.get_peripheral_manager()
-        if peripheral_manager:
-            peripheral_manager.update_peripheral_tree()
         
         # 更新状态
         layout_manager = self.get_layout_manager()
@@ -358,6 +343,9 @@ class RegisterManager:
                 access=result["access"],
                 description=result["description"]
             )
+            # 设置枚举值（如果有）
+            if "enumerated_values" in result and result["enumerated_values"]:
+                field.enumerated_values = result["enumerated_values"]
             
             # 使用StateManager添加位域
             state_manager.add_field(peripheral, register, field)
@@ -446,6 +434,9 @@ class RegisterManager:
                 access=result["access"],
                 description=result["description"]
             )
+            # 设置枚举值（如果有）
+            if "enumerated_values" in result and result["enumerated_values"]:
+                updated_field.enumerated_values = result["enumerated_values"]
             
             # 使用StateManager更新位域
             if name_changed:

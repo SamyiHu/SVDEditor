@@ -15,6 +15,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from ...i18n.i18n import t
+from ...config.styles import get_style_scheme
+from ...config.tree_branch_style import apply_tree_branch_style
 
 
 class TabBuilder:
@@ -33,115 +35,103 @@ class TabBuilder:
             layout.setSpacing(10)
             layout.setContentsMargins(16, 12, 16, 12)
 
-            # 统一的分组样式 - 现代卡片风格
-            group_style = """
-                QGroupBox {
-                    font-weight: bold;
-                    font-size: 10pt;
-                    color: #333333;
-                    border: 1px solid #E0E0E0;
-                    border-radius: 8px;
-                    margin-top: 14px;
-                    padding: 12px;
-                    padding-top: 24px;
-                    background-color: #FFFFFF;
-                }
-                QGroupBox::title {
-                    subcontrol-origin: margin;
-                    subcontrol-position: top left;
-                    padding: 4px 12px;
-                    background-color: #FFFFFF;
-                    border: 1px solid #E0E0E0;
-                    border-radius: 4px;
-                    color: #2962FF;
-                }
-            """
-
             # === 设备信息组 ===
             device_group = QGroupBox(t("label.basic_info"))
-            device_group.setStyleSheet(group_style)
             device_layout = QGridLayout(device_group)
             device_layout.setSpacing(8)
-            device_layout.setContentsMargins(12, 20, 12, 12)
+            device_layout.setContentsMargins(16, 22, 16, 16)
+
+            # 统一标签宽度
+            label_fixed_width = 100
 
             # 第一行：IC型号和描述
             ic_model_label = QLabel(t("label.ic_model") + ":")
+            ic_model_label.setFixedWidth(label_fixed_width)
+            ic_model_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             device_layout.addWidget(ic_model_label, 0, 0)
             ic_name_edit = QLineEdit()
             ic_name_edit.setPlaceholderText(t("placeholder.ic_model"))
-            ic_name_edit.setMinimumWidth(150)
             device_layout.addWidget(ic_name_edit, 0, 1)
 
             ic_desc_label = QLabel(t("label.ic_description") + ":")
+            ic_desc_label.setFixedWidth(label_fixed_width)
+            ic_desc_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             device_layout.addWidget(ic_desc_label, 0, 2)
             ic_desc_edit = QLineEdit()
             ic_desc_edit.setPlaceholderText(t("placeholder.ic_description"))
-            ic_desc_edit.setMinimumWidth(150)
             device_layout.addWidget(ic_desc_edit, 0, 3)
 
             # 第二行：版本和SVD版本
             version_label = QLabel(t("label.version") + ":")
+            version_label.setFixedWidth(label_fixed_width)
+            version_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             device_layout.addWidget(version_label, 1, 0)
             version_edit = QLineEdit()
             version_edit.setPlaceholderText(t("placeholder.version"))
-            version_edit.setMaximumWidth(80)
             device_layout.addWidget(version_edit, 1, 1)
 
             svd_version_label = QLabel(t("label.svd_version") + ":")
+            svd_version_label.setFixedWidth(label_fixed_width)
+            svd_version_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             device_layout.addWidget(svd_version_label, 1, 2)
             svd_version_combo = QComboBox()
             svd_version_combo.addItems(["1.0", "1.1", "1.2", "1.3", "1.3.1"])
             svd_version_combo.setCurrentText("1.3")
-            svd_version_combo.setMaximumWidth(80)
             device_layout.addWidget(svd_version_combo, 1, 3)
 
             # 第三行：CPU名称和修订版
             cpu_name_label = QLabel(t("label.cpu_name") + ":")
+            cpu_name_label.setFixedWidth(label_fixed_width)
+            cpu_name_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             device_layout.addWidget(cpu_name_label, 2, 0)
             cpu_name_edit = QLineEdit()
             cpu_name_edit.setPlaceholderText(t("placeholder.cpu_name"))
-            cpu_name_edit.setMinimumWidth(150)
             device_layout.addWidget(cpu_name_edit, 2, 1)
 
             cpu_rev_label = QLabel(t("label.cpu_revision") + ":")
+            cpu_rev_label.setFixedWidth(label_fixed_width)
+            cpu_rev_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             device_layout.addWidget(cpu_rev_label, 2, 2)
             cpu_rev_edit = QLineEdit()
             cpu_rev_edit.setPlaceholderText(t("placeholder.cpu_revision"))
-            cpu_rev_edit.setMaximumWidth(80)
             device_layout.addWidget(cpu_rev_edit, 2, 3)
 
             # 第四行：端序和MPU
             endian_label = QLabel(t("label.endian") + ":")
+            endian_label.setFixedWidth(label_fixed_width)
+            endian_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             device_layout.addWidget(endian_label, 3, 0)
             endian_combo = QComboBox()
             endian_combo.addItems([t("value.little"), t("value.big"), t("value.selectable")])
             endian_combo.setCurrentText(t("value.little"))
-            endian_combo.setMaximumWidth(100)
             device_layout.addWidget(endian_combo, 3, 1)
 
             mpu_label = QLabel(t("label.mpu_exists") + ":")
+            mpu_label.setFixedWidth(label_fixed_width)
+            mpu_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             device_layout.addWidget(mpu_label, 3, 2)
             mpu_combo = QComboBox()
             mpu_combo.addItems([t("value.yes"), t("value.no")])
             mpu_combo.setCurrentText(t("value.no"))
-            mpu_combo.setMaximumWidth(60)
             device_layout.addWidget(mpu_combo, 3, 3)
 
             # 第五行：FPU和NVIC优先级位数
             fpu_label = QLabel(t("label.fpu_exists") + ":")
+            fpu_label.setFixedWidth(label_fixed_width)
+            fpu_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             device_layout.addWidget(fpu_label, 4, 0)
             fpu_combo = QComboBox()
             fpu_combo.addItems([t("value.yes"), t("value.no")])
             fpu_combo.setCurrentText(t("value.no"))
-            fpu_combo.setMaximumWidth(60)
             device_layout.addWidget(fpu_combo, 4, 1)
 
             nvic_label = QLabel(t("label.nvic_prio_bits") + ":")
+            nvic_label.setFixedWidth(label_fixed_width)
+            nvic_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             device_layout.addWidget(nvic_label, 4, 2)
             nvic_prio_spin = QSpinBox()
             nvic_prio_spin.setRange(0, 8)
             nvic_prio_spin.setValue(4)
-            nvic_prio_spin.setMaximumWidth(60)
             device_layout.addWidget(nvic_prio_spin, 4, 3)
 
             device_layout.setColumnStretch(1, 1)
@@ -150,16 +140,16 @@ class TabBuilder:
 
             # === 公司版权信息组 ===
             company_group = QGroupBox(t("label.company_copyright"))
-            company_group.setStyleSheet(group_style)
             company_layout = QGridLayout(company_group)
             company_layout.setSpacing(8)
-            company_layout.setContentsMargins(12, 20, 12, 12)
+            company_layout.setContentsMargins(16, 22, 16, 16)
 
             company_name_label = QLabel(t("label.company_name") + ":")
+            company_name_label.setFixedWidth(label_fixed_width)
+            company_name_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             company_layout.addWidget(company_name_label, 0, 0)
             company_name_edit = QLineEdit()
             company_name_edit.setPlaceholderText(t("placeholder.company_name"))
-            company_name_edit.setMinimumWidth(150)
             company_layout.addWidget(company_name_edit, 0, 1)
 
             company_checkbox = QCheckBox(t("label.do_not_display"))
@@ -167,10 +157,11 @@ class TabBuilder:
             company_layout.addWidget(company_checkbox, 0, 2)
 
             copyright_label = QLabel(t("label.copyright_info") + ":")
+            copyright_label.setFixedWidth(label_fixed_width)
+            copyright_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             company_layout.addWidget(copyright_label, 0, 3)
             copyright_edit = QLineEdit()
             copyright_edit.setPlaceholderText(t("placeholder.copyright_info"))
-            copyright_edit.setMinimumWidth(150)
             company_layout.addWidget(copyright_edit, 0, 4)
 
             copyright_checkbox = QCheckBox(t("label.do_not_display"))
@@ -178,10 +169,11 @@ class TabBuilder:
             company_layout.addWidget(copyright_checkbox, 0, 5)
 
             author_label = QLabel(t("label.author") + ":")
+            author_label.setFixedWidth(label_fixed_width)
+            author_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             company_layout.addWidget(author_label, 1, 0)
             author_edit = QLineEdit()
             author_edit.setPlaceholderText(t("placeholder.author"))
-            author_edit.setMinimumWidth(150)
             company_layout.addWidget(author_edit, 1, 1)
 
             author_checkbox = QCheckBox(t("label.do_not_display"))
@@ -189,6 +181,8 @@ class TabBuilder:
             company_layout.addWidget(author_checkbox, 1, 2)
 
             license_label = QLabel(t("label.license") + ":")
+            license_label.setFixedWidth(label_fixed_width)
+            license_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             company_layout.addWidget(license_label, 1, 3)
             license_combo = QComboBox()
             license_combo.addItems([
@@ -197,7 +191,6 @@ class TabBuilder:
                 t("license.proprietary"), t("license.other")
             ])
             license_combo.setCurrentText(t("license.apache_2_0"))
-            license_combo.setMinimumWidth(150)
             company_layout.addWidget(license_combo, 1, 4)
 
             company_layout.setColumnStretch(1, 1)
@@ -206,10 +199,12 @@ class TabBuilder:
 
             # === 数据汇总组 ===
             summary_group = QGroupBox(t("label.data_summary"))
-            summary_group.setStyleSheet(group_style)
             summary_layout = QHBoxLayout(summary_group)
             summary_layout.setSpacing(16)
             summary_layout.setContentsMargins(12, 20, 12, 12)
+
+            _scheme = get_style_scheme()
+            _c = _scheme.colors
 
             card_style = """
                 QFrame {
@@ -227,64 +222,64 @@ class TabBuilder:
 
             # 外设卡片
             periph_card = QFrame()
-            periph_card.setStyleSheet(card_style % "#FFF3E0")
+            periph_card.setStyleSheet(card_style % _c.card_periph_background)
             pcl = QVBoxLayout(periph_card)
             pcl.setSpacing(2)
             pcl.setContentsMargins(10, 6, 10, 6)
             periph_count_label = QLabel("0")
-            periph_count_label.setStyleSheet("font-size: 22pt; font-weight: bold; color: #E65100;")
+            periph_count_label.setStyleSheet(f"font-size: 22pt; font-weight: bold; color: {_c.card_periph_count_color};")
             periph_count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             pcl.addWidget(periph_count_label)
             ptl = QLabel(t("label.total_peripherals"))
-            ptl.setStyleSheet("font-size: 8pt; color: #BF360C;")
+            ptl.setStyleSheet(f"font-size: 8pt; color: {_c.card_periph_label_color};")
             ptl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             pcl.addWidget(ptl)
             summary_layout.addWidget(periph_card)
 
             # 寄存器卡片
             reg_card = QFrame()
-            reg_card.setStyleSheet(card_style % "#E3F2FD")
+            reg_card.setStyleSheet(card_style % _c.card_reg_background)
             rcl = QVBoxLayout(reg_card)
             rcl.setSpacing(2)
             rcl.setContentsMargins(10, 6, 10, 6)
             reg_count_label = QLabel("0")
-            reg_count_label.setStyleSheet("font-size: 22pt; font-weight: bold; color: #1565C0;")
+            reg_count_label.setStyleSheet(f"font-size: 22pt; font-weight: bold; color: {_c.card_reg_count_color};")
             reg_count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             rcl.addWidget(reg_count_label)
             rtl = QLabel(t("label.total_registers"))
-            rtl.setStyleSheet("font-size: 8pt; color: #0D47A1;")
+            rtl.setStyleSheet(f"font-size: 8pt; color: {_c.card_reg_label_color};")
             rtl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             rcl.addWidget(rtl)
             summary_layout.addWidget(reg_card)
 
             # 位域卡片
             field_card = QFrame()
-            field_card.setStyleSheet(card_style % "#E8F5E9")
+            field_card.setStyleSheet(card_style % _c.card_field_background)
             fcl = QVBoxLayout(field_card)
             fcl.setSpacing(2)
             fcl.setContentsMargins(10, 6, 10, 6)
             field_count_label = QLabel("0")
-            field_count_label.setStyleSheet("font-size: 22pt; font-weight: bold; color: #2E7D32;")
+            field_count_label.setStyleSheet(f"font-size: 22pt; font-weight: bold; color: {_c.card_field_count_color};")
             field_count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             fcl.addWidget(field_count_label)
             ftl = QLabel(t("label.total_fields"))
-            ftl.setStyleSheet("font-size: 8pt; color: #1B5E20;")
+            ftl.setStyleSheet(f"font-size: 8pt; color: {_c.card_field_label_color};")
             ftl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             fcl.addWidget(ftl)
             summary_layout.addWidget(field_card)
 
             # 中断卡片
             irq_card = QFrame()
-            irq_card.setStyleSheet(card_style % "#FCE4EC")
+            irq_card.setStyleSheet(card_style % _c.card_irq_background)
             icl = QVBoxLayout(irq_card)
             icl.setSpacing(2)
             icl.setContentsMargins(10, 6, 10, 6)
             irq_count_label = QLabel("0")
-            irq_count_label.setStyleSheet("font-size: 22pt; font-weight: bold; color: #C62828;")
+            irq_count_label.setStyleSheet(f"font-size: 22pt; font-weight: bold; color: {_c.card_irq_count_color};")
             irq_count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             icl.addWidget(irq_count_label)
             itl = QLabel(t("label.total_interrupts"))
-            itl.setStyleSheet("font-size: 8pt; color: #B71C1C;")
+            itl.setStyleSheet(f"font-size: 8pt; color: {_c.card_irq_label_color};")
             itl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             icl.addWidget(itl)
             summary_layout.addWidget(irq_card)
@@ -380,6 +375,11 @@ class TabBuilder:
         delete_periph_btn.setEnabled(False)
         delete_periph_btn.setToolTip(t("tooltip.delete_peripheral"))
         periph_toolbar.addWidget(delete_periph_btn)
+        # 紧凑模式复选框（只显示到寄存器级别，位域在右侧表格中查看）
+        compact_tree_cb = QCheckBox(t("label.compact_tree", default="紧凑模式"))
+        compact_tree_cb.setToolTip(t("tooltip.compact_tree", default="树状图只显示到寄存器级别，位域信息在右侧表格中查看"))
+        compact_tree_cb.setChecked(False)
+        periph_toolbar.addWidget(compact_tree_cb)
         periph_toolbar.addStretch()
         left_layout.addLayout(periph_toolbar)
 
@@ -395,30 +395,10 @@ class TabBuilder:
         periph_tree.setColumnWidth(3, 80)
         periph_tree.setColumnWidth(4, 80)
         periph_tree.setAlternatingRowColors(True)
-        periph_tree.setStyleSheet("""
-            QTreeWidget {
-                font-family: "Segoe UI", "Microsoft YaHei";
-                font-size: 10pt;
-                outline: 0;
-            }
-            QTreeWidget::item {
-                padding: 4px;
-                border-bottom: 1px solid #e0e0e0;
-                border-radius: 2px;
-            }
-            QTreeWidget::item:hover { background-color: #f5f5f5; }
-            QTreeWidget::item:selected {
-                background-color: #d1e9ff;
-                color: #000000;
-                border: 1px solid #90c8ff;
-                border-radius: 3px;
-            }
-            QTreeWidget::item:selected:active { background-color: #b8daff; }
-            QTreeWidget::branch:selected { background-color: transparent; }
-            QTreeWidget::item:focus { outline: none; }
-        """)
         periph_tree.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
         periph_tree.setSelectionMode(QTreeWidget.SelectionMode.ExtendedSelection)
+        # 应用自定义分支箭头样式
+        apply_tree_branch_style(periph_tree)
         left_layout.addWidget(periph_tree)
 
         # 右侧
@@ -435,7 +415,8 @@ class TabBuilder:
             self.logger.warning(f"可视化控件创建失败: {e}, 使用占位符")
             visualization_widget = QWidget()
             visualization_widget.setMinimumHeight(200)
-            visualization_widget.setStyleSheet("background-color: #f0f0f0;")
+            _scheme2 = get_style_scheme()
+            visualization_widget.setStyleSheet(f"background-color: {_scheme2.colors.visualization_background};")
             placeholder_label = QLabel(t("label.no_data"))
             placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout_placeholder = QVBoxLayout(visualization_widget)
@@ -452,33 +433,10 @@ class TabBuilder:
         header = field_table.horizontalHeader()
         if header:
             header.setStretchLastSection(True)
-            header.setStyleSheet("""
-                QHeaderView::section {
-                    background-color: #f0f0f0;
-                    padding: 6px;
-                    border: 1px solid #d0d0d0;
-                    font-weight: bold;
-                }
-            """)
         field_table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.EditKeyPressed)
         field_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         field_table.setAlternatingRowColors(True)
         field_table.setShowGrid(True)
-        field_table.setStyleSheet("""
-            QTableWidget {
-                gridline-color: #e0e0e0;
-                font-family: "Segoe UI", "Microsoft YaHei";
-                font-size: 10pt;
-                outline: 0;
-            }
-            QTableWidget::item { padding: 4px; border-radius: 2px; }
-            QTableWidget::item:selected {
-                background-color: #d1e9ff; color: #000000;
-                border: 1px solid #90c8ff; border-radius: 3px;
-            }
-            QTableWidget::item:hover { background-color: #f5f5f5; }
-            QTableWidget::item:focus { outline: none; }
-        """)
         vheader = field_table.verticalHeader()
         if vheader:
             vheader.setDefaultSectionSize(28)
@@ -505,6 +463,7 @@ class TabBuilder:
             'add_field_btn': add_field_btn,
             'edit_periph_btn': edit_periph_btn,
             'delete_periph_btn': delete_periph_btn,
+            'compact_tree_cb': compact_tree_cb,
         }
         return tab, widgets
 
@@ -534,26 +493,6 @@ class TabBuilder:
         header = irq_table.horizontalHeader()
         if header:
             header.setStretchLastSection(True)
-            header.setStyleSheet("""
-                QHeaderView::section {
-                    background-color: #f0f0f0; padding: 6px;
-                    border: 1px solid #d0d0d0; font-weight: bold;
-                }
-            """)
-        irq_table.setStyleSheet("""
-            QTableWidget {
-                gridline-color: #e0e0e0;
-                font-family: "Segoe UI", "Microsoft YaHei";
-                font-size: 10pt; outline: 0;
-            }
-            QTableWidget::item { padding: 4px; border-radius: 2px; }
-            QTableWidget::item:selected {
-                background-color: #d1e9ff; color: #000000;
-                border: 1px solid #90c8ff; border-radius: 3px;
-            }
-            QTableWidget::item:hover { background-color: #f5f5f5; }
-            QTableWidget::item:focus { outline: none; }
-        """)
         vheader = irq_table.verticalHeader()
         if vheader:
             vheader.setDefaultSectionSize(28)
@@ -584,7 +523,9 @@ class TabBuilder:
         layout = QVBoxLayout(tab)
 
         toolbar = QHBoxLayout()
+        toolbar.setSpacing(6)
         generate_btn = QPushButton(t("button.generate"))
+        generate_btn.setObjectName("btnSavePreview")
         toolbar.addWidget(generate_btn)
         export_btn = QPushButton(t("button.export_file"))
         toolbar.addWidget(export_btn)

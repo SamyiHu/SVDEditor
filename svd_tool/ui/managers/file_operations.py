@@ -11,6 +11,8 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from ...core.svd_parser import SVDParser
 from ...core.svd_generator import SVDGenerator
+from ...core.svd_schema_validator import SVDSchemaValidator
+from ...core.svd_exporter import SVDExporter
 from ...utils.helpers import pretty_xml
 
 
@@ -129,6 +131,11 @@ class FileOperations(QObject):
             # 保存前先从UI更新设备信息（包括公司、版权、协议等基本信息）
             self.update_device_info_from_ui()
 
+            # ===== 保存前执行 CMSIS-SVD Schema 验证 =====
+            should_save = self._validate_before_save()
+            if not should_save:
+                return
+
             # 生成SVD
             generator = SVDGenerator(self.state_manager.device_info)
             svd_xml = generator.generate()
@@ -153,6 +160,139 @@ class FileOperations(QObject):
                 self.layout_manager.main_window,
                 "保存错误",
                 f"文件保存失败: {str(e)}"
+            )
+
+    def _validate_before_save(self) -> bool:
+        """
+        保存前执行 CMSIS-SVD Schema 验证
+        返回 True 表示可以继续保存，False 表示应中止保存
+        """
+        validator = SVDSchemaValidator()
+        validator.validate_all(self.state_manager.device_info)
+
+        if not validator.has_errors():
+            # 没有错误，直接保存（可能有警告，在状态栏提示）
+            warnings = validator.get_warnings()
+            if warnings:
+                self.layout_manager.update_status(
+                    f"验证通过（{len(warnings)} 条警告）- 正在保存..."
+                )
+            else:
+                self.layout_manager.update_status("验证通过 - 正在保存...")
+            return True
+
+        # 有错误，显示验证结果对话框
+        result_text = validator.format_results_text(max_items=30)
+        summary = validator.get_summary()
+
+        # 询问用户是否继续保存
+        msg_box = QMessageBox(self.layout_manager.main_window)
+        msg_box.setIcon(QMessageBox.Icon.Warning)
+        msg_box.setWindowTitle("SVD 验证发现问题")
+        msg_box.setText(
+            f"验证发现 {summary['errors']} 个错误和 {summary['warnings']} 个警告。\n"
+            f"建议修复错误后再保存，否则下游工具可能解析失败。"
+        )
+        msg_box.setDetailedText(result_text)
+        save_btn = msg_box.addButton("仍然保存", QMessageBox.ButtonRole.AcceptRole)
+        cancel_btn = msg_box.addButton("返回修改", QMessageBox.ButtonRole.RejectRole)
+        msg_box.setDefaultButton(cancel_btn)
+
+        msg_box.exec()
+        return msg_box.clickedButton() == save_btn
+
+    def validate_svd(self):
+        """独立的 SVD 验证功能（菜单触发），包含地址冲突实时检测结果"""
+        try:
+            # 从UI更新设备信息
+            self.update_device_info_from_ui()
+
+            # ===== 1. 执行 CMSIS-SVD Schema 完整验证 =====
+            validator = SVDSchemaValidator()
+            validator.validate_all(self.state_manager.device_info)
+
+            # ===== 2. 执行地址冲突实时检测（复用冲突检测器） =====
+            conflict_results = []
+            main_win = self.layout_manager.main_window
+            if hasattr(main_win, 'conflict_detector') and main_win.conflict_detector:
+                main_win.conflict_detector.detect_all(self.state_manager.device_info)
+                conflict_results = main_win.conflict_detector.conflicts
+
+            # ===== 3. 合并结果 =====
+            schema_summary = validator.get_summary()
+            
+            # 将冲突检测结果作为额外信息附加
+            conflict_count = len(conflict_results)
+            conflict_errors = sum(1 for c in conflict_results if c.severity.value == "error")
+            conflict_warnings = sum(1 for c in conflict_results if c.severity.value == "warning")
+
+            total_errors = schema_summary['errors'] + conflict_errors
+            total_warnings = schema_summary['warnings'] + conflict_warnings
+            has_any_errors = total_errors > 0
+            has_any_warnings = total_warnings > 0
+
+            # 构建完整结果文本
+            result_text = validator.format_results_text(max_items=50)
+            if conflict_results:
+                from ...core.address_conflict_detector import ConflictType
+                result_text += "\n\n" + "=" * 60
+                result_text += f"\n🔍 地址冲突实时检测: {conflict_count} 个冲突\n"
+                type_map = {
+                    ConflictType.PERIPHERAL_ADDRESS_OVERLAP: "外设地址重叠",
+                    ConflictType.PERIPHERAL_BASE_DUPLICATE: "外设基地址重复",
+                    ConflictType.REGISTER_OFFSET_DUPLICATE: "寄存器偏移重复",
+                    ConflictType.REGISTER_ADDRESS_OVERLAP: "寄存器地址重叠",
+                    ConflictType.FIELD_BIT_OVERLAP: "位域位重叠",
+                    ConflictType.INTERRUPT_VALUE_DUPLICATE: "中断号重复",
+                }
+                for i, c in enumerate(conflict_results[:30]):
+                    severity_icon = "🔴" if c.severity.value == "error" else "🟡"
+                    c_type = type_map.get(c.conflict_type, str(c.conflict_type))
+                    result_text += f"\n  {severity_icon} {i+1}. [{c_type}] {c.message}"
+                    if c.detail:
+                        result_text += f"\n     → {c.detail}"
+                if len(conflict_results) > 30:
+                    result_text += f"\n  ... 还有 {len(conflict_results) - 30} 个冲突"
+
+            # ===== 4. 显示合并结果 =====
+            if not has_any_errors and not has_any_warnings:
+                QMessageBox.information(
+                    self.layout_manager.main_window,
+                    "SVD 验证通过",
+                    "✅ 验证通过，未发现任何问题。\n\n"
+                    f"已检查 {schema_summary.get('total', 0)} 项 Schema 验证规则。\n"
+                    f"已检查地址冲突检测（0 个冲突）。"
+                )
+            else:
+                icon = QMessageBox.Icon.Critical if has_any_errors else QMessageBox.Icon.Warning
+                msg_box = QMessageBox(self.layout_manager.main_window)
+                msg_box.setIcon(icon)
+                msg_box.setWindowTitle("SVD 验证结果")
+
+                status = "❌" if has_any_errors else "⚠️"
+                msg_text = (
+                    f"{status} 验证发现 {total_errors} 个错误，"
+                    f"{total_warnings} 个警告，"
+                    f"{schema_summary['infos']} 条信息。"
+                )
+                if conflict_count > 0:
+                    msg_text += f"\n\n其中地址冲突检测发现 {conflict_count} 个问题（{conflict_errors} 错误, {conflict_warnings} 警告）。"
+                msg_box.setText(msg_text)
+                msg_box.setDetailedText(result_text)
+                msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+                msg_box.exec()
+
+            self.layout_manager.update_status(
+                f"验证完成: {total_errors} 错误, {total_warnings} 警告"
+                + (f" (含 {conflict_count} 个地址冲突)" if conflict_count > 0 else "")
+            )
+
+        except Exception as e:
+            self.logger.error(f"验证失败: {str(e)}")
+            QMessageBox.critical(
+                self.layout_manager.main_window,
+                "验证错误",
+                f"验证过程出错: {str(e)}"
             )
 
     def check_unsaved_changes(self) -> bool:
@@ -230,43 +370,120 @@ class FileOperations(QObject):
             )
 
     def export_file(self):
-        """导出文件"""
+        """导出文件 — 支持多种格式"""
         try:
-            # 获取保存路径
-            file_path, _ = QFileDialog.getSaveFileName(
+            file_path, selected_filter = QFileDialog.getSaveFileName(
                 self.layout_manager.main_window,
-                "保存SVD文件",
+                "导出文件",
                 "",
-                "SVD文件 (*.svd);;所有文件 (*.*)"
+                "SVD文件 (*.svd);;CSV 寄存器详情 (*.csv);;CSV 寄存器汇总 (*.csv);;"
+                "Markdown 文档 (*.md);;HTML 文档 (*.html);;所有文件 (*.*)"
             )
 
             if not file_path:
                 return
 
-            # 首先从UI更新设备信息
+            # 从UI更新设备信息
             self.update_device_info_from_ui()
 
-            # 生成SVD
-            generator = SVDGenerator(self.state_manager.device_info)
-            svd_xml = generator.generate()
+            exporter = SVDExporter(self.state_manager.device_info)
+            success = False
 
-            # 保存文件
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(svd_xml)
+            if selected_filter.startswith("CSV 寄存器详情") or file_path.endswith("_detail.csv"):
+                success = exporter.export_csv(file_path)
+            elif selected_filter.startswith("CSV 寄存器汇总") or file_path.endswith("_summary.csv"):
+                success = exporter.export_register_summary_csv(file_path)
+            elif selected_filter.startswith("Markdown") or file_path.endswith(".md"):
+                success = exporter.export_markdown(file_path)
+            elif selected_filter.startswith("HTML") or file_path.endswith(".html"):
+                success = exporter.export_html(file_path)
+            else:
+                # 默认 SVD 格式
+                generator = SVDGenerator(self.state_manager.device_info)
+                svd_xml = generator.generate()
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(svd_xml)
+                success = True
 
-            self.logger.info(f"SVD文件已保存: {file_path}")
-            QMessageBox.information(
-                self.layout_manager.main_window,
-                "保存成功",
-                f"SVD文件已保存到:\n{file_path}"
-            )
+            if success:
+                self.logger.info(f"文件导出成功: {file_path}")
+                self.layout_manager.update_status(f"文件导出成功: {os.path.basename(file_path)}")
+                QMessageBox.information(
+                    self.layout_manager.main_window,
+                    "导出成功",
+                    f"文件已导出到:\n{file_path}"
+                )
+            else:
+                QMessageBox.warning(
+                    self.layout_manager.main_window,
+                    "导出失败",
+                    "文件导出失败，请检查日志。"
+                )
 
         except Exception as e:
-            self.logger.error(f"文件保存失败: {str(e)}")
+            self.logger.error(f"文件导出失败: {str(e)}")
             QMessageBox.critical(
                 self.layout_manager.main_window,
-                "保存错误",
-                f"文件保存失败: {str(e)}"
+                "导出错误",
+                f"文件导出失败: {str(e)}"
+            )
+
+    def export_document(self, format_type: str = "markdown"):
+        """
+        快捷导出文档
+
+        Args:
+            format_type: "csv", "csv_summary", "markdown", "html"
+        """
+        try:
+            self.update_device_info_from_ui()
+
+            ext_map = {
+                "csv": ("CSV 寄存器详情", "CSV文件 (*.csv)", ".csv"),
+                "csv_summary": ("CSV 寄存器汇总", "CSV文件 (*.csv)", "_summary.csv"),
+                "markdown": ("Markdown 文档", "Markdown文件 (*.md)", ".md"),
+                "html": ("HTML 文档", "HTML文件 (*.html)", ".html"),
+            }
+            info = ext_map.get(format_type, ext_map["markdown"])
+            default_name = (self.state_manager.device_info.name or "device") + info[2]
+
+            file_path, _ = QFileDialog.getSaveFileName(
+                self.layout_manager.main_window,
+                f"导出{info[0]}",
+                default_name,
+                info[1]
+            )
+
+            if not file_path:
+                return
+
+            exporter = SVDExporter(self.state_manager.device_info)
+
+            if format_type == "csv":
+                success = exporter.export_csv(file_path)
+            elif format_type == "csv_summary":
+                success = exporter.export_register_summary_csv(file_path)
+            elif format_type == "html":
+                success = exporter.export_html(file_path)
+            else:
+                success = exporter.export_markdown(file_path)
+
+            if success:
+                self.layout_manager.update_status(f"{info[0]}导出成功")
+                QMessageBox.information(
+                    self.layout_manager.main_window,
+                    "导出成功",
+                    f"{info[0]}已导出到:\n{file_path}"
+                )
+            else:
+                QMessageBox.warning(
+                    self.layout_manager.main_window, "导出失败", "导出失败，请检查日志。"
+                )
+
+        except Exception as e:
+            self.logger.error(f"文档导出失败: {e}")
+            QMessageBox.critical(
+                self.layout_manager.main_window, "导出错误", f"导出失败: {e}"
             )
 
     def update_device_info_from_ui(self):

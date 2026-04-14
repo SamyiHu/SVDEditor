@@ -2,7 +2,7 @@
 综合可视化控件容器
 从main_window.py中提取的独立组件
 """
-from PyQt6.QtWidgets import QWidget, QVBoxLayout
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QSplitter
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from .address_map_widget import AddressMapWidget
@@ -22,7 +22,12 @@ class VisualizationWidget(QWidget):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)  # 增加间距，避免外设图被遮挡
+        layout.setSpacing(0)
+        
+        # 使用 QSplitter 替代固定布局，使地址映射图和位域图比例可调
+        self.vis_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.vis_splitter.setChildrenCollapsible(False)
+        self.vis_splitter.setHandleWidth(4)
         
         self.address_map = AddressMapWidget()
         self.bit_field = BitFieldWidget()
@@ -30,8 +35,11 @@ class VisualizationWidget(QWidget):
         # 连接跳转到源外设的信号
         self.bit_field.jump_to_source_peripheral.connect(self._on_jump_to_source_peripheral)
         
-        layout.addWidget(self.address_map)
-        layout.addWidget(self.bit_field)
+        self.vis_splitter.addWidget(self.address_map)
+        self.vis_splitter.addWidget(self.bit_field)
+        self.vis_splitter.setSizes([250, 250])
+        
+        layout.addWidget(self.vis_splitter)
         
         self.current_peripheral = None
         self.current_register = None
