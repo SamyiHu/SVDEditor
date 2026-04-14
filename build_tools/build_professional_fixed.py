@@ -102,6 +102,12 @@ a = Analysis(
         (r'{project_root_parent}/README.md', '.'),
         (r'{project_root_parent}/README_zh.md', '.'),
         (r'{project_root_parent}/LICENSE', '.'),
+        
+        # i18n国际化翻译文件
+        (r'{project_root_parent}/svd_tool/i18n', 'svd_tool/i18n'),
+        
+        # 图标文件
+        (r'{project_root_parent}/icon.ico', '.'),
     ],
     hiddenimports=[
         # PyQt6模块
