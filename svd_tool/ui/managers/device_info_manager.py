@@ -79,56 +79,27 @@ class DeviceInfoManager(QObject):
             
             mpu_combo = self.coordinator.get_widget('mpu_combo')
             if mpu_combo:
-                mpu_text = mpu_combo.currentText()
-                # 支持中文和英文的"是"/"Yes"
-                device_info.cpu.mpu_present = (mpu_text == "是" or mpu_text == "Yes")
-            
+                device_info.cpu.mpu_present = mpu_combo.isChecked()
+
             fpu_combo = self.coordinator.get_widget('fpu_combo')
             if fpu_combo:
-                fpu_text = fpu_combo.currentText()
-                # 支持中文和英文的"是"/"Yes"
-                device_info.cpu.fpu_present = (fpu_text == "是" or fpu_text == "Yes")
+                device_info.cpu.fpu_present = fpu_combo.isChecked()
             
             nvic_prio_spin = self.coordinator.get_widget('nvic_prio_spin')
             if nvic_prio_spin:
                 device_info.cpu.nvic_prio_bits = nvic_prio_spin.value()
             
-            # 更新公司版权信息
+            # 更新公司版权信息（留空=不写入）
             company_name_edit = self.coordinator.get_widget('company_name_edit')
-            company_checkbox = self.coordinator.get_widget('company_checkbox')
-            if company_name_edit and company_checkbox:
-                if company_checkbox.isChecked():
-                    # 如果勾选了"不显示"，则清空厂商名称字段
-                    device_info.vendor = ""
-                else:
-                    device_info.vendor = company_name_edit.text().strip()
-            elif company_name_edit:
-                # 如果没有复选框，则直接获取文本
+            if company_name_edit:
                 device_info.vendor = company_name_edit.text().strip()
-            
+
             copyright_edit = self.coordinator.get_widget('copyright_edit')
-            copyright_checkbox = self.coordinator.get_widget('copyright_checkbox')
-            if copyright_edit and copyright_checkbox:
-                if copyright_checkbox.isChecked():
-                    # 如果勾选了"不显示"，则清空版权信息字段
-                    device_info.copyright = ""
-                else:
-                    device_info.copyright = copyright_edit.text().strip()
-            elif copyright_edit:
-                # 如果没有复选框，则直接获取文本
+            if copyright_edit:
                 device_info.copyright = copyright_edit.text().strip()
-            
-            # 处理作者字段（考虑"不显示"复选框）
+
             author_edit = self.coordinator.get_widget('author_edit')
-            author_checkbox = self.coordinator.get_widget('author_checkbox')
-            if author_edit and author_checkbox:
-                if author_checkbox.isChecked():
-                    # 如果勾选了"不显示"，则清空作者字段
-                    device_info.author = ""
-                else:
-                    device_info.author = author_edit.text().strip()
-            elif author_edit:
-                # 如果没有复选框，则直接获取文本
+            if author_edit:
                 device_info.author = author_edit.text().strip()
             
             # 处理许可证字段（考虑"不显示"选项）
@@ -251,11 +222,11 @@ class DeviceInfoManager(QObject):
             
             mpu_combo = self.coordinator.get_widget('mpu_combo')
             if mpu_combo:
-                mpu_combo.setCurrentText(t("value.yes") if device_info.cpu.mpu_present else t("value.no"))
-            
+                mpu_combo.setChecked(bool(device_info.cpu.mpu_present))
+
             fpu_combo = self.coordinator.get_widget('fpu_combo')
             if fpu_combo:
-                fpu_combo.setCurrentText(t("value.yes") if device_info.cpu.fpu_present else t("value.no"))
+                fpu_combo.setChecked(bool(device_info.cpu.fpu_present))
             
             nvic_prio_spin = self.coordinator.get_widget('nvic_prio_spin')
             if nvic_prio_spin:

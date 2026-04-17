@@ -4,19 +4,22 @@
 """
 import logging
 import copy
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Tuple
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QListWidget, QListWidgetItem, QComboBox, QLineEdit,
-    QGroupBox, QFormLayout, QDialog, QCheckBox, QSpinBox,
+    QComboBox, QLineEdit, QGroupBox, QFormLayout, QDialog,
     QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView,
-    QDialogButtonBox, QProgressBar
+    QSplitter, QFrame, QScrollArea, QSizePolicy
 )
 from PyQt6.QtCore import QObject, pyqtSignal, Qt
+from PyQt6.QtGui import QColor
 
 from ...core.data_model import DeviceInfo, Peripheral, Register, Field
 from ...config.styles import get_style_scheme
+from ...i18n.i18n import t
+from ..widgets.toggle_switch import ToggleSwitch
+from ..widgets.labeled_slider import LabeledSlider
 
 logger = logging.getLogger("BatchOperations")
 
@@ -37,177 +40,380 @@ class BatchOperationsManager(QObject):
             return self.state_manager.device_info
         return None
 
+    # ==================== 公共工具方法 ====================
+
+    @staticmethod
+    def _make_apply_btn(text: str) -> QPushButton:
+        """创建统一样式的应用按钮"""
+        btn = QPushButton(text)
+        _c = get_style_scheme().colors
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {_c.accent};
+                color: {_c.text_white};
+                padding: 8px 24px;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 10pt;
+            }}
+            QPushButton:hover {{ background-color: {_c.accent_hover}; }}
+            QPushButton:pressed {{ background-color: {_c.accent_pressed}; }}
+        """)
+        return btn
+
+    @staticmethod
+    def _make_cancel_btn(text: str) -> QPushButton:
+        """创建统一样式的取消按钮"""
+        btn = QPushButton(text)
+        _c = get_style_scheme().colors
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {_c.surface};
+                color: {_c.text_primary};
+                padding: 8px 24px;
+                border: 1px solid {_c.border};
+                border-radius: 6px;
+                font-size: 10pt;
+            }}
+            QPushButton:hover {{ background-color: {_c.hover}; }}
+        """)
+        return btn
+
+    @staticmethod
+    def _make_group_box(title: str) -> QGroupBox:
+        """创建统一样式的分组框"""
+        group = QGroupBox(title)
+        _c = get_style_scheme().colors
+        group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                color: {_c.text_primary};
+                border: 1px solid {_c.border_light};
+                border-radius: 8px;
+                margin-top: 12px;
+                padding-top: 16px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 12px;
+                padding: 0 6px;
+                color: {_c.text_secondary};
+            }}
+        """)
+        return group
+
     # ==================== 批量修改属性 ====================
 
     def show_batch_modify_dialog(self, parent=None):
-        """显示批量修改属性对话框"""
+        """显示批量修改属性对话框（重写版）"""
         device = self._get_device()
         if not device or not device.peripherals:
-            QMessageBox.warning(parent, "提示", "请先加载 SVD 文件")
+            QMessageBox.warning(parent, t("message.warning"), t("batch.load_file_first"))
             return
 
+        _c = get_style_scheme().colors
+
         dlg = QDialog(parent)
-        dlg.setWindowTitle("⚡ 批量修改属性")
-        dlg.setMinimumSize(700, 550)
-        dlg.resize(800, 600)
-        layout = QVBoxLayout(dlg)
+        dlg.setWindowTitle(t("batch.title_modify"))
+        dlg.setMinimumSize(920, 580)
+        dlg.resize(960, 620)
 
-        # === 第1步：选择目标范围 ===
-        scope_group = QGroupBox("1. 选择目标范围")
+        main_layout = QVBoxLayout(dlg)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(8)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # ======== 左侧：配置区 ========
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(8)
+
+        # --- 目标范围 ---
+        scope_group = self._make_group_box(t("batch.scope_group"))
         scope_layout = QFormLayout(scope_group)
+        scope_layout.setSpacing(6)
+        scope_layout.setContentsMargins(12, 20, 12, 8)
 
-        # 外设选择
         periph_combo = QComboBox()
-        periph_combo.addItem("所有外设", "__all__")
+        periph_combo.addItem(t("batch.all_peripherals"), "__all__")
         for pname in sorted(device.peripherals.keys()):
             periph_combo.addItem(pname, pname)
-        scope_layout.addRow("外设:", periph_combo)
+        scope_layout.addRow(t("batch.peripheral_label"), periph_combo)
 
-        # 目标类型
         target_combo = QComboBox()
-        target_combo.addItem("寄存器", "register")
-        target_combo.addItem("位域", "field")
-        scope_layout.addRow("目标类型:", target_combo)
+        target_combo.addItem(t("type.register"), "register")
+        target_combo.addItem(t("label.field"), "field")
+        scope_layout.addRow(t("batch.target_type"), target_combo)
 
-        # 过滤条件（可选）
+        filter_row = QHBoxLayout()
         filter_edit = QLineEdit()
-        filter_edit.setPlaceholderText("可选：输入关键词过滤（如 MODE）")
-        scope_layout.addRow("名称过滤:", filter_edit)
+        filter_edit.setPlaceholderText(t("batch.filter_placeholder"))
+        filter_row.addWidget(filter_edit)
+        match_label = QLabel("")
+        match_label.setStyleSheet(f"color: {_c.text_secondary}; font-size: 9pt;")
+        match_label.setFixedWidth(120)
+        filter_row.addWidget(match_label)
+        scope_layout.addRow(t("batch.name_filter"), filter_row)
 
-        layout.addWidget(scope_group)
+        left_layout.addWidget(scope_group)
 
-        # === 第2步：选择要修改的属性 ===
-        prop_group = QGroupBox("2. 设置要修改的属性")
+        # --- 修改属性 ---
+        prop_group = self._make_group_box(t("batch.prop_group"))
         prop_layout = QVBoxLayout(prop_group)
+        prop_layout.setContentsMargins(12, 20, 12, 8)
+        prop_layout.setSpacing(6)
 
-        # 属性表格：属性名 | 新值 | 启用
-        prop_table = QTableWidget(0, 3)
-        prop_table.setHorizontalHeaderLabels(["属性", "新值", "启用"])
-        prop_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        prop_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        prop_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-
-        # 寄存器可修改属性
         reg_properties = [
-            ("access", "访问权限 (read-write/read-only/write-only)"),
-            ("size", "大小 (8/16/32)"),
-            ("reset_value", "复位值"),
-            ("description", "描述"),
+            ("access", t("batch.prop_access"), "combo"),
+            ("size", t("batch.prop_size"), "combo_size"),
+            ("reset_value", t("batch.prop_reset_value"), "text"),
+            ("description", t("batch.prop_description"), "text"),
         ]
-        # 位域可修改属性
         field_properties = [
-            ("access", "访问权限"),
-            ("reset_value", "复位值"),
-            ("description", "描述"),
+            ("access", t("batch.prop_access"), "combo"),
+            ("reset_value", t("batch.prop_reset_value"), "text"),
+            ("description", t("batch.prop_description"), "text"),
         ]
 
-        def update_properties_table():
-            prop_table.setRowCount(0)
+        # 存储属性行控件: [(toggle, value_widget, prop_name), ...]
+        prop_rows = []
+        prop_rows_container = QWidget()
+        prop_rows_layout = QVBoxLayout(prop_rows_container)
+        prop_rows_layout.setContentsMargins(0, 0, 0, 0)
+        prop_rows_layout.setSpacing(4)
+
+        def rebuild_property_rows():
+            # 清除旧行
+            for toggle, value_w, _ in prop_rows:
+                toggle.setParent(None)
+                value_w.setParent(None)
+                row_w = toggle.parent()
+                if row_w:
+                    row_w.setParent(None)
+            prop_rows.clear()
+            # 清空 layout
+            while prop_rows_layout.count():
+                item = prop_rows_layout.takeAt(0)
+                w = item.widget()
+                if w:
+                    w.deleteLater()
+
             is_field = target_combo.currentData() == "field"
             props = field_properties if is_field else reg_properties
-            for prop_name, prop_desc in props:
-                row = prop_table.rowCount()
-                prop_table.insertRow(row)
-                name_item = QTableWidgetItem(f"{prop_desc} ({prop_name})")
-                name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                name_item.setData(Qt.ItemDataRole.UserRole, prop_name)
-                prop_table.setItem(row, 0, name_item)
-                prop_table.setItem(row, 1, QTableWidgetItem(""))
-                cb = QCheckBox()
-                cb.setChecked(False)
-                cb_widget = QWidget()
-                cb_layout = QHBoxLayout(cb_widget)
-                cb_layout.addWidget(cb)
-                cb_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                cb_layout.setContentsMargins(0, 0, 0, 0)
-                prop_table.setCellWidget(row, 2, cb_widget)
 
-        update_properties_table()
-        target_combo.currentIndexChanged.connect(update_properties_table)
-        layout.addWidget(prop_group)
+            for prop_name, prop_desc, widget_type in props:
+                row_w = QWidget()
+                row_layout = QHBoxLayout(row_w)
+                row_layout.setContentsMargins(0, 2, 0, 2)
+                row_layout.setSpacing(8)
 
-        # === 预览 ===
-        preview_group = QGroupBox("3. 预览受影响的项目")
+                toggle = ToggleSwitch()
+                toggle.setFixedWidth(50)
+                row_layout.addWidget(toggle)
+
+                name_lbl = QLabel(prop_desc)
+                name_lbl.setFixedWidth(80)
+                name_lbl.setStyleSheet(f"color: {_c.text_primary}; font-size: 9pt;")
+                row_layout.addWidget(name_lbl)
+
+                if widget_type == "combo":
+                    val_w = QComboBox()
+                    val_w.addItems(["read-write", "read-only", "write-only", "write-once"])
+                    val_w.setEnabled(False)
+                elif widget_type == "combo_size":
+                    val_w = QComboBox()
+                    val_w.addItems(["8", "16", "32"])
+                    val_w.setCurrentText("32")
+                    val_w.setEnabled(False)
+                else:
+                    val_w = QLineEdit()
+                    val_w.setPlaceholderText(f"{prop_desc}...")
+                    val_w.setEnabled(False)
+
+                row_layout.addWidget(val_w, 1)
+                prop_rows_layout.addWidget(row_w)
+                prop_rows.append((toggle, val_w, prop_name))
+
+                # 开关控制值控件启用状态
+                toggle.toggled.connect(lambda checked, w=val_w: w.setEnabled(checked))
+                # 值变更刷新预览
+                if isinstance(val_w, QComboBox):
+                    val_w.currentIndexChanged.connect(refresh_preview)
+                elif isinstance(val_w, QLineEdit):
+                    val_w.textChanged.connect(refresh_preview)
+                toggle.toggled.connect(refresh_preview)
+
+        prop_layout.addWidget(prop_rows_container)
+        left_layout.addWidget(prop_group, 1)
+
+        splitter.addWidget(left_widget)
+
+        # ======== 右侧：预览区 ========
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+
+        preview_group = self._make_group_box(t("batch.preview_group"))
         preview_layout = QVBoxLayout(preview_group)
-        preview_list = QListWidget()
-        preview_layout.addWidget(preview_list)
+        preview_layout.setContentsMargins(8, 20, 8, 8)
+
+        preview_table = QTableWidget(0, 4)
+        preview_table.setHorizontalHeaderLabels([
+            t("batch.col_name"),
+            t("batch.col_property"),
+            t("batch.old_value"),
+            t("batch.new_value"),
+        ])
+        header = preview_table.horizontalHeader()
+        if header:
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        preview_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        preview_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        preview_table.setAlternatingRowColors(True)
+        preview_table.setShowGrid(True)
+        vheader = preview_table.verticalHeader()
+        if vheader:
+            vheader.setDefaultSectionSize(28)
+        preview_layout.addWidget(preview_table)
+
         count_label = QLabel("")
+        count_label.setStyleSheet(f"color: {_c.text_secondary}; font-size: 9pt; padding: 4px;")
         preview_layout.addWidget(count_label)
-        layout.addWidget(preview_group)
 
-        def refresh_preview():
-            preview_list.clear()
-            periph_name = periph_combo.currentData()
-            target_type = target_combo.currentData()
-            filter_text = filter_edit.text().strip().lower()
+        right_layout.addWidget(preview_group)
 
-            affected = self._collect_targets(device, periph_name, target_type, filter_text)
-            for item_info in affected:
-                icon = "📋" if target_type == "register" else "🔹"
-                preview_list.addItem(f"{icon} {item_info}")
-            count_label.setText(f"共 {len(affected)} 个项目将被修改")
+        splitter.addWidget(right_widget)
+        splitter.setSizes([400, 520])
 
-        periph_combo.currentIndexChanged.connect(refresh_preview)
-        target_combo.currentIndexChanged.connect(refresh_preview)
-        filter_edit.textChanged.connect(refresh_preview)
-        refresh_preview()
+        main_layout.addWidget(splitter, 1)
 
-        # === 按钮 ===
+        # ======== 底部按钮 ========
         btn_layout = QHBoxLayout()
-        apply_btn = QPushButton("⚡ 应用批量修改")
-        _c = get_style_scheme().colors
-        apply_btn.setStyleSheet(f"background-color: {_c.accent}; color: {_c.text_white}; padding: 8px 20px; font-weight: bold;")
-        cancel_btn = QPushButton("取消")
         btn_layout.addStretch()
+        apply_btn = self._make_apply_btn(t("batch.apply_btn"))
+        cancel_btn = self._make_cancel_btn(t("button.cancel"))
         btn_layout.addWidget(apply_btn)
         btn_layout.addWidget(cancel_btn)
-        layout.addLayout(btn_layout)
+        main_layout.addLayout(btn_layout)
+
+        # ======== 逻辑 ========
+
+        def _collect_detailed_targets() -> List[Tuple[str, object]]:
+            """收集目标，返回 [(显示名, 对象), ...]"""
+            periph_name = periph_combo.currentData()
+            target_type = target_combo.currentData()
+            filter_text = filter_edit.text().strip().lower()
+            result = []
+            peripherals = ([device.peripherals[periph_name]] if periph_name != "__all__"
+                           else list(device.peripherals.values()))
+            for periph in peripherals:
+                if target_type == "register":
+                    for rname, reg in periph.registers.items():
+                        if filter_text and filter_text not in rname.lower():
+                            continue
+                        result.append((f"{periph.name} > {rname}", reg))
+                elif target_type == "field":
+                    for rname, reg in periph.registers.items():
+                        for fname, fld in reg.fields.items():
+                            if filter_text and filter_text not in fname.lower():
+                                continue
+                            result.append((f"{periph.name} > {rname} > {fname}", fld))
+            return result
+
+        def refresh_preview():
+            targets = _collect_detailed_targets()
+            target_type = target_combo.currentData()
+            type_label = t("batch.type_register") if target_type == "register" else t("batch.type_field")
+            match_label.setText(t("batch.match_count", count=len(targets), type=type_label))
+
+            # 收集已启用的属性修改
+            active_changes = {}
+            for toggle, val_w, prop_name in prop_rows:
+                if toggle.isChecked():
+                    if isinstance(val_w, QComboBox):
+                        active_changes[prop_name] = val_w.currentText()
+                    elif isinstance(val_w, QLineEdit):
+                        val = val_w.text().strip()
+                        if val:
+                            active_changes[prop_name] = val
+
+            # 填充预览表
+            preview_table.setRowCount(0)
+            for display_name, obj in targets:
+                for prop, new_val in active_changes.items():
+                    old_val = getattr(obj, prop, "") or ""
+                    row = preview_table.rowCount()
+                    preview_table.insertRow(row)
+                    preview_table.setItem(row, 0, QTableWidgetItem(display_name))
+                    preview_table.setItem(row, 1, QTableWidgetItem(prop))
+
+                    old_item = QTableWidgetItem(str(old_val))
+                    old_item.setForeground(QColor(_c.text_secondary))
+                    preview_table.setItem(row, 2, old_item)
+
+                    new_item = QTableWidgetItem(str(new_val))
+                    new_item.setForeground(QColor(_c.accent))
+                    preview_table.setItem(row, 3, new_item)
+
+            count_label.setText(t("batch.affected_count", count=len(targets)))
+
+        target_combo.currentIndexChanged.connect(lambda: (rebuild_property_rows(), refresh_preview()))
+        periph_combo.currentIndexChanged.connect(refresh_preview)
+        filter_edit.textChanged.connect(refresh_preview)
+
+        # 初始构建
+        rebuild_property_rows()
+        refresh_preview()
 
         def apply_changes():
-            # 收集要修改的属性
+            # 收集变更
             changes = {}
-            for row in range(prop_table.rowCount()):
-                cb_widget = prop_table.cellWidget(row, 2)
-                cb = cb_widget.findChild(QCheckBox)
-                if cb and cb.isChecked():
-                    prop_name = prop_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
-                    new_value = prop_table.item(row, 1).text().strip()
-                    if new_value:
-                        changes[prop_name] = new_value
+            for toggle, val_w, prop_name in prop_rows:
+                if toggle.isChecked():
+                    if isinstance(val_w, QComboBox):
+                        val = val_w.currentText()
+                    elif isinstance(val_w, QLineEdit):
+                        val = val_w.text().strip()
+                    else:
+                        val = ""
+                    if val:
+                        changes[prop_name] = val
 
             if not changes:
-                QMessageBox.warning(dlg, "提示", "请至少启用并填写一个属性的新值")
+                QMessageBox.warning(dlg, t("message.warning"), t("batch.no_property"))
                 return
 
             periph_name = periph_combo.currentData()
             target_type = target_combo.currentData()
             filter_text = filter_edit.text().strip().lower()
-            affected = self._collect_targets(device, periph_name, target_type, filter_text)
 
+            affected = self._collect_targets(device, periph_name, target_type, filter_text)
             if not affected:
-                QMessageBox.information(dlg, "提示", "没有匹配的项目")
+                QMessageBox.information(dlg, t("message.info"), t("batch.no_match"))
                 return
 
-            # 确认
+            type_name = t("batch.type_field") if target_type == "field" else t("batch.type_register")
+            props_text = "\n".join(f"  {k}: {v}" for k, v in changes.items())
             reply = QMessageBox.question(
-                dlg, "确认批量修改",
-                f"即将修改 {len(affected)} 个{('位域' if target_type == 'field' else '寄存器')}的以下属性:\n"
-                + "\n".join(f"  • {k}: {v}" for k, v in changes.items())
-                + f"\n\n确定继续吗？",
+                dlg, t("batch.confirm_title"),
+                t("batch.confirm_msg", count=len(affected), type=type_name, props=props_text),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
-            # 执行批量修改
             count = self._apply_batch_modify(device, periph_name, target_type, filter_text, changes)
-
-            # 通知 UI 更新
-            self.operation_completed.emit(f"批量修改 {count} 个项目", count)
+            self.operation_completed.emit(f"Batch modify {count} items", count)
             if self.state_manager:
                 self.state_manager._notify_state_change()
 
-            QMessageBox.information(dlg, "完成", f"已成功修改 {count} 个项目")
+            QMessageBox.information(dlg, t("batch.complete"), t("batch.modify_success", count=count))
             dlg.accept()
 
         apply_btn.clicked.connect(apply_changes)
@@ -266,143 +472,223 @@ class BatchOperationsManager(QObject):
     # ==================== 批量生成寄存器 ====================
 
     def show_batch_generate_dialog(self, parent=None):
-        """显示批量生成寄存器对话框"""
+        """显示批量生成寄存器对话框（重写版）"""
         device = self._get_device()
         if not device or not device.peripherals:
-            QMessageBox.warning(parent, "提示", "请先加载 SVD 文件")
+            QMessageBox.warning(parent, t("message.warning"), t("batch.load_file_first"))
             return
 
-        dlg = QDialog(parent)
-        dlg.setWindowTitle("📋 批量生成寄存器")
-        dlg.setMinimumSize(650, 550)
-        layout = QVBoxLayout(dlg)
+        _c = get_style_scheme().colors
 
-        # 目标外设
-        target_group = QGroupBox("目标外设")
+        dlg = QDialog(parent)
+        dlg.setWindowTitle(t("batch.title_generate"))
+        dlg.setMinimumSize(920, 580)
+        dlg.resize(960, 620)
+
+        main_layout = QVBoxLayout(dlg)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(8)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # ======== 左侧：配置区 ========
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(8)
+
+        # --- 目标外设 ---
+        target_group = self._make_group_box(t("batch.target_peripheral"))
         target_layout = QFormLayout(target_group)
+        target_layout.setSpacing(6)
+        target_layout.setContentsMargins(12, 20, 12, 8)
+
         periph_combo = QComboBox()
         for pname in sorted(device.peripherals.keys()):
             periph_combo.addItem(pname, pname)
-        target_layout.addRow("外设:", periph_combo)
-        layout.addWidget(target_group)
+        target_layout.addRow(t("batch.peripheral_label"), periph_combo)
 
-        # 生成模式
-        mode_group = QGroupBox("生成模式")
-        mode_layout = QFormLayout(mode_group)
+        reg_count_label = QLabel("")
+        reg_count_label.setStyleSheet(f"color: {_c.text_secondary}; font-size: 9pt;")
+        target_layout.addRow(t("batch.reg_count"), reg_count_label)
 
-        mode_combo = QComboBox()
-        mode_combo.addItem("序号递增（如 REG0, REG1, REG2...）", "sequence")
-        mode_combo.addItem("名称列表（逗号分隔）", "named")
-        mode_combo.addItem("从模板寄存器复制", "copy")
-        mode_layout.addRow("模式:", mode_combo)
+        left_layout.addWidget(target_group)
 
-        # 名称前缀/后缀
+        # --- 命名规则 ---
+        naming_group = self._make_group_box(t("batch.naming_group"))
+        naming_layout = QFormLayout(naming_group)
+        naming_layout.setSpacing(6)
+        naming_layout.setContentsMargins(12, 20, 12, 8)
+
         prefix_edit = QLineEdit("REG")
-        prefix_edit.setPlaceholderText("寄存器名称前缀")
-        mode_layout.addRow("名称前缀:", prefix_edit)
+        prefix_edit.setPlaceholderText(t("batch.prefix_placeholder"))
+        naming_layout.addRow(t("batch.name_prefix"), prefix_edit)
 
-        start_spin = QSpinBox()
+        start_spin = LabeledSlider()
         start_spin.setRange(0, 1023)
         start_spin.setValue(0)
-        mode_layout.addRow("起始序号:", start_spin)
+        naming_layout.addRow(t("batch.start_index"), start_spin)
 
-        count_spin = QSpinBox()
+        count_spin = LabeledSlider()
         count_spin.setRange(1, 256)
         count_spin.setValue(8)
-        mode_layout.addRow("数量:", count_spin)
+        naming_layout.addRow(t("batch.count"), count_spin)
 
-        offset_spin = QLineEdit("0x04")
-        offset_spin.setPlaceholderText("寄存器之间的偏移步长（如 0x04）")
-        mode_layout.addRow("偏移步长:", offset_spin)
+        left_layout.addWidget(naming_group)
 
-        # (mode_combo display is covered by the label above)
-        layout.addWidget(mode_group)
-
-        # 模板参数
-        template_group = QGroupBox("寄存器属性模板")
+        # --- 寄存器模板 ---
+        template_group = self._make_group_box(t("batch.reg_template"))
         template_layout = QFormLayout(template_group)
+        template_layout.setSpacing(6)
+        template_layout.setContentsMargins(12, 20, 12, 8)
 
-        desc_edit = QLineEdit("")
-        desc_edit.setPlaceholderText("寄存器描述（支持 {n} 作为序号占位符）")
-        template_layout.addRow("描述:", desc_edit)
+        offset_edit = QLineEdit("0x04")
+        offset_edit.setPlaceholderText(t("batch.offset_placeholder"))
+        template_layout.addRow(t("batch.offset_step"), offset_edit)
 
         access_combo = QComboBox()
         access_combo.addItems(["read-write", "read-only", "write-only"])
-        template_layout.addRow("访问权限:", access_combo)
+        template_layout.addRow(t("batch.access_label"), access_combo)
 
         size_combo = QComboBox()
         size_combo.addItems(["8", "16", "32"])
         size_combo.setCurrentText("32")
-        template_layout.addRow("大小(位):", size_combo)
+        template_layout.addRow(t("batch.size_bits"), size_combo)
 
         reset_edit = QLineEdit("0x00000000")
-        template_layout.addRow("复位值:", reset_edit)
-        layout.addWidget(template_group)
+        template_layout.addRow(t("batch.reset_label"), reset_edit)
 
-        # 预览
-        preview_group = QGroupBox("预览")
+        desc_edit = QLineEdit("")
+        desc_edit.setPlaceholderText(t("batch.desc_placeholder"))
+        template_layout.addRow(t("label.description"), desc_edit)
+
+        left_layout.addWidget(template_group, 1)
+
+        splitter.addWidget(left_widget)
+
+        # ======== 右侧：预览区 ========
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+
+        preview_group = self._make_group_box(t("batch.preview"))
         preview_layout = QVBoxLayout(preview_group)
-        preview_list = QListWidget()
-        preview_layout.addWidget(preview_list)
-        layout.addWidget(preview_group)
+        preview_layout.setContentsMargins(8, 20, 8, 8)
+
+        preview_table = QTableWidget(0, 4)
+        preview_table.setHorizontalHeaderLabels([
+            t("batch.col_index"),
+            t("label.name_column"),
+            t("batch.col_offset"),
+            t("label.description_column"),
+        ])
+        header = preview_table.horizontalHeader()
+        if header:
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        preview_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        preview_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        preview_table.setAlternatingRowColors(True)
+        preview_table.setShowGrid(True)
+        vheader = preview_table.verticalHeader()
+        if vheader:
+            vheader.setDefaultSectionSize(28)
+        preview_layout.addWidget(preview_table)
+
+        right_layout.addWidget(preview_group)
+
+        splitter.addWidget(right_widget)
+        splitter.setSizes([380, 540])
+
+        main_layout.addWidget(splitter, 1)
+
+        # ======== 底部按钮 ========
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        apply_btn = self._make_apply_btn(t("button.ok"))
+        cancel_btn = self._make_cancel_btn(t("button.cancel"))
+        btn_layout.addWidget(apply_btn)
+        btn_layout.addWidget(cancel_btn)
+        main_layout.addLayout(btn_layout)
+
+        # ======== 逻辑 ========
+
+        def _get_max_offset(periph_name: str) -> int:
+            """获取外设中最大偏移"""
+            max_off = 0
+            if periph_name and periph_name in device.peripherals:
+                for reg in device.peripherals[periph_name].registers.values():
+                    try:
+                        off = int(reg.offset, 16) if isinstance(reg.offset, str) else int(reg.offset)
+                        max_off = max(max_off, off)
+                    except (ValueError, TypeError):
+                        pass
+            return max_off
+
+        def _parse_step(step_text: str) -> int:
+            try:
+                return int(step_text, 16) if step_text.startswith("0x") else int(step_text)
+            except ValueError:
+                return 4
+
+        def update_reg_count():
+            pname = periph_combo.currentData()
+            if pname and pname in device.peripherals:
+                cnt = len(device.peripherals[pname].registers)
+                reg_count_label.setText(t("batch.reg_count_info", count=cnt))
+            else:
+                reg_count_label.setText("")
 
         def refresh_preview():
-            preview_list.clear()
+            preview_table.setRowCount(0)
             prefix = prefix_edit.text().strip() or "REG"
             start = start_spin.value()
             count = count_spin.value()
-            step_text = offset_spin.text().strip()
-            try:
-                step = int(step_text, 16) if step_text.startswith("0x") else int(step_text)
-            except ValueError:
-                step = 4
-
-            # 获取当前外设的基地址用于计算绝对地址
+            step = _parse_step(offset_edit.text().strip())
             pname = periph_combo.currentData()
-            base = 0
-            if pname and pname in device.peripherals:
-                ba = device.peripherals[pname].base_address
-                try:
-                    base = int(ba, 16) if isinstance(ba, str) else int(ba)
-                except (ValueError, TypeError):
-                    pass
-
-            # 获取已有寄存器的最大偏移
-            max_offset = 0
-            if pname and pname in device.peripherals:
-                for reg in device.peripherals[pname].registers.values():
-                    try:
-                        off = int(reg.offset, 16) if isinstance(reg.offset, str) else int(reg.offset)
-                        max_offset = max(max_offset, off)
-                    except (ValueError, TypeError):
-                        pass
+            max_offset = _get_max_offset(pname)
 
             for i in range(count):
                 idx = start + i
                 offset = max_offset + step * (i + 1)
                 name = f"{prefix}{idx}"
-                desc_text = desc_edit.text().replace("{n}", str(idx))
-                preview_list.addItem(
-                    f"📋 {name}  偏移: 0x{offset:04X}  绝对: 0x{base + offset:08X}  {desc_text}"
-                )
+                desc_text = desc_edit.text().replace("{n}", str(idx)) if desc_edit.text() else ""
 
-        for w in [prefix_edit, start_spin, count_spin, offset_spin, desc_edit, periph_combo]:
-            if isinstance(w, (QSpinBox, QComboBox)):
-                w.valueChanged.connect(refresh_preview) if isinstance(w, QSpinBox) else w.currentIndexChanged.connect(refresh_preview)
-            else:
-                w.textChanged.connect(refresh_preview)
+                row = preview_table.rowCount()
+                preview_table.insertRow(row)
+                preview_table.setItem(row, 0, QTableWidgetItem(str(i + 1)))
+                preview_table.setItem(row, 1, QTableWidgetItem(name))
+                preview_table.setItem(row, 2, QTableWidgetItem(f"0x{offset:04X}"))
+                preview_table.setItem(row, 3, QTableWidgetItem(desc_text))
+
+        # 连接信号
+        periph_combo.currentIndexChanged.connect(lambda: (update_reg_count(), refresh_preview()))
+        for w in [prefix_edit, offset_edit, desc_edit]:
+            w.textChanged.connect(refresh_preview)
+        for w in [start_spin, count_spin]:
+            w.valueChanged.connect(refresh_preview)
+
+        update_reg_count()
         refresh_preview()
 
-        # 按钮
-        btn_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        btn_box.accepted.connect(lambda: self._do_batch_generate(
-            dlg, device, periph_combo.currentData(), prefix_edit.text().strip(),
-            start_spin.value(), count_spin.value(), offset_spin.text().strip(),
-            desc_edit.text(), access_combo.currentText(),
-            int(size_combo.currentText()), reset_edit.text()))
-        btn_box.rejected.connect(dlg.reject)
-        layout.addWidget(btn_box)
+        def do_generate():
+            pname = periph_combo.currentData()
+            if not pname or pname not in device.peripherals:
+                QMessageBox.warning(dlg, t("message.error"),
+                                    t("batch.error_no_periph", name=pname or ""))
+                return
+
+            self._do_batch_generate(
+                dlg, device, pname, prefix_edit.text().strip(),
+                start_spin.value(), count_spin.value(), offset_edit.text().strip(),
+                desc_edit.text(), access_combo.currentText(),
+                int(size_combo.currentText()), reset_edit.text()
+            )
+
+        apply_btn.clicked.connect(do_generate)
+        cancel_btn.clicked.connect(dlg.reject)
 
         dlg.exec()
 
@@ -410,7 +696,8 @@ class BatchOperationsManager(QObject):
                            step_text, desc_template, access, size, reset_value):
         """执行批量生成寄存器"""
         if periph_name not in device.peripherals:
-            QMessageBox.warning(dlg, "错误", f"外设 {periph_name} 不存在")
+            QMessageBox.warning(dlg, t("message.error"),
+                                t("batch.error_no_periph", name=periph_name))
             return
 
         periph = device.peripherals[periph_name]
@@ -420,7 +707,6 @@ class BatchOperationsManager(QObject):
         except ValueError:
             step = 4
 
-        # 计算起始偏移（已有寄存器之后）
         max_offset = 0
         for reg in periph.registers.values():
             try:
@@ -437,7 +723,7 @@ class BatchOperationsManager(QObject):
             desc = desc_template.replace("{n}", str(idx)) if desc_template else f"{name} register"
 
             if name in periph.registers:
-                self.logger.warning(f"寄存器 {name} 已存在，跳过")
+                self.logger.warning(t("batch.register_exists", name=name))
                 continue
 
             reg = Register(
@@ -451,121 +737,255 @@ class BatchOperationsManager(QObject):
             periph.registers[name] = reg
             generated += 1
 
-        # 通知更新
-        self.operation_completed.emit(f"批量生成 {generated} 个寄存器", generated)
+        self.operation_completed.emit(f"Batch generate {generated} registers", generated)
         if self.state_manager:
             self.state_manager._notify_state_change()
 
-        QMessageBox.information(dlg, "完成", f"已生成 {generated} 个寄存器到 {periph_name}")
+        QMessageBox.information(dlg, t("batch.complete"),
+                                t("batch.generate_success", count=generated, name=periph_name))
         dlg.accept()
 
     # ==================== 批量克隆寄存器到其他外设 ====================
 
     def show_batch_clone_dialog(self, parent=None):
-        """显示批量克隆寄存器对话框"""
+        """显示批量克隆寄存器对话框（重写版）"""
         device = self._get_device()
         if not device or not device.peripherals:
-            QMessageBox.warning(parent, "提示", "请先加载 SVD 文件")
+            QMessageBox.warning(parent, t("message.warning"), t("batch.load_file_first"))
             return
 
-        dlg = QDialog(parent)
-        dlg.setWindowTitle("📋 批量克隆寄存器")
-        dlg.setMinimumSize(600, 500)
-        layout = QVBoxLayout(dlg)
+        _c = get_style_scheme().colors
 
-        # 源外设
-        src_group = QGroupBox("源外设")
+        dlg = QDialog(parent)
+        dlg.setWindowTitle(t("batch.title_clone"))
+        dlg.setMinimumSize(850, 550)
+        dlg.resize(880, 580)
+
+        main_layout = QVBoxLayout(dlg)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(8)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # ======== 左侧：源区 ========
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(8)
+
+        # --- 源外设 ---
+        src_group = self._make_group_box(t("batch.source_periph"))
         src_layout = QFormLayout(src_group)
+        src_layout.setSpacing(6)
+        src_layout.setContentsMargins(12, 20, 12, 8)
+
         src_combo = QComboBox()
         for pname in sorted(device.peripherals.keys()):
             src_combo.addItem(pname, pname)
-        src_layout.addRow("从外设:", src_combo)
+        src_layout.addRow(t("batch.from_periph"), src_combo)
 
         src_reg_label = QLabel("")
-        src_layout.addRow("寄存器数:", src_reg_label)
-        layout.addWidget(src_group)
+        src_reg_label.setStyleSheet(f"color: {_c.text_secondary}; font-size: 9pt;")
+        src_layout.addRow(t("batch.reg_count"), src_reg_label)
 
-        # 目标外设（多选）
-        dst_group = QGroupBox("目标外设（勾选要克隆到的外设）")
+        left_layout.addWidget(src_group)
+
+        # --- 选项 ---
+        opt_group = self._make_group_box(t("batch.options"))
+        opt_layout = QVBoxLayout(opt_group)
+        opt_layout.setContentsMargins(12, 20, 12, 8)
+
+        overwrite_toggle = ToggleSwitch(t("batch.overwrite"))
+        overwrite_toggle.setChecked(False)
+        opt_layout.addWidget(overwrite_toggle)
+
+        summary_label = QLabel("")
+        summary_label.setWordWrap(True)
+        summary_label.setStyleSheet(f"color: {_c.text_secondary}; font-size: 9pt; padding: 8px 0;")
+        opt_layout.addWidget(summary_label)
+
+        left_layout.addWidget(opt_group)
+        left_layout.addStretch(1)
+
+        splitter.addWidget(left_widget)
+
+        # ======== 右侧：目标区 ========
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+
+        dst_group = self._make_group_box(t("batch.target_peripherals"))
         dst_layout = QVBoxLayout(dst_group)
-        dst_list = QListWidget()
-        for pname in sorted(device.peripherals.keys()):
-            item = QListWidgetItem(pname)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(Qt.CheckState.Unchecked)
-            item.setData(Qt.ItemDataRole.UserRole, pname)
-            dst_list.addItem(item)
-        dst_layout.addWidget(dst_list)
+        dst_layout.setContentsMargins(8, 20, 8, 8)
+        dst_layout.setSpacing(6)
 
-        # 全选/取消按钮
+        # 全选/取消按钮行
         sel_layout = QHBoxLayout()
-        select_all_btn = QPushButton("全选")
-        deselect_all_btn = QPushButton("取消全选")
+        select_all_btn = QPushButton(t("batch.select_all"))
+        select_all_btn.setFixedHeight(28)
+        deselect_all_btn = QPushButton(t("batch.deselect_all"))
+        deselect_all_btn.setFixedHeight(28)
         sel_layout.addWidget(select_all_btn)
         sel_layout.addWidget(deselect_all_btn)
         sel_layout.addStretch()
         dst_layout.addLayout(sel_layout)
-        layout.addWidget(dst_group)
 
-        # 选项
-        opt_layout = QHBoxLayout()
-        overwrite_cb = QCheckBox("覆盖同名寄存器")
-        overwrite_cb.setChecked(False)
-        opt_layout.addWidget(overwrite_cb)
-        opt_layout.addStretch()
-        layout.addLayout(opt_layout)
+        # 目标列表 - 使用 QTableWidget + 勾选列
+        dst_table = QTableWidget(0, 2)
+        dst_table.setHorizontalHeaderLabels(["", t("batch.col_peripheral")])
+        header = dst_table.horizontalHeader()
+        if header:
+            header.setMinimumSectionSize(60)
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+            dst_table.setColumnWidth(0, 70)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        dst_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        dst_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        dst_table.setAlternatingRowColors(True)
+        dst_table.setShowGrid(True)
+        vheader = dst_table.verticalHeader()
+        if vheader:
+            vheader.setDefaultSectionSize(32)
+            vheader.setVisible(False)
+        dst_layout.addWidget(dst_table)
+
+        right_layout.addWidget(dst_group)
+
+        splitter.addWidget(right_widget)
+        splitter.setSizes([360, 480])
+
+        main_layout.addWidget(splitter, 1)
+
+        # ======== 底部按钮 ========
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        apply_btn = self._make_apply_btn(t("button.ok"))
+        cancel_btn = self._make_cancel_btn(t("button.cancel"))
+        btn_layout.addWidget(apply_btn)
+        btn_layout.addWidget(cancel_btn)
+        main_layout.addLayout(btn_layout)
+
+        # ======== 逻辑 ========
+
+        def build_target_table():
+            """构建目标外设表格"""
+            src_name = src_combo.currentData()
+            dst_table.setRowCount(0)
+            for pname in sorted(device.peripherals.keys()):
+                if pname == src_name:
+                    continue
+                periph = device.peripherals[pname]
+                reg_cnt = len(periph.registers)
+
+                row = dst_table.rowCount()
+                dst_table.insertRow(row)
+
+                # 勾选框
+                cb = ToggleSwitch()
+                cb_widget = QWidget()
+                cb_layout = QHBoxLayout(cb_widget)
+                cb_layout.addWidget(cb)
+                cb_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                cb_layout.setContentsMargins(0, 0, 0, 0)
+                dst_table.setCellWidget(row, 0, cb_widget)
+                cb.toggled.connect(update_summary)
+
+                # 外设名 + 寄存器数
+                display = f"{pname}  ({t('batch.reg_count_info', count=reg_cnt)})"
+                name_item = QTableWidgetItem(display)
+                name_item.setData(Qt.ItemDataRole.UserRole, pname)
+                dst_table.setItem(row, 1, name_item)
 
         def update_src_info():
             pname = src_combo.currentData()
             if pname and pname in device.peripherals:
                 src_reg_label.setText(str(len(device.peripherals[pname].registers)))
+            else:
+                src_reg_label.setText("")
+            build_target_table()
+            update_summary()
+
+        def update_summary():
+            src_name = src_combo.currentData()
+            src_count = 0
+            if src_name and src_name in device.peripherals:
+                src_count = len(device.peripherals[src_name].registers)
+
+            tgt_count = 0
+            for row in range(dst_table.rowCount()):
+                cb_widget = dst_table.cellWidget(row, 0)
+                if cb_widget:
+                    toggle = cb_widget.findChild(ToggleSwitch)
+                    if toggle and toggle.isChecked():
+                        tgt_count += 1
+
+            if tgt_count > 0 and src_count > 0:
+                summary_label.setText(
+                    t("batch.clone_summary",
+                      src_count=src_count, tgt_count=tgt_count,
+                      total=src_count * tgt_count))
+            else:
+                summary_label.setText("")
+
+        def select_all():
+            for row in range(dst_table.rowCount()):
+                cb_widget = dst_table.cellWidget(row, 0)
+                if cb_widget:
+                    toggle = cb_widget.findChild(ToggleSwitch)
+                    if toggle:
+                        toggle.setChecked(True)
+
+        def deselect_all():
+            for row in range(dst_table.rowCount()):
+                cb_widget = dst_table.cellWidget(row, 0)
+                if cb_widget:
+                    toggle = cb_widget.findChild(ToggleSwitch)
+                    if toggle:
+                        toggle.setChecked(False)
 
         src_combo.currentIndexChanged.connect(update_src_info)
+        select_all_btn.clicked.connect(select_all)
+        deselect_all_btn.clicked.connect(deselect_all)
         update_src_info()
 
-        select_all_btn.clicked.connect(lambda: self._set_all_checked(dst_list, True))
-        deselect_all_btn.clicked.connect(lambda: self._set_all_checked(dst_list, False))
+        def do_clone():
+            src_name = src_combo.currentData()
+            if not src_name or src_name not in device.peripherals:
+                QMessageBox.warning(dlg, t("message.error"),
+                                    t("batch.error_no_source", name=src_name or ""))
+                return
 
-        # 按钮
-        btn_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        btn_box.accepted.connect(lambda: self._do_batch_clone(
-            dlg, device, src_combo.currentData(), dst_list, overwrite_cb.isChecked()))
-        btn_box.rejected.connect(dlg.reject)
-        layout.addWidget(btn_box)
+            # 收集目标
+            targets = []
+            for row in range(dst_table.rowCount()):
+                cb_widget = dst_table.cellWidget(row, 0)
+                if cb_widget:
+                    toggle = cb_widget.findChild(ToggleSwitch)
+                    if toggle and toggle.isChecked():
+                        name_item = dst_table.item(row, 1)
+                        if name_item:
+                            targets.append(name_item.data(Qt.ItemDataRole.UserRole))
+
+            if not targets:
+                QMessageBox.warning(dlg, t("message.warning"), t("batch.select_target"))
+                return
+
+            self._do_batch_clone(
+                dlg, device, src_name, targets, overwrite_toggle.isChecked()
+            )
+
+        apply_btn.clicked.connect(do_clone)
+        cancel_btn.clicked.connect(dlg.reject)
 
         dlg.exec()
 
-    @staticmethod
-    def _set_all_checked(list_widget: QListWidget, checked: bool):
-        state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
-        for i in range(list_widget.count()):
-            list_widget.item(i).setCheckState(state)
-
-    def _do_batch_clone(self, dlg, device, src_name, dst_list, overwrite):
+    def _do_batch_clone(self, dlg, device, src_name, target_names: List[str], overwrite: bool):
         """执行批量克隆"""
-        if src_name not in device.peripherals:
-            QMessageBox.warning(dlg, "错误", f"源外设 {src_name} 不存在")
-            return
-
         src_periph = device.peripherals[src_name]
         src_regs = list(src_periph.registers.values())
 
-        # 收集目标外设
-        targets = []
-        for i in range(dst_list.count()):
-            item = dst_list.item(i)
-            if item.checkState() == Qt.CheckState.Checked:
-                pname = item.data(Qt.ItemDataRole.UserRole)
-                if pname != src_name:
-                    targets.append(pname)
-
-        if not targets:
-            QMessageBox.warning(dlg, "提示", "请至少选择一个目标外设")
-            return
-
         total = 0
-        for tgt_name in targets:
+        for tgt_name in target_names:
             if tgt_name not in device.peripherals:
                 continue
             tgt_periph = device.peripherals[tgt_name]
@@ -575,10 +995,13 @@ class BatchOperationsManager(QObject):
                 tgt_periph.registers[reg.name] = copy.deepcopy(reg)
                 total += 1
 
-        self.operation_completed.emit(f"批量克隆 {total} 个寄存器", total)
+        self.operation_completed.emit(f"Batch clone {total} registers", total)
         if self.state_manager:
             self.state_manager._notify_state_change()
 
-        QMessageBox.information(dlg, "完成",
-                                f"已将 {len(src_regs)} 个寄存器克隆到 {len(targets)} 个外设（共 {total} 项）")
+        QMessageBox.information(dlg, t("batch.complete"),
+                                t("batch.clone_success",
+                                  src_count=len(src_regs),
+                                  tgt_count=len(target_names),
+                                  total=total))
         dlg.accept()

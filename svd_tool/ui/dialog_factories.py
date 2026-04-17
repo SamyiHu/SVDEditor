@@ -5,9 +5,10 @@ from typing import Optional, Dict, Any, List
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QDialogButtonBox,
-    QComboBox, QSpinBox, QTextEdit, QMessageBox,
+    QComboBox, QTextEdit, QMessageBox,
     QListWidget, QListWidgetItem, QAbstractItemView,
-    QCheckBox, QGroupBox, QToolButton, QWidget
+    QCheckBox, QGroupBox, QToolButton, QWidget,
+    QScrollArea, QFrame, QSizePolicy
 )
 from PyQt6.QtCore import Qt
 
@@ -16,6 +17,8 @@ from .dialogs.enum_values_editor import EnumValuesEditor
 from ..core.data_model import Peripheral, Register, Field, Interrupt
 from ..core.validators import Validator, ValidationError
 from ..core.constants import ACCESS_OPTIONS
+from .widgets.modern_spinbox import ModernSpinBox
+from .widgets.labeled_slider import LabeledSlider
 from ..core.svd_schema_validator import SVDSchemaValidator
 from ..i18n.i18n import t
 
@@ -121,7 +124,13 @@ class PeripheralEditDialog(BaseEditDialog):
         self.base_addr_edit.textChanged.connect(self._check_address_conflict)
         self.offset_edit.textChanged.connect(self._check_address_conflict)
         self.size_edit.textChanged.connect(self._check_address_conflict)
-        
+
+        # 连接预览刷新信号
+        for w in [self.name_edit, self.base_addr_edit, self.display_name_edit,
+                  self.desc_edit, self.group_edit, self.offset_edit, self.size_edit]:
+            self._connect_preview_signal(w)
+        self._connect_preview_signal(self.derived_combo)
+
         if peripheral:
             self.load_data(peripheral)
     
@@ -264,6 +273,29 @@ class PeripheralEditDialog(BaseEditDialog):
             "derived_from": derived_from
         }
 
+    def _generate_preview_xml(self) -> str:
+        """生成当前外设配置部分的 XML 预览（不含寄存器/位域）"""
+        try:
+            from ..core.svd_generator import SVDGenerator
+            from ..core.data_model import Peripheral
+            p = Peripheral(
+                name=self.name_edit.text().strip() or "unnamed",
+                base_address=self.base_addr_edit.text().strip() or "0x0",
+                description=self.desc_edit.text().strip(),
+                display_name=self.display_name_edit.text().strip(),
+                group_name=self.group_edit.text().strip(),
+                derived_from=self.derived_combo.currentText() if self.derived_combo.currentText() != t("value.none") else "",
+                address_block={
+                    "offset": self.offset_edit.text().strip() or "0x0",
+                    "size": self.size_edit.text().strip() or "0x14",
+                    "usage": "registers"
+                },
+            )
+            # 只显示外设自身的配置，不包含子元素
+            return SVDGenerator.generate_peripheral_xml(p)
+        except Exception:
+            return ""
+
 
 class RegisterEditDialog(BaseEditDialog):
     """寄存器编辑对话框"""
@@ -293,7 +325,13 @@ class RegisterEditDialog(BaseEditDialog):
         
         # 连接实时检测信号
         self.offset_edit.textChanged.connect(self._check_offset_conflict)
-        
+
+        # 连接预览刷新信号
+        for w in [self.name_edit, self.offset_edit, self.display_name_edit,
+                  self.desc_edit, self.reset_edit, self.size_edit]:
+            self._connect_preview_signal(w)
+        self._connect_preview_signal(self.access_combo)
+
         if register:
             self.load_data(register)
     
@@ -412,6 +450,28 @@ class RegisterEditDialog(BaseEditDialog):
             "size": self.size_edit.text().strip()
         }
 
+    def _generate_preview_xml(self) -> str:
+        """生成当前寄存器配置部分的 XML 预览（不含位域）"""
+        try:
+            from ..core.svd_generator import SVDGenerator
+            from ..core.data_model import Register
+            access = self.access_combo.currentText()
+            if access == t("value.none"):
+                access = None
+            r = Register(
+                name=self.name_edit.text().strip() or "unnamed",
+                offset=self.offset_edit.text().strip() or "0x0",
+                description=self.desc_edit.text().strip(),
+                display_name=self.display_name_edit.text().strip(),
+                access=access,
+                reset_value=self.reset_edit.text().strip() or "0x00000000",
+                size=self.size_edit.text().strip() or "0x20",
+            )
+            # 只显示寄存器自身配置，不包含位域
+            return SVDGenerator.generate_register_xml(r)
+        except Exception:
+            return ""
+
 
 class FieldEditDialog(BaseEditDialog):
     """位域编辑对话框"""
@@ -440,7 +500,16 @@ class FieldEditDialog(BaseEditDialog):
         # 连接实时检测信号
         self.offset_spin.valueChanged.connect(self._check_bit_conflict)
         self.width_spin.valueChanged.connect(self._check_bit_conflict)
-        
+
+        # 连接预览刷新信号
+        self._connect_preview_signal(self.name_edit)
+        self._connect_preview_signal(self.offset_spin)
+        self._connect_preview_signal(self.width_spin)
+        self._connect_preview_signal(self.display_name_edit)
+        self._connect_preview_signal(self.desc_edit)
+        self._connect_preview_signal(self.reset_edit)
+        self._connect_preview_signal(self.access_combo)
+
         if field:
             self.load_data(field)
     
@@ -451,12 +520,12 @@ class FieldEditDialog(BaseEditDialog):
         self.add_form_row(t("label.field_name") + ":", self.name_edit)
         
         # 起始位
-        self.offset_spin = QSpinBox()
+        self.offset_spin = LabeledSlider()
         self.offset_spin.setRange(0, 31)
         self.add_form_row(t("label.bit_offset") + ":", self.offset_spin)
-        
+
         # 位宽
-        self.width_spin = QSpinBox()
+        self.width_spin = LabeledSlider()
         self.width_spin.setRange(1, 32)
         self.width_spin.setValue(1)
         self.add_form_row(t("label.bit_width") + ":", self.width_spin)
@@ -575,172 +644,336 @@ class FieldEditDialog(BaseEditDialog):
             "enumerated_values": self.enum_editor.collect_data()
         }
 
+    def _generate_preview_xml(self) -> str:
+        """生成当前位域编辑状态的 XML 预览"""
+        try:
+            from ..core.svd_generator import SVDGenerator
+            from ..core.data_model import Field
+            access = self.access_combo.currentText()
+            if access == t("value.none"):
+                access = None
+            f = Field(
+                name=self.name_edit.text().strip() or "unnamed",
+                bit_offset=self.offset_spin.value(),
+                bit_width=self.width_spin.value(),
+                description=self.desc_edit.text().strip(),
+                display_name=self.display_name_edit.text().strip(),
+                access=access,
+                reset_value=self.reset_edit.text().strip() or "0x0",
+                enumerated_values=self.enum_editor.collect_data() or [],
+            )
+            return SVDGenerator.generate_field_xml(f)
+        except Exception:
+            return ""
+
 
 class InterruptEditDialog(BaseEditDialog):
-    """中断编辑对话框（支持多外设共用中断）"""
-    
+    """中断编辑对话框（支持多外设共用中断，标签式选择）"""
+
+    # 标签样式
+    _TAG_STYLE = """
+        QFrame {
+            background-color: #FFFFFF;
+            border: 1.5px solid #42A5F5;
+            border-radius: 10px;
+            padding: 2px 6px 2px 8px;
+        }
+        QLabel {
+            background: transparent;
+            border: none;
+            color: #1A1A1A;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        QPushButton {
+            background: transparent;
+            border: none;
+            color: #BDBDBD;
+            font-size: 14px;
+            font-weight: bold;
+            padding: 0px;
+            margin: 0px;
+        }
+        QPushButton:hover {
+            color: #E53935;
+        }
+    """
+    _SUGGEST_ITEM_STYLE = """
+        QPushButton {
+            background-color: #FFFFFF;
+            border: 1px solid #E0E0E0;
+            border-radius: 10px;
+            padding: 2px 8px;
+            color: #424242;
+            font-size: 12px;
+            text-align: left;
+        }
+        QPushButton:hover {
+            background-color: #E3F2FD;
+            border-color: #42A5F5;
+            color: #1565C0;
+        }
+    """
+
     def __init__(self, parent=None, interrupt: Optional[Interrupt] = None,
                  peripherals: Optional[List[str]] = None, is_edit: bool = False):
         # 保存实例变量
         self.interrupt = interrupt
-        self.peripherals = peripherals or []
+        self.all_peripherals = sorted(peripherals or [])
         self.is_edit = is_edit
         self.original_name = interrupt.name if interrupt else ""
-        
+        self._selected_peripherals: List[str] = []
+
         # 设置标题
         title = t("label.dialog_title_edit_interrupt") if is_edit and interrupt else t("label.dialog_title_add_interrupt")
-        
+
         super().__init__(parent, title)
-        
+
         if interrupt:
             self.load_data(interrupt)
-    
+
     def setup_form(self):
         """设置表单内容"""
         # 中断名
         self.name_edit = QLineEdit()
         self.add_form_row(t("label.interrupt_name") + ":", self.name_edit)
-        
+
         # 中断号
-        self.value_spin = QSpinBox()
+        self.value_spin = LabeledSlider()
         self.value_spin.setRange(0, 255)
         self.add_form_row(t("label.interrupt_value") + ":", self.value_spin)
-        
-        # === 关联外设（支持多选，带搜索过滤和快捷操作） ===
+
+        # === 关联外设（标签式选择） ===
         periph_widget = QWidget()
-        periph_container = QVBoxLayout(periph_widget)
-        periph_container.setContentsMargins(0, 0, 0, 0)
-        periph_container.setSpacing(4)
-        
-        # 搜索过滤框
-        search_layout = QHBoxLayout()
+        periph_layout = QVBoxLayout(periph_widget)
+        periph_layout.setContentsMargins(0, 0, 0, 0)
+        periph_layout.setSpacing(4)
+
+        # 搜索/添加输入框
         self.periph_search = QLineEdit()
-        self.periph_search.setPlaceholderText("🔍 搜索外设...")
+        self.periph_search.setPlaceholderText(t("placeholder.search_peripheral", default="搜索或添加外设..."))
         self.periph_search.setClearButtonEnabled(True)
-        self.periph_search.textChanged.connect(self._filter_peripherals)
-        search_layout.addWidget(self.periph_search)
-        
-        # 全选/取消全选按钮
-        self.select_all_btn = QPushButton("全选")
-        self.select_all_btn.setFixedWidth(50)
-        self.select_all_btn.setToolTip("选中所有可见的外设")
-        self.select_all_btn.clicked.connect(self._select_all_visible)
-        search_layout.addWidget(self.select_all_btn)
-        
-        self.deselect_all_btn = QPushButton("清空")
-        self.deselect_all_btn.setFixedWidth(50)
-        self.deselect_all_btn.setToolTip("取消选中所有可见的外设")
-        self.deselect_all_btn.clicked.connect(self._deselect_all_visible)
-        search_layout.addWidget(self.deselect_all_btn)
-        
-        periph_container.addLayout(search_layout)
-        
-        # 已选计数标签
+        self.periph_search.textChanged.connect(self._on_search_changed)
+        periph_layout.addWidget(self.periph_search)
+
+        # 已选标签区域（带滚动）
+        self.tag_scroll = QScrollArea()
+        self.tag_scroll.setWidgetResizable(True)
+        self.tag_scroll.setMaximumHeight(80)
+        self.tag_scroll.setMinimumHeight(36)
+        self.tag_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.tag_scroll.setStyleSheet("QScrollArea { background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 4px; }")
+
+        self.tag_container = QWidget()
+        self.tag_flow = QHBoxLayout(self.tag_container)
+        self.tag_flow.setContentsMargins(4, 4, 4, 4)
+        self.tag_flow.setSpacing(4)
+        self.tag_flow.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.tag_flow.addStretch()
+        self.tag_scroll.setWidget(self.tag_container)
+        periph_layout.addWidget(self.tag_scroll)
+
+        # 已选计数
         self.selected_count_label = QLabel("已选: 0 个外设")
         from ..config.styles import get_style_scheme
         _c = get_style_scheme().colors
         self.selected_count_label.setStyleSheet(f"color: {_c.text_secondary}; font-size: 11px;")
-        periph_container.addWidget(self.selected_count_label)
-        
-        # 外设列表（复选框）
-        self.periph_list = QListWidget()
-        self.periph_list.setMaximumHeight(150)
-        self.periph_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        for periph_name in sorted(self.peripherals):
-            item = QListWidgetItem(periph_name)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(Qt.CheckState.Unchecked)
-            self.periph_list.addItem(item)
-        self.periph_list.itemChanged.connect(self._update_selected_count)
-        periph_container.addWidget(self.periph_list)
-        
+        periph_layout.addWidget(self.selected_count_label)
+
+        # 可添加的外设列表（搜索时显示）
+        self.suggest_scroll = QScrollArea()
+        self.suggest_scroll.setWidgetResizable(True)
+        self.suggest_scroll.setMaximumHeight(100)
+        self.suggest_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.suggest_scroll.setStyleSheet("QScrollArea { background: white; border: 1px solid #E0E0E0; border-radius: 4px; }")
+        self.suggest_scroll.setVisible(False)
+
+        self.suggest_container = QWidget()
+        self.suggest_layout = QVBoxLayout(self.suggest_container)
+        self.suggest_layout.setContentsMargins(2, 2, 2, 2)
+        self.suggest_layout.setSpacing(2)
+        self.suggest_layout.addStretch()
+        self.suggest_scroll.setWidget(self.suggest_container)
+        periph_layout.addWidget(self.suggest_scroll)
+
+        # 快捷操作按钮行
+        action_layout = QHBoxLayout()
+        self.select_all_btn = QPushButton(t("button.select_all", default="全选"))
+        self.select_all_btn.setFixedWidth(60)
+        self.select_all_btn.clicked.connect(self._select_all)
+        action_layout.addWidget(self.select_all_btn)
+
+        self.deselect_all_btn = QPushButton(t("button.clear_all", default="清空"))
+        self.deselect_all_btn.setFixedWidth(60)
+        self.deselect_all_btn.clicked.connect(self._deselect_all)
+        action_layout.addWidget(self.deselect_all_btn)
+
+        action_layout.addStretch()
+        periph_layout.addLayout(action_layout)
+
         self.add_form_row(t("label.peripheral") + ":", periph_widget)
-        
+
         # 描述
         self.desc_edit = QLineEdit()
         self.desc_edit.setPlaceholderText(t("placeholder.interrupt_description"))
         self.add_form_row(t("label.description") + ":", self.desc_edit)
-    
-    def _filter_peripherals(self, filter_text: str):
-        """根据搜索文本过滤外设列表"""
-        filter_lower = filter_text.strip().lower()
-        for i in range(self.periph_list.count()):
-            item = self.periph_list.item(i)
-            if item is None:
-                continue
-            if not filter_lower or filter_lower in item.text().lower():
-                item.setHidden(False)
-            else:
-                item.setHidden(True)
-    
-    def _select_all_visible(self):
-        """选中所有可见的外设"""
-        self.periph_list.blockSignals(True)
-        for i in range(self.periph_list.count()):
-            item = self.periph_list.item(i)
-            if item is not None and not item.isHidden():
-                item.setCheckState(Qt.CheckState.Checked)
-        self.periph_list.blockSignals(False)
-        self._update_selected_count()
-    
-    def _deselect_all_visible(self):
-        """取消选中所有可见的外设"""
-        self.periph_list.blockSignals(True)
-        for i in range(self.periph_list.count()):
-            item = self.periph_list.item(i)
-            if item is not None and not item.isHidden():
-                item.setCheckState(Qt.CheckState.Unchecked)
-        self.periph_list.blockSignals(False)
-        self._update_selected_count()
-    
-    def _update_selected_count(self):
+
+        # 连接预览刷新信号
+        self._connect_preview_signal(self.name_edit)
+        self._connect_preview_signal(self.value_spin)
+        self._connect_preview_signal(self.desc_edit)
+
+    # === 标签操作方法 ===
+
+    def _create_tag(self, name: str) -> QFrame:
+        """创建一个外设标签"""
+        tag = QFrame()
+        tag.setStyleSheet(self._TAG_STYLE)
+        tag.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        tag_layout = QHBoxLayout(tag)
+        tag_layout.setContentsMargins(0, 0, 0, 0)
+        tag_layout.setSpacing(2)
+
+        label = QLabel(name)
+        label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        label.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        tag_layout.addWidget(label)
+
+        close_btn = QPushButton("x")
+        close_btn.setFixedSize(16, 16)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        close_btn.clicked.connect(lambda checked, n=name: self._remove_tag(n))
+        tag_layout.addWidget(close_btn)
+
+        tag.setProperty("periph_name", name)
+        return tag
+
+    def _add_tag(self, name: str):
+        """添加一个外设标签"""
+        if name in self._selected_peripherals:
+            return
+        self._selected_peripherals.append(name)
+
+        # 插入到 stretch 之前
+        tag = self._create_tag(name)
+        count = self.tag_flow.count()
+        self.tag_flow.insertWidget(count - 1, tag)  # stretch is last item
+        self._update_count()
+        self._refresh_suggestions()
+        self.update_preview()
+
+    def _remove_tag(self, name: str):
+        """移除一个外设标签"""
+        if name not in self._selected_peripherals:
+            return
+        self._selected_peripherals.remove(name)
+
+        # 找到并移除对应的 tag widget
+        for i in range(self.tag_flow.count()):
+            widget = self.tag_flow.itemAt(i).widget()
+            if widget and widget.property("periph_name") == name:
+                self.tag_flow.removeWidget(widget)
+                widget.deleteLater()
+                break
+        self._update_count()
+        self._refresh_suggestions()
+        self.update_preview()
+        self._update_count()
+        self._refresh_suggestions()
+
+    def _update_count(self):
         """更新已选计数"""
-        count = len(self._get_selected_peripherals())
+        count = len(self._selected_peripherals)
         self.selected_count_label.setText(f"已选: {count} 个外设")
-    
+
+    # === 搜索和建议 ===
+
+    def _on_search_changed(self, text: str):
+        """搜索文本变化时刷新建议列表"""
+        self._refresh_suggestions()
+
+    def _refresh_suggestions(self):
+        """刷新可添加的外设建议列表"""
+        filter_text = self.periph_search.text().strip().lower()
+
+        # 清除旧的建议按钮
+        while self.suggest_layout.count() > 1:  # 保留最后的 stretch
+            item = self.suggest_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+        # 计算可添加的外设
+        available = [
+            p for p in self.all_peripherals
+            if p not in self._selected_peripherals
+            and (not filter_text or filter_text in p.lower())
+        ]
+
+        if not available:
+            self.suggest_scroll.setVisible(False)
+            return
+
+        self.suggest_scroll.setVisible(True)
+
+        for periph_name in available[:15]:
+            btn = QPushButton(periph_name)
+            btn.setStyleSheet(self._SUGGEST_ITEM_STYLE)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda checked, n=periph_name: self._on_add_periph(n))
+            self.suggest_layout.insertWidget(self.suggest_layout.count() - 1, btn)
+
+    def _on_add_periph(self, name: str):
+        """点击建议项时添加标签"""
+        self._add_tag(name)
+        self.periph_search.clear()
+
+    def _select_all(self):
+        """全选"""
+        for p in self.all_peripherals:
+            if p not in self._selected_peripherals:
+                self._add_tag(p)
+
+    def _deselect_all(self):
+        """清空所有选择"""
+        for name in list(self._selected_peripherals):
+            self._remove_tag(name)
+
+    # === 数据接口 ===
+
     def _get_selected_peripherals(self) -> List[str]:
         """获取选中的外设列表"""
-        selected = []
-        for i in range(self.periph_list.count()):
-            item = self.periph_list.item(i)
-            if item.checkState() == Qt.CheckState.Checked:
-                selected.append(item.text())
-        return selected
-    
+        return list(self._selected_peripherals)
+
     def load_data(self, interrupt: Interrupt):
         """加载数据"""
         if not hasattr(self, 'name_edit'):
-            return  # UI元素可能还没创建
-            
+            return
+
         self.name_edit.setText(interrupt.name)
         self.value_spin.setValue(interrupt.value)
         self.desc_edit.setText(interrupt.description)
-        
-        # 设置关联外设（支持多选）
-        selected_peripherals = interrupt.peripherals if interrupt.peripherals else (
+
+        # 设置关联外设
+        selected = interrupt.peripherals if interrupt.peripherals else (
             [interrupt.peripheral] if interrupt.peripheral else []
         )
-        for i in range(self.periph_list.count()):
-            item = self.periph_list.item(i)
-            if item.text() in selected_peripherals:
-                item.setCheckState(Qt.CheckState.Checked)
-            else:
-                item.setCheckState(Qt.CheckState.Unchecked)
-    
+        for name in selected:
+            self._add_tag(name)
+
     def validate_input(self):
         """验证输入"""
         name = self.name_edit.text().strip()
         Validator.validate_name(name, t("error.interrupt_name_validation"))
-        
-        # 验证中断号
+
         value = self.value_spin.value()
         Validator.validate_irq_number(value)
-        
-        # 验证至少选择一个关联外设
+
         selected = self._get_selected_peripherals()
         if not selected:
             raise ValidationError(t("error.must_select_peripheral"))
-    
+
     def collect_data(self):
         """收集数据"""
         selected_peripherals = self._get_selected_peripherals()
@@ -752,3 +985,19 @@ class InterruptEditDialog(BaseEditDialog):
             "peripheral": selected_peripherals[0] if selected_peripherals else "",
             "peripherals": selected_peripherals
         }
+
+    def _generate_preview_xml(self) -> str:
+        """生成当前中断编辑状态的 XML 预览"""
+        try:
+            from ..core.svd_generator import SVDGenerator
+            from ..core.data_model import Interrupt
+            irq = Interrupt(
+                name=self.name_edit.text().strip() or "unnamed",
+                value=self.value_spin.value(),
+                description=self.desc_edit.text().strip(),
+                peripheral=self._selected_peripherals[0] if self._selected_peripherals else "",
+                peripherals=list(self._selected_peripherals),
+            )
+            return SVDGenerator.generate_interrupt_xml(irq)
+        except Exception:
+            return ""

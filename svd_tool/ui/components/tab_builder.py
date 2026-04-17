@@ -10,13 +10,15 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QLabel,
     QLineEdit, QPushButton, QGroupBox, QSplitter,
     QTreeWidget, QTreeWidgetItem, QHeaderView, QTextEdit,
-    QTableWidget, QTableWidgetItem, QComboBox, QSpinBox, QCheckBox,
+    QTableWidget, QTableWidgetItem, QComboBox, QSpinBox,
     QFormLayout, QGridLayout, QFrame
 )
 from PyQt6.QtCore import Qt
 from ...i18n.i18n import t
 from ...config.styles import get_style_scheme
 from ...config.tree_branch_style import apply_tree_branch_style
+from ..widgets.toggle_switch import ToggleSwitch
+from ..widgets.labeled_slider import LabeledSlider
 
 
 class TabBuilder:
@@ -110,9 +112,7 @@ class TabBuilder:
             mpu_label.setFixedWidth(label_fixed_width)
             mpu_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             device_layout.addWidget(mpu_label, 3, 2)
-            mpu_combo = QComboBox()
-            mpu_combo.addItems([t("value.yes"), t("value.no")])
-            mpu_combo.setCurrentText(t("value.no"))
+            mpu_combo = ToggleSwitch()
             device_layout.addWidget(mpu_combo, 3, 3)
 
             # 第五行：FPU和NVIC优先级位数
@@ -120,16 +120,14 @@ class TabBuilder:
             fpu_label.setFixedWidth(label_fixed_width)
             fpu_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             device_layout.addWidget(fpu_label, 4, 0)
-            fpu_combo = QComboBox()
-            fpu_combo.addItems([t("value.yes"), t("value.no")])
-            fpu_combo.setCurrentText(t("value.no"))
+            fpu_combo = ToggleSwitch()
             device_layout.addWidget(fpu_combo, 4, 1)
 
             nvic_label = QLabel(t("label.nvic_prio_bits") + ":")
             nvic_label.setFixedWidth(label_fixed_width)
             nvic_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             device_layout.addWidget(nvic_label, 4, 2)
-            nvic_prio_spin = QSpinBox()
+            nvic_prio_spin = LabeledSlider()
             nvic_prio_spin.setRange(0, 8)
             nvic_prio_spin.setValue(4)
             device_layout.addWidget(nvic_prio_spin, 4, 3)
@@ -138,12 +136,13 @@ class TabBuilder:
             device_layout.setColumnStretch(3, 1)
             layout.addWidget(device_group)
 
-            # === 公司版权信息组 ===
+            # === 公司版权信息组（留空则不写入SVD） ===
             company_group = QGroupBox(t("label.company_copyright"))
             company_layout = QGridLayout(company_group)
             company_layout.setSpacing(8)
             company_layout.setContentsMargins(16, 22, 16, 16)
 
+            # 公司名
             company_name_label = QLabel(t("label.company_name") + ":")
             company_name_label.setFixedWidth(label_fixed_width)
             company_name_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -152,22 +151,16 @@ class TabBuilder:
             company_name_edit.setPlaceholderText(t("placeholder.company_name"))
             company_layout.addWidget(company_name_edit, 0, 1)
 
-            company_checkbox = QCheckBox(t("label.do_not_display"))
-            company_checkbox.setChecked(False)
-            company_layout.addWidget(company_checkbox, 0, 2)
-
+            # 版权
             copyright_label = QLabel(t("label.copyright_info") + ":")
             copyright_label.setFixedWidth(label_fixed_width)
             copyright_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            company_layout.addWidget(copyright_label, 0, 3)
+            company_layout.addWidget(copyright_label, 0, 2)
             copyright_edit = QLineEdit()
             copyright_edit.setPlaceholderText(t("placeholder.copyright_info"))
-            company_layout.addWidget(copyright_edit, 0, 4)
+            company_layout.addWidget(copyright_edit, 0, 3)
 
-            copyright_checkbox = QCheckBox(t("label.do_not_display"))
-            copyright_checkbox.setChecked(False)
-            company_layout.addWidget(copyright_checkbox, 0, 5)
-
+            # 作者
             author_label = QLabel(t("label.author") + ":")
             author_label.setFixedWidth(label_fixed_width)
             author_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -176,14 +169,11 @@ class TabBuilder:
             author_edit.setPlaceholderText(t("placeholder.author"))
             company_layout.addWidget(author_edit, 1, 1)
 
-            author_checkbox = QCheckBox(t("label.do_not_display"))
-            author_checkbox.setChecked(False)
-            company_layout.addWidget(author_checkbox, 1, 2)
-
+            # 许可证
             license_label = QLabel(t("label.license") + ":")
             license_label.setFixedWidth(label_fixed_width)
             license_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            company_layout.addWidget(license_label, 1, 3)
+            company_layout.addWidget(license_label, 1, 2)
             license_combo = QComboBox()
             license_combo.addItems([
                 t("license.do_not_display"), t("license.apache_2_0"),
@@ -191,10 +181,10 @@ class TabBuilder:
                 t("license.proprietary"), t("license.other")
             ])
             license_combo.setCurrentText(t("license.apache_2_0"))
-            company_layout.addWidget(license_combo, 1, 4)
+            company_layout.addWidget(license_combo, 1, 3)
 
             company_layout.setColumnStretch(1, 1)
-            company_layout.setColumnStretch(4, 1)
+            company_layout.setColumnStretch(3, 1)
             layout.addWidget(company_group)
 
             # === 数据汇总组 ===
@@ -287,28 +277,6 @@ class TabBuilder:
             layout.addWidget(summary_group)
             layout.addStretch(1)
 
-            # 复选框信号
-            def on_company_checkbox_changed(state):
-                company_name_edit.setEnabled(not company_checkbox.isChecked())
-                if company_checkbox.isChecked():
-                    company_name_edit.clear()
-            company_checkbox.stateChanged.connect(on_company_checkbox_changed)
-            company_name_edit.setEnabled(not company_checkbox.isChecked())
-
-            def on_copyright_checkbox_changed(state):
-                copyright_edit.setEnabled(not copyright_checkbox.isChecked())
-                if copyright_checkbox.isChecked():
-                    copyright_edit.clear()
-            copyright_checkbox.stateChanged.connect(on_copyright_checkbox_changed)
-            copyright_edit.setEnabled(not copyright_checkbox.isChecked())
-
-            def on_author_checkbox_changed(state):
-                author_edit.setEnabled(not author_checkbox.isChecked())
-                if author_checkbox.isChecked():
-                    author_edit.clear()
-            author_checkbox.stateChanged.connect(on_author_checkbox_changed)
-            author_edit.setEnabled(not author_checkbox.isChecked())
-
             self.logger.debug(f"调用addTab前，标签页数量: {tab_widget.count()}")
             index = tab_widget.addTab(tab, t("tab.basic_info_tab"))
             self.logger.debug(f"addTab返回索引: {index}，标签页数量: {tab_widget.count()}")
@@ -326,11 +294,8 @@ class TabBuilder:
                 'fpu_combo': fpu_combo,
                 'nvic_prio_spin': nvic_prio_spin,
                 'company_name_edit': company_name_edit,
-                'company_checkbox': company_checkbox,
                 'copyright_edit': copyright_edit,
-                'copyright_checkbox': copyright_checkbox,
                 'author_edit': author_edit,
-                'author_checkbox': author_checkbox,
                 'license_combo': license_combo,
                 'periph_count_label': periph_count_label,
                 'reg_count_label': reg_count_label,
@@ -376,7 +341,7 @@ class TabBuilder:
         delete_periph_btn.setToolTip(t("tooltip.delete_peripheral"))
         periph_toolbar.addWidget(delete_periph_btn)
         # 紧凑模式复选框（只显示到寄存器级别，位域在右侧表格中查看）
-        compact_tree_cb = QCheckBox(t("label.compact_tree", default="紧凑模式"))
+        compact_tree_cb = ToggleSwitch(t("label.compact_tree", default="紧凑模式"))
         compact_tree_cb.setToolTip(t("tooltip.compact_tree", default="树状图只显示到寄存器级别，位域信息在右侧表格中查看"))
         compact_tree_cb.setChecked(False)
         periph_toolbar.addWidget(compact_tree_cb)
@@ -433,7 +398,7 @@ class TabBuilder:
         header = field_table.horizontalHeader()
         if header:
             header.setStretchLastSection(True)
-        field_table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.EditKeyPressed)
+        field_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         field_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         field_table.setAlternatingRowColors(True)
         field_table.setShowGrid(True)
@@ -502,7 +467,7 @@ class TabBuilder:
         irq_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         irq_table.setAlternatingRowColors(True)
         irq_table.setShowGrid(True)
-        irq_table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.EditKeyPressed)
+        irq_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(irq_table)
         tab_widget.addTab(tab, t("tab.interrupt_tab"))
 
@@ -516,33 +481,21 @@ class TabBuilder:
         return tab, widgets
 
     def create_preview_tab(self, tab_widget: QTabWidget) -> tuple:
-        """创建预览标签页"""
-        from .realtime_preview import RealtimePreviewWidget
-
+        """创建预览标签页（纯 XML 视图，使用 preview_manager 的组件）"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        toolbar = QHBoxLayout()
-        toolbar.setSpacing(6)
-        generate_btn = QPushButton(t("button.generate"))
-        generate_btn.setObjectName("btnSavePreview")
-        toolbar.addWidget(generate_btn)
-        export_btn = QPushButton(t("button.export_file"))
-        toolbar.addWidget(export_btn)
-        toolbar.addStretch()
-        layout.addLayout(toolbar)
+        # 预览组件占位 — 将由 preview_manager 在 setup_preview_modes() 中填入
+        self._preview_placeholder = QWidget()
+        self._preview_layout = QVBoxLayout(self._preview_placeholder)
+        self._preview_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._preview_placeholder)
 
-        self.realtime_preview = RealtimePreviewWidget(
-            state_manager=None,
-            coordinator=None
-        )
-        layout.addWidget(self.realtime_preview)
         tab_widget.addTab(tab, t("tab.preview_tab"))
 
         widgets = {
             'preview_tab': tab,
-            'realtime_preview': self.realtime_preview,
-            'generate_btn': generate_btn,
-            'export_btn': export_btn,
         }
         return tab, widgets

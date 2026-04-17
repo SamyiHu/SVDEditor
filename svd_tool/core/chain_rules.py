@@ -19,7 +19,9 @@ class ChainAction:
     target_peripheral: str  # 目标外设名（支持通配符 *）
     target_register: str    # 目标寄存器名（支持通配符 *）
     target_field: str = ""  # 目标位域名（为空表示整个寄存器）
-    action: str = "delete"  # 动作类型：delete, modify
+    action: str = "delete"  # 动作类型：delete, modify, add
+    new_value: str = ""     # modify 时的目标值
+    new_value_property: str = ""  # modify 时要修改的属性名
     description: str = ""   # 描述信息
 
 
@@ -296,6 +298,69 @@ class ChainRulesEngine:
                         result['target'] = f"{target_periph.name}.{action.target_register}"
                     else:
                         result['message'] = f"寄存器 '{action.target_register}' 未找到"
+
+            elif action.action == "modify":
+                if action.target_field:
+                    # 修改位域属性
+                    if hasattr(target_periph, 'registers') and action.target_register in target_periph.registers:
+                        reg = target_periph.registers[action.target_register]
+                        if hasattr(reg, 'fields') and action.target_field in reg.fields:
+                            fld = reg.fields[action.target_field]
+                            prop = action.new_value_property or "access"
+                            if hasattr(fld, prop):
+                                setattr(fld, prop, action.new_value)
+                                result['success'] = True
+                                result['message'] = f"已修改 {target_periph.name}.{action.target_register}.{action.target_field}.{prop} = {action.new_value}"
+                                result['target'] = f"{target_periph.name}.{action.target_register}.{action.target_field}"
+                            else:
+                                result['message'] = f"位域属性 '{prop}' 不存在"
+                        else:
+                            result['message'] = f"位域 '{action.target_field}' 未找到"
+                    else:
+                        result['message'] = f"寄存器 '{action.target_register}' 未找到"
+                elif action.target_register:
+                    # 修改寄存器属性
+                    if hasattr(target_periph, 'registers') and action.target_register in target_periph.registers:
+                        reg = target_periph.registers[action.target_register]
+                        prop = action.new_value_property or "access"
+                        if hasattr(reg, prop):
+                            setattr(reg, prop, action.new_value)
+                            result['success'] = True
+                            result['message'] = f"已修改 {target_periph.name}.{action.target_register}.{prop} = {action.new_value}"
+                            result['target'] = f"{target_periph.name}.{action.target_register}"
+                        else:
+                            result['message'] = f"寄存器属性 '{prop}' 不存在"
+                    else:
+                        result['message'] = f"寄存器 '{action.target_register}' 未找到"
+
+            elif action.action == "add":
+                if action.target_field and action.target_register:
+                    # 添加位域到寄存器
+                    if hasattr(target_periph, 'registers') and action.target_register in target_periph.registers:
+                        reg = target_periph.registers[action.target_register]
+                        if hasattr(reg, 'fields') and action.target_field not in reg.fields:
+                            from .data_model import Field
+                            new_field = Field(name=action.target_field, description=action.description or f"Added by chain rule")
+                            reg.fields[action.target_field] = new_field
+                            result['success'] = True
+                            result['message'] = f"已添加位域 {target_periph.name}.{action.target_register}.{action.target_field}"
+                            result['target'] = f"{target_periph.name}.{action.target_register}.{action.target_field}"
+                        else:
+                            result['message'] = f"位域 '{action.target_field}' 已存在或寄存器无 fields"
+                    else:
+                        result['message'] = f"寄存器 '{action.target_register}' 未找到"
+                elif action.target_register:
+                    # 添加寄存器到外设
+                    if hasattr(target_periph, 'registers') and action.target_register not in target_periph.registers:
+                        from .data_model import Register
+                        new_reg = Register(name=action.target_register, offset="0x00",
+                                          description=action.description or f"Added by chain rule")
+                        target_periph.registers[action.target_register] = new_reg
+                        result['success'] = True
+                        result['message'] = f"已添加寄存器 {target_periph.name}.{action.target_register}"
+                        result['target'] = f"{target_periph.name}.{action.target_register}"
+                    else:
+                        result['message'] = f"寄存器 '{action.target_register}' 已存在"
             
         except Exception as e:
             result['message'] = f"执行失败: {e}"

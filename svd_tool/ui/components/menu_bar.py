@@ -122,31 +122,31 @@ class MenuBarBuilder:
         edit_menu.addSeparator()
         
         # 高级搜索
-        advanced_search_action = QAction("高级搜索...", self.parent)
+        advanced_search_action = QAction(t("menu.edit.advanced_search"), self.parent)
         advanced_search_action.triggered.connect(self.main_window.show_advanced_search)
         advanced_search_action.setShortcut(QKeySequence("Ctrl+H"))
         edit_menu.addAction(advanced_search_action)
-        
+
         # 跳转到地址
-        goto_addr_action = QAction("跳转到地址...", self.parent)
+        goto_addr_action = QAction(t("menu.edit.goto_address"), self.parent)
         goto_addr_action.triggered.connect(self.main_window.show_goto_address)
         goto_addr_action.setShortcut(QKeySequence("Ctrl+Shift+G"))
         edit_menu.addAction(goto_addr_action)
-        
+
         edit_menu.addSeparator()
-        
+
         # 批量操作子菜单
-        batch_menu = edit_menu.addMenu("批量操作")
-        
-        batch_modify_action = QAction("批量修改属性...", self.parent)
+        batch_menu = edit_menu.addMenu(t("menu.edit.batch_ops"))
+
+        batch_modify_action = QAction(t("menu.edit.batch_modify"), self.parent)
         batch_modify_action.triggered.connect(self.main_window.show_batch_modify)
         batch_menu.addAction(batch_modify_action)
-        
-        batch_generate_action = QAction("批量生成寄存器...", self.parent)
+
+        batch_generate_action = QAction(t("menu.edit.batch_generate"), self.parent)
         batch_generate_action.triggered.connect(self.main_window.show_batch_generate)
         batch_menu.addAction(batch_generate_action)
-        
-        batch_clone_action = QAction("批量克隆寄存器...", self.parent)
+
+        batch_clone_action = QAction(t("menu.edit.batch_clone"), self.parent)
         batch_clone_action.triggered.connect(self.main_window.show_batch_clone)
         batch_menu.addAction(batch_clone_action)
         
@@ -186,26 +186,18 @@ class MenuBarBuilder:
         view_menu.addSeparator()
         
         # ===== 显示子菜单（统一管理所有显示选项） =====
-        display_menu = view_menu.addMenu(t("menu.view.display", default="显示"))
-        
-        # SVD预览窗口（可切换，默认显示）
-        self.main_window.toggle_preview_action = QAction(t("menu.view.svd_preview", default="SVD预览窗口"), self.parent)
+        display_menu = view_menu.addMenu(t("menu.view.display"))
+
+        # SVD预览窗口（可切换，默认隐藏）
+        self.main_window.toggle_preview_action = QAction(t("menu.view.svd_preview"), self.parent)
         self.main_window.toggle_preview_action.setCheckable(True)
-        self.main_window.toggle_preview_action.setChecked(True)
+        self.main_window.toggle_preview_action.setChecked(False)
         self.main_window.toggle_preview_action.setShortcut(QKeySequence("Ctrl+P"))
         self.main_window.toggle_preview_action.triggered.connect(self.main_window.toggle_preview_window)
         display_menu.addAction(self.main_window.toggle_preview_action)
-        
+
         display_menu.addSeparator()
-        
-        # 切换左侧面板（F9快捷键）
-        self.main_window.toggle_left_panel_action = QAction(t("menu.view.toggle_left_panel", default="左侧面板"), self.parent)
-        self.main_window.toggle_left_panel_action.setCheckable(True)
-        self.main_window.toggle_left_panel_action.setChecked(True)
-        self.main_window.toggle_left_panel_action.setShortcut(QKeySequence("F9"))
-        self.main_window.toggle_left_panel_action.triggered.connect(self.main_window.toggle_left_panel)
-        display_menu.addAction(self.main_window.toggle_left_panel_action)
-        
+
         # 位域图选项
         self.main_window.toggle_bit_field_action = QAction(t("menu.view.hide_bit_field"), self.parent)
         self.main_window.toggle_bit_field_action.setCheckable(True)
@@ -223,7 +215,7 @@ class MenuBarBuilder:
         view_menu.addSeparator()
         
         # 深色模式切换
-        self.main_window.toggle_dark_mode_action = QAction(t("menu.view.dark_mode", default="深色模式"), self.parent)
+        self.main_window.toggle_dark_mode_action = QAction(t("menu.view.dark_mode"), self.parent)
         self.main_window.toggle_dark_mode_action.setCheckable(True)
         self.main_window.toggle_dark_mode_action.setChecked(False)
         self.main_window.toggle_dark_mode_action.triggered.connect(self.main_window.toggle_dark_mode)
@@ -280,54 +272,48 @@ class MenuBarBuilder:
         tools_menu.addSeparator()
         
         # 导出文档子菜单
-        export_menu = tools_menu.addMenu(t("menu.tools.export_doc", default="导出文档"))
-        
+        export_menu = tools_menu.addMenu(t("menu.tools.export_doc"))
+
         # CSV 寄存器详情
-        csv_action = QAction("CSV 寄存器详情...", self.parent)
+        csv_action = QAction(t("menu.tools.export_csv"), self.parent)
         csv_action.triggered.connect(lambda: self.main_window.export_document("csv"))
         export_menu.addAction(csv_action)
-        
+
         # CSV 寄存器汇总
-        csv_summary_action = QAction("CSV 寄存器汇总...", self.parent)
+        csv_summary_action = QAction(t("menu.tools.export_csv_summary"), self.parent)
         csv_summary_action.triggered.connect(lambda: self.main_window.export_document("csv_summary"))
         export_menu.addAction(csv_summary_action)
-        
+
         # Markdown
-        md_action = QAction("Markdown 文档...", self.parent)
+        md_action = QAction(t("menu.tools.export_markdown"), self.parent)
         md_action.triggered.connect(lambda: self.main_window.export_document("markdown"))
         md_action.setShortcut(QKeySequence("Ctrl+Shift+M"))
         export_menu.addAction(md_action)
-        
+
         # HTML
-        html_action = QAction("HTML 文档...", self.parent)
+        html_action = QAction(t("menu.tools.export_html"), self.parent)
         html_action.triggered.connect(lambda: self.main_window.export_document("html"))
         export_menu.addAction(html_action)
-        
+
         # C头文件
-        header_action = QAction("C 头文件 (.h)...", self.parent)
+        header_action = QAction(t("menu.tools.export_header"), self.parent)
         header_action.triggered.connect(self.main_window.export_header_file)
         export_menu.addAction(header_action)
         
         tools_menu.addSeparator()
-        
-        # SVD Diff 比较
-        diff_action = QAction("SVD 文件比较 (Diff)...", self.parent)
-        diff_action.triggered.connect(self.main_window.show_svd_diff)
-        diff_action.setShortcut(QKeySequence("Ctrl+D"))
-        tools_menu.addAction(diff_action)
-        
-        # SVD 导入合并
-        merge_action = QAction("SVD 导入合并...", self.parent)
-        merge_action.triggered.connect(self.main_window.show_svd_merge)
-        merge_action.setShortcut(QKeySequence("Ctrl+M"))
-        tools_menu.addAction(merge_action)
-        
-        
+
+        # SVD 比较与合并
+        diff_merge_action = QAction(t("menu.tools.svd_diff_merge"), self.parent)
+        diff_merge_action.triggered.connect(self.main_window.show_svd_diff_merge)
+        diff_merge_action.setShortcut(QKeySequence("Ctrl+D"))
+        tools_menu.addAction(diff_merge_action)
+
+
         tools_menu.addSeparator()
         
         # 连锁操作开关
         self.main_window.toggle_chain_action = QAction(
-            t("menu.tools.chain_enabled", default="启用连锁操作"), self.parent)
+            t("menu.tools.chain_enabled"), self.parent)
         self.main_window.toggle_chain_action.setCheckable(True)
         self.main_window.toggle_chain_action.setChecked(True)
         self.main_window.toggle_chain_action.triggered.connect(
@@ -336,7 +322,7 @@ class MenuBarBuilder:
         
         # 连锁规则编辑
         chain_edit_action = QAction(
-            t("menu.tools.chain_rules", default="编辑连锁规则..."), self.parent)
+            t("menu.tools.chain_rules"), self.parent)
         chain_edit_action.triggered.connect(self.main_window.show_chain_rules_dialog)
         tools_menu.addAction(chain_edit_action)
     

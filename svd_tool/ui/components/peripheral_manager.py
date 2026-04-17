@@ -14,6 +14,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QObject
 from svd_tool.core.data_model import Peripheral, Register, Field
 from .state_manager import StateManager
 from svd_tool.core.constants import NODE_TYPES
+from ...i18n.i18n import t
 
 
 class PeripheralManager(QObject):
@@ -48,9 +49,14 @@ class PeripheralManager(QObject):
         
         # 标记：跳过下一次 on_state_changed 中的树重建（用于文档切换优化）
         self._skip_next_tree_rebuild = False
-        
+
         # 名称→QTreeWidgetItem 缓存（避免 select_* 方法线性遍历整棵树）
         self._tree_item_cache = {}  # path -> QTreeWidgetItem
+
+        # 懒加载状态追踪
+        self._populated_peripherals = set()  # 已加载寄存器的外设名
+        self._populated_registers = set()    # 已加载位域的寄存器路径 "periph/reg"
+        self._dummy_child_key = "__dummy__"  # 占位子项标识
         
         # 连接UI信号
         self.connect_ui_signals()
@@ -65,6 +71,7 @@ class PeripheralManager(QObject):
         if periph_tree:
             periph_tree.itemSelectionChanged.connect(self.on_periph_tree_selection_changed)
             periph_tree.itemDoubleClicked.connect(self.on_periph_tree_double_clicked)
+            periph_tree.itemExpanded.connect(self._on_item_expanded)
     
     def on_state_changed(self):
         """状态变更时的处理"""
@@ -156,8 +163,8 @@ class PeripheralManager(QObject):
         return compact_tree_cb is not None and compact_tree_cb.isChecked()
     
     def update_peripheral_tree(self, preserve_expanded=True):
-        """更新外设树
-        
+        """更新外设树（懒加载模式：只创建外设级别节点）
+
         Args:
             preserve_expanded: 是否保留当前展开状态。
                 True: 正常编辑操作，保留展开状态。
@@ -166,93 +173,62 @@ class PeripheralManager(QObject):
         periph_tree = self.layout_manager.get_widget('periph_tree')
         if not periph_tree:
             return
-        
-        # 检查紧凑模式
+
         compact = self.is_compact_tree()
-        
-        # 阻塞信号，防止重建过程中触发选择变更导致展开/跳转
+
+        # 重置懒加载状态
+        self._populated_peripherals.clear()
+        self._populated_registers.clear()
+
         periph_tree.blockSignals(True)
-        
-        # 暂停UI更新，避免重建过程中的逐行重绘导致卡顿
         periph_tree.setUpdatesEnabled(False)
-        
+
         try:
-            # 保存当前展开状态（仅在保留模式下）
             expanded_paths = self._get_expanded_items(periph_tree) if preserve_expanded else []
-            
+
             periph_tree.clear()
-            
-            # 重新设置列标题（重要：语言切换时需要更新）
-            from ...i18n.i18n import t
             periph_tree.setHeaderLabels([t("label.name_column"), t("label.offset_column"), t("label.description_column"), t("label.access_column"), t("label.reset_value_column")])
-            
-            # 创建项目映射，便于后续查找
-            item_map = {}  # 路径 -> 项目
-            
-            # 添加外设
+
+            item_map = {}
+
+            # 只创建外设级别节点 + 占位子项
             for periph_name, peripheral in self.state_manager.device_info.peripherals.items():
                 periph_item = QTreeWidgetItem(periph_tree)
                 periph_item.setText(0, periph_name)
                 periph_item.setText(1, peripheral.base_address)
                 periph_item.setText(2, peripheral.description)
                 periph_item.setData(0, Qt.ItemDataRole.UserRole, 'peripheral')
-                periph_item.setData(0, Qt.ItemDataRole.UserRole + 1, periph_name)  # 设置名称数据
-                
-                # 默认折叠外设（不调用setExpanded，减少不必要的信号）
-                
-                # 保存到映射
+                periph_item.setData(0, Qt.ItemDataRole.UserRole + 1, periph_name)
+
                 item_map[periph_name] = periph_item
-                
-                # 添加寄存器子项
-                for reg_name, register in peripheral.registers.items():
-                    reg_item = QTreeWidgetItem(periph_item)
-                    reg_item.setText(0, reg_name)
-                    reg_item.setText(1, register.offset)
-                    reg_item.setText(2, register.description)  # 改为描述
-                    reg_item.setText(3, register.access or "")
-                    reg_item.setText(4, register.reset_value)
-                    reg_item.setData(0, Qt.ItemDataRole.UserRole, 'register')
-                    reg_item.setData(0, Qt.ItemDataRole.UserRole + 1, reg_name)  # 设置名称数据
-                    
-                    # 默认折叠寄存器
-                    
-                    # 保存到映射
-                    reg_path = f"{periph_name}/{reg_name}"
-                    item_map[reg_path] = reg_item
-                    
-                    # 紧凑模式下不添加位域子项（位域在右侧表格中查看）
-                    if compact:
-                        continue
-                    
-                    # 添加位域子项
-                    for field_name, field in register.fields.items():
-                        field_item = QTreeWidgetItem(reg_item)
-                        field_item.setText(0, field_name)
-                        # 偏移列显示偏移和位宽（例如："0-3"表示从位0开始，宽度为3）
-                        field_item.setText(1, f"[{field.bit_offset}:{field.bit_offset + field.bit_width - 1}]")
-                        # 描述列显示描述
-                        field_item.setText(2, field.description or "")
-                        field_item.setText(3, field.access or "")
-                        field_item.setText(4, field.reset_value)
-                        field_item.setData(0, Qt.ItemDataRole.UserRole, 'field')
-                        field_item.setData(0, Qt.ItemDataRole.UserRole + 1, field_name)  # 设置名称数据
-            
-            # 更新名称→节点缓存（供 select_* 方法使用，避免线性遍历）
+
+                # 添加占位子项（显示展开箭头）
+                dummy = QTreeWidgetItem(periph_item)
+                dummy.setText(0, "")
+                dummy.setData(0, Qt.ItemDataRole.UserRole, self._dummy_child_key)
+
+                # 如果之前展开过，立即加载子节点并恢复展开状态
+                if periph_name in expanded_paths:
+                    self._populate_peripheral_children(periph_item, periph_name, compact)
+                    self._populated_peripherals.add(periph_name)
+                    periph_item.setExpanded(True)
+
+                    # 恢复之前展开的寄存器
+                    for path in expanded_paths:
+                        if path.startswith(periph_name + "/"):
+                            reg_name = path.split("/")[1]
+                            for j in range(periph_item.childCount()):
+                                reg_child = periph_item.child(j)
+                                if reg_child.text(0) == reg_name:
+                                    if not compact:
+                                        reg_path = f"{periph_name}/{reg_name}"
+                                        self._populate_register_children(reg_child, periph_name, reg_name)
+                                        self._populated_registers.add(reg_path)
+                                    reg_child.setExpanded(True)
+                                    break
+
             self._tree_item_cache = item_map
-            
-            # 恢复展开状态（批量处理，减少重绘）
-            for path in expanded_paths:
-                if path in item_map:
-                    item = item_map[path]
-                    item.setExpanded(True)
-                    
-                    # 如果这是一个寄存器路径，还需要确保其父外设也是展开的
-                    if '/' in path:
-                        periph_name = path.split('/')[0]
-                        if periph_name in item_map:
-                            item_map[periph_name].setExpanded(True)
         finally:
-            # 恢复UI更新和信号
             periph_tree.setUpdatesEnabled(True)
             periph_tree.blockSignals(False)
     
@@ -287,7 +263,97 @@ class PeripheralManager(QObject):
             traverse(item)
         
         return expanded
-    
+
+    def _on_item_expanded(self, item):
+        """懒加载：展开节点时加载子项"""
+        item_type = item.data(0, Qt.ItemDataRole.UserRole)
+        compact = self.is_compact_tree()
+
+        if item_type == 'peripheral':
+            periph_name = item.data(0, Qt.ItemDataRole.UserRole + 1)
+            if periph_name and periph_name not in self._populated_peripherals:
+                self._populate_peripheral_children(item, periph_name, compact)
+                self._populated_peripherals.add(periph_name)
+
+        elif item_type == 'register' and not compact:
+            reg_name = item.data(0, Qt.ItemDataRole.UserRole + 1)
+            periph_item = item.parent()
+            if periph_item:
+                periph_name = periph_item.data(0, Qt.ItemDataRole.UserRole + 1)
+                if periph_name:
+                    reg_path = f"{periph_name}/{reg_name}"
+                    if reg_path not in self._populated_registers:
+                        self._populate_register_children(item, periph_name, reg_name)
+                        self._populated_registers.add(reg_path)
+
+    def _populate_peripheral_children(self, periph_item, periph_name, compact=None):
+        """懒加载：填充外设的寄存器子节点"""
+        peripheral = self.state_manager.device_info.peripherals.get(periph_name)
+        if not peripheral:
+            return
+
+        # 移除占位子项
+        to_remove = []
+        for i in range(periph_item.childCount()):
+            child = periph_item.child(i)
+            if child.data(0, Qt.ItemDataRole.UserRole) == self._dummy_child_key:
+                to_remove.append(child)
+        for child in to_remove:
+            periph_item.removeChild(child)
+
+        if compact is None:
+            compact = self.is_compact_tree()
+
+        for reg_name, register in peripheral.registers.items():
+            reg_item = QTreeWidgetItem(periph_item)
+            reg_item.setText(0, reg_name)
+            reg_item.setText(1, register.offset)
+            reg_item.setText(2, register.description)
+            reg_item.setText(3, register.access or "")
+            reg_item.setText(4, register.reset_value)
+            reg_item.setData(0, Qt.ItemDataRole.UserRole, 'register')
+            reg_item.setData(0, Qt.ItemDataRole.UserRole + 1, reg_name)
+
+            reg_path = f"{periph_name}/{reg_name}"
+            self._tree_item_cache[reg_path] = reg_item
+
+            if not compact:
+                # 添加占位子项显示展开箭头
+                dummy = QTreeWidgetItem(reg_item)
+                dummy.setText(0, "")
+                dummy.setData(0, Qt.ItemDataRole.UserRole, self._dummy_child_key)
+
+    def _populate_register_children(self, reg_item, periph_name, reg_name):
+        """懒加载：填充寄存器的位域子节点"""
+        peripheral = self.state_manager.device_info.peripherals.get(periph_name)
+        if not peripheral:
+            return
+        register = peripheral.registers.get(reg_name)
+        if not register:
+            return
+
+        # 移除占位子项
+        to_remove = []
+        for i in range(reg_item.childCount()):
+            child = reg_item.child(i)
+            if child.data(0, Qt.ItemDataRole.UserRole) == self._dummy_child_key:
+                to_remove.append(child)
+        for child in to_remove:
+            reg_item.removeChild(child)
+
+        for field_name, field in register.fields.items():
+            field_item = QTreeWidgetItem(reg_item)
+            field_item.setText(0, field_name)
+            field_item.setText(1, f"[{field.bit_offset}:{field.bit_offset + field.bit_width - 1}]")
+            field_item.setText(2, field.description or "")
+            field_item.setText(3, field.access or "")
+            field_item.setText(4, field.reset_value)
+            field_item.setData(0, Qt.ItemDataRole.UserRole, 'field')
+            field_item.setData(0, Qt.ItemDataRole.UserRole + 1, field_name)
+
+            field_path = f"{periph_name}/{reg_name}/{field_name}"
+            self._tree_item_cache[field_path] = field_item
+
     def update_ui_state(self):
         """更新UI状态（按钮启用/禁用）"""
         # 获取当前选择
@@ -348,11 +414,11 @@ class PeripheralManager(QObject):
             if peripheral.name in self.state_manager.device_info.peripherals:
                 QMessageBox.warning(
                     self.layout_manager.main_window,
-                    "警告",
-                    f"外设 '{peripheral.name}' 已存在！"
+                    t("warn.title"),
+                    t("warn.periph_exists", name=peripheral.name)
                 )
                 return
-            
+
             # 添加到状态管理器
             # 注意：add_peripheral 内部通过 execute_command → _notify_state_change → on_state_changed → update_peripheral_tree
             # 不需要在这里再次调用 update_peripheral_tree()（避免双重树重建）
@@ -408,8 +474,8 @@ class PeripheralManager(QObject):
                 if updated_peripheral.name in self.state_manager.device_info.peripherals:
                     QMessageBox.warning(
                         self.layout_manager.main_window,
-                        "警告",
-                        f"外设 '{updated_peripheral.name}' 已存在！"
+                        t("warn.title"),
+                        t("warn.periph_exists", name=updated_peripheral.name)
                     )
                     return
                 
@@ -421,7 +487,7 @@ class PeripheralManager(QObject):
                 except ValueError as e:
                     QMessageBox.warning(
                         self.layout_manager.main_window,
-                        "警告",
+                        t("warn.title"),
                         str(e)
                     )
                     return
@@ -448,8 +514,8 @@ class PeripheralManager(QObject):
         # 确认对话框
         reply = QMessageBox.question(
             self.layout_manager.main_window,
-            "确认删除",
-            f"确定要删除外设 '{periph_name}' 及其所有寄存器和位域吗？",
+            t("msg.confirm_delete"),
+            t("dialog.confirm_delete_periph", name=periph_name),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -492,25 +558,25 @@ class PeripheralManager(QObject):
         peripheral = self.state_manager.device_info.peripherals.get(periph_name)
         
         if not peripheral:
-            errors.append(f"外设 '{periph_name}' 不存在")
+            errors.append(t("validation.periph_not_exist", name=periph_name))
             return errors
         
         # 检查基本字段
         if not peripheral.name:
-            errors.append("外设名称不能为空")
-        
+            errors.append(t("validation.periph_name_empty"))
+
         if not peripheral.base_address:
-            errors.append("外设基地址不能为空")
-        
+            errors.append(t("validation.periph_base_empty", default="外设基地址不能为空"))
+
         # 检查寄存器
         for reg_name, register in peripheral.registers.items():
             if not reg_name:
-                errors.append(f"外设 '{periph_name}' 中的寄存器名称不能为空")
-            
+                errors.append(t("validation.reg_name_empty", name=periph_name))
+
             # 检查位域
             for field_name, field in register.fields.items():
                 if not field_name:
-                    errors.append(f"寄存器 '{reg_name}' 中的位域名称不能为空")
+                    errors.append(t("validation.field_name_empty", name=reg_name))
         
         return errors
     
@@ -676,25 +742,25 @@ class PeripheralManager(QObject):
         if not selected_items:
             QMessageBox.warning(
                 self.layout_manager.main_window,
-                "操作提示",
-                "请先选中一个外设"
+                t("dialog.op_hint"),
+                t("msg.select_peripheral_first")
             )
             return
-        
+
         item = selected_items[0]
-        
+
         # 获取TreeManager（需要从主窗口获取）
         main_window = self.layout_manager.main_window
         if not hasattr(main_window, 'tree_manager'):
             return
-        
+
         # 检查项目类型
         item_type = main_window.tree_manager.get_item_type(item)
         if item_type != "peripheral":
             QMessageBox.warning(
                 self.layout_manager.main_window,
-                "操作限制",
-                "只支持外设的上移操作"
+                t("dialog.op_limit"),
+                t("warn.periph_only_move_up")
             )
             return
         
@@ -723,26 +789,26 @@ class PeripheralManager(QObject):
         command = Command(
             execute=execute_move_up,
             undo=undo_move_up,
-            description=f"上移外设: {periph_name}"
+            description=t("cmd.move_periph_up", name=periph_name)
         )
-        
+
         # 通过StateManager执行命令（支持撤销）
         # 注意：execute_command 内部会触发 _notify_state_change -> on_state_changed -> update_peripheral_tree
         # 所以这里不需要再次调用 update_peripheral_tree()
         moved = self.state_manager.execute_command(command)
-        
+
         if moved:
             # 重新选中该项目（延迟执行，等树重建完成）
             from PyQt6.QtCore import QTimer
             QTimer.singleShot(50, lambda: self._select_peripheral_in_tree(periph_name))
             # 显示状态消息
             if hasattr(main_window, 'status_label'):
-                main_window.status_label.setText(f"已上移外设: {periph_name}")
+                main_window.status_label.setText(t("status.periph_moved_up", name=periph_name))
         else:
             QMessageBox.information(
                 self.layout_manager.main_window,
-                "操作提示",
-                "外设已在最上方，无法上移"
+                t("dialog.op_hint"),
+                t("warn.periph_at_top")
             )
     
     def move_selected_peripheral_down(self):
@@ -757,25 +823,25 @@ class PeripheralManager(QObject):
         if not selected_items:
             QMessageBox.warning(
                 self.layout_manager.main_window,
-                "操作提示",
-                "请先选中一个外设"
+                t("dialog.op_hint"),
+                t("msg.select_peripheral_first")
             )
             return
-        
+
         item = selected_items[0]
-        
+
         # 获取TreeManager（需要从主窗口获取）
         main_window = self.layout_manager.main_window
         if not hasattr(main_window, 'tree_manager'):
             return
-        
+
         # 检查项目类型
         item_type = main_window.tree_manager.get_item_type(item)
         if item_type != "peripheral":
             QMessageBox.warning(
                 self.layout_manager.main_window,
-                "操作限制",
-                "只支持外设的下移操作"
+                t("dialog.op_limit"),
+                t("warn.periph_only_move_down")
             )
             return
         
@@ -802,26 +868,26 @@ class PeripheralManager(QObject):
         command = Command(
             execute=execute_move_down,
             undo=undo_move_down,
-            description=f"下移外设: {periph_name}"
+            description=t("cmd.move_periph_down", name=periph_name)
         )
-        
+
         # 通过StateManager执行命令（支持撤销）
         # 注意：execute_command 内部会触发 _notify_state_change -> on_state_changed -> update_peripheral_tree
         # 所以这里不需要再次调用 update_peripheral_tree()
         moved = self.state_manager.execute_command(command)
-        
+
         if moved:
             # 重新选中该项目（延迟执行，等树重建完成）
             from PyQt6.QtCore import QTimer
             QTimer.singleShot(50, lambda: self._select_peripheral_in_tree(periph_name))
             # 显示状态消息
             if hasattr(main_window, 'status_label'):
-                main_window.status_label.setText(f"已下移外设: {periph_name}")
+                main_window.status_label.setText(t("status.periph_moved_down", name=periph_name))
         else:
             QMessageBox.information(
                 self.layout_manager.main_window,
-                "操作提示",
-                "外设已在最下方，无法下移"
+                t("dialog.op_hint"),
+                t("warn.periph_at_bottom")
             )
     
     def _select_peripheral_in_tree(self, periph_name: str):
@@ -854,14 +920,21 @@ class PeripheralManager(QObject):
         self.state_manager.set_selection(peripheral=periph_name, element_type='peripheral')
     
     def select_register(self, periph_name: str, reg_name: str):
-        """选中指定寄存器 — 使用缓存 O(1) 查找"""
+        """选中指定寄存器 — 使用缓存 O(1) 查找，支持懒加载"""
         periph_tree = self.layout_manager.get_widget('periph_tree')
         if not periph_tree:
             return
-        
+
+        # 确保父外设已懒加载寄存器子节点
+        if periph_name not in self._populated_peripherals:
+            periph_item = self._tree_item_cache.get(periph_name)
+            if periph_item:
+                self._populate_peripheral_children(periph_item, periph_name)
+                self._populated_peripherals.add(periph_name)
+
         # 阻塞信号，避免 setCurrentItem 触发 itemSelectionChanged 导致双重通知
         periph_tree.blockSignals(True)
-        
+
         try:
             # 使用缓存查找寄存器节点（O(1)）
             reg_path = f"{periph_name}/{reg_name}"
@@ -894,11 +967,26 @@ class PeripheralManager(QObject):
         self.selection_changed.emit(periph_name, reg_name, None)
     
     def select_field(self, periph_name: str, reg_name: str, field_name: str):
-        """选中指定位域 — 使用缓存 O(1) 查找"""
+        """选中指定位域 — 使用缓存 O(1) 查找，支持懒加载"""
         periph_tree = self.layout_manager.get_widget('periph_tree')
         if not periph_tree:
             return
-        
+
+        # 确保父外设已懒加载寄存器子节点
+        if periph_name not in self._populated_peripherals:
+            periph_item = self._tree_item_cache.get(periph_name)
+            if periph_item:
+                self._populate_peripheral_children(periph_item, periph_name)
+                self._populated_peripherals.add(periph_name)
+
+        # 确保寄存器已懒加载位域子节点
+        reg_path = f"{periph_name}/{reg_name}"
+        if reg_path not in self._populated_registers:
+            reg_item = self._tree_item_cache.get(reg_path)
+            if reg_item:
+                self._populate_register_children(reg_item, periph_name, reg_name)
+                self._populated_registers.add(reg_path)
+
         # 阻塞信号，避免 setCurrentItem 触发 itemSelectionChanged 导致双重通知
         periph_tree.blockSignals(True)
         
@@ -994,8 +1082,8 @@ class PeripheralManager(QObject):
         except Exception as e:
             QMessageBox.critical(
                 self.layout_manager.main_window,
-                "导入错误",
-                f"导入外设数据时发生错误: {str(e)}"
+                t("dialog.import_error"),
+                t("dialog.import_periph_error", error=str(e))
             )
     
     def copy_peripheral(self, periph_name: str):
@@ -1008,7 +1096,7 @@ class PeripheralManager(QObject):
                 # 显示状态消息
                 main_window = self.layout_manager.main_window
                 if hasattr(main_window, 'status_label'):
-                    main_window.status_label.setText(f"已复制外设: {periph_name}")
+                    main_window.status_label.setText(t("status.periph_copied", name=periph_name))
                 # 不再显示弹窗，避免干扰
                 # QMessageBox.information(
                 #     main_window,
@@ -1018,8 +1106,8 @@ class PeripheralManager(QObject):
         except Exception as e:
             QMessageBox.critical(
                 self.layout_manager.main_window,
-                "复制错误",
-                f"复制外设时发生错误: {str(e)}"
+                t("msg.copy_error"),
+                t("status.copy_periph_error", error=str(e))
             )
     
     def paste_peripheral(self):
@@ -1053,13 +1141,13 @@ class PeripheralManager(QObject):
             # 显示状态消息
             main_window = self.layout_manager.main_window
             if hasattr(main_window, 'status_label'):
-                main_window.status_label.setText(f"已粘贴外设: {new_name}")
-                
+                main_window.status_label.setText(t("status.periph_pasted", name=new_name))
+
         except Exception as e:
             QMessageBox.critical(
                 self.layout_manager.main_window,
-                "粘贴错误",
-                f"粘贴外设时发生错误: {str(e)}"
+                t("msg.paste_error"),
+                t("status.paste_periph_error", error=str(e))
             )
 
     def copy_register(self, periph_name: str, reg_name: str):
@@ -1093,13 +1181,13 @@ class PeripheralManager(QObject):
                 # 显示状态消息（仅状态栏）
                 main_window = self.layout_manager.main_window
                 if hasattr(main_window, 'status_label'):
-                    main_window.status_label.setText(f"已复制寄存器: {reg_name}")
+                    main_window.status_label.setText(t("status.reg_copied", name=reg_name))
                 # 不显示弹窗
         except Exception as e:
             QMessageBox.critical(
                 self.layout_manager.main_window,
-                "复制错误",
-                f"复制寄存器时发生错误: {str(e)}"
+                t("msg.copy_error"),
+                t("status.copy_reg_error", error=str(e))
             )
 
     def paste_register(self, periph_name: str):
@@ -1172,13 +1260,13 @@ class PeripheralManager(QObject):
             # 显示状态消息
             main_window = self.layout_manager.main_window
             if hasattr(main_window, 'status_label'):
-                main_window.status_label.setText(f"已粘贴寄存器: {new_name}")
-                
+                main_window.status_label.setText(t("status.reg_pasted", name=new_name))
+
         except Exception as e:
             QMessageBox.critical(
                 self.layout_manager.main_window,
-                "粘贴错误",
-                f"粘贴寄存器时发生错误: {str(e)}"
+                t("msg.paste_error"),
+                t("status.paste_reg_error", error=str(e))
             )
 
     def copy_field(self, periph_name: str, reg_name: str, field_name: str):
@@ -1223,13 +1311,13 @@ class PeripheralManager(QObject):
                 # 显示状态消息（仅状态栏）
                 main_window = self.layout_manager.main_window
                 if hasattr(main_window, 'status_label'):
-                    main_window.status_label.setText(f"已复制位域: {field_name}")
+                    main_window.status_label.setText(t("status.field_copied", name=field_name))
                 # 不显示弹窗
         except Exception as e:
             QMessageBox.critical(
                 self.layout_manager.main_window,
-                "复制错误",
-                f"复制位域时发生错误: {str(e)}"
+                t("msg.copy_error"),
+                t("status.copy_field_error", error=str(e))
             )
 
     def paste_field(self, periph_name: str, reg_name: str):
@@ -1295,11 +1383,11 @@ class PeripheralManager(QObject):
             # 显示状态消息
             main_window = self.layout_manager.main_window
             if hasattr(main_window, 'status_label'):
-                main_window.status_label.setText(f"已粘贴位域: {new_name}")
-                
+                main_window.status_label.setText(t("status.field_pasted", name=new_name))
+
         except Exception as e:
             QMessageBox.critical(
                 self.layout_manager.main_window,
-                "粘贴错误",
-                f"粘贴位域时发生错误: {str(e)}"
+                t("msg.paste_error"),
+                t("status.paste_field_error", error=str(e))
             )

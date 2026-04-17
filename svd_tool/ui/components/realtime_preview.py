@@ -821,6 +821,7 @@ class RealtimePreviewWidget(QWidget):
         self.state_manager = state_manager
         self.coordinator = coordinator
         self.logger = logging.getLogger("RealtimePreviewWidget")
+        self.logger.info("RealtimePreviewWidget initialized; will log preview activity")
         
         # 当前选中的元素信息
         self.current_selection = {
@@ -883,28 +884,27 @@ class RealtimePreviewWidget(QWidget):
             self.coordinator.selection_changed.connect(self.on_coordinator_selection_changed)
     
     def init_ui(self):
-        """初始化UI"""
+        """初始化UI（纯 XML 视图）"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        
+
         # 工具栏
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(5, 2, 5, 2)
-        
-        # 保存按钮（保存编辑的XML到设备信息）
+
+        # 导出按钮
+        self._export_btn = QPushButton(t("button.export_file"))
+        toolbar.addWidget(self._export_btn)
+
+        # 保存按钮
         save_btn = QPushButton(t("button.save"))
         save_btn.clicked.connect(self.save_edited_xml)
         toolbar.addWidget(save_btn)
-        
-        # 跳转到选中按钮
-        jump_btn = QPushButton(t("button.jump_to_selection"))
-        jump_btn.clicked.connect(self.jump_to_selection)
-        toolbar.addWidget(jump_btn)
-        
+
         toolbar.addStretch()
-        
+
         layout.addLayout(toolbar)
-        
+
         # 分隔线
         separator = QFrame()
         separator.setFrameShape(QFrame.Shape.HLine)
@@ -913,18 +913,22 @@ class RealtimePreviewWidget(QWidget):
         _vc = get_style_scheme().colors
         separator.setStyleSheet(f"background-color: {_vc.viz_separator_color}; border: none;")
         layout.addWidget(separator)
-        
+
+        # XML视图（直接嵌入，不使用 QStackedWidget）
+        xml_page = QWidget()
+        xml_layout = QVBoxLayout(xml_page)
+        xml_layout.setContentsMargins(0, 0, 0, 0)
+
         # 预览文本编辑器（使用HighlightedTextEdit以支持高亮和折叠功能）
         self.preview_edit = HighlightedTextEdit()
         self.preview_edit.setReadOnly(False)  # 改为可编辑
-        # self.preview_edit.show()  # 确保编辑器可见
-        
+
         # 设置字体
         font = QFont("Consolas, 'Courier New', monospace")
         font.setPointSize(10)
         self.preview_edit.setFont(font)
         self.preview_edit.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        
+
         # 使用全局样式方案的配色
         from ...config.styles import get_style_scheme
         scheme = get_style_scheme()
@@ -943,7 +947,7 @@ class RealtimePreviewWidget(QWidget):
                 border: 1px solid {c.accent};
             }}
         """)
-        
+
         # 连接选择变化信号
         self.preview_edit.selectionChanged.connect(self.on_preview_selection_changed)
         # 连接文本变化信号
@@ -952,25 +956,29 @@ class RealtimePreviewWidget(QWidget):
         self.preview_edit.fold_clicked.connect(self.on_fold_clicked)
         # 连接元素点击信号 - 连接到element_selected信号
         self.preview_edit.element_clicked.connect(self.on_element_clicked)
-        
-        layout.addWidget(self.preview_edit)
-        
+
+        xml_layout.addWidget(self.preview_edit)
+
         # 添加语法高亮（在添加到布局后）
         doc = self.preview_edit.document()
         if doc:
             self.highlighter = XMLHighlighter(doc)
-        
+
         # 状态栏
         self.status_label = QLabel("")
         self.status_label.setStyleSheet(f"color: {c.text_secondary}; font-size: 9pt; padding: 2px 4px;")
-        layout.addWidget(self.status_label)
-    
+        xml_layout.addWidget(self.status_label)
+
+        layout.addWidget(xml_page)
+        self._current_view = "xml"
+
     def refresh_preview(self, immediate: bool = False):
         """刷新预览
-        
+
         Args:
             immediate: 是否立即刷新（不使用防抖）
         """
+        self.logger.info(f"refresh_preview called; immediate={immediate}")
         if immediate:
             self._update_preview()
         else:
@@ -1041,8 +1049,12 @@ class RealtimePreviewWidget(QWidget):
                 _ = self.preview_edit.isVisible()
             except RuntimeError:
                 return
-            
+
             device_info = self.state_manager.device_info
+            try:
+                self.logger.info(f"_update_preview: device_info present={bool(device_info)}")
+            except Exception:
+                pass
             if not device_info:
                 return
             
@@ -1095,6 +1107,7 @@ class RealtimePreviewWidget(QWidget):
             return
         
         try:
+            self.logger.info(f"_on_xml_result_ready: gen_id={gen_id} pretty_len={len(pretty_svd) if pretty_svd else 0} data_type={type(data)}")
             if not hasattr(self, 'preview_edit') or self.preview_edit is None:
                 return
             
@@ -2042,7 +2055,7 @@ class RealtimePreviewWidget(QWidget):
         except Exception as e:
             # 解析失败，只发射编辑信号
             self.xml_edited.emit(edited_xml)
-            self.status_label.setText(f"{t('status.xml_edited')} (解析失败)")
+            self.status_label.setText(f"{t('status.xml_edited')} ({t('status.parse_failed')})")
             self.logger.warning(f"XML解析失败: {e}")
         
         # 发射编辑信号（用于其他用途）
@@ -2130,7 +2143,7 @@ class RealtimePreviewWidget(QWidget):
             self.update_timer.stop()
         if hasattr(self, 'edit_timer'):
             self.edit_timer.stop()
-        
+
         # 关闭后台线程池
         if hasattr(self, '_thread_pool'):
             self._thread_pool.shutdown(wait=False)

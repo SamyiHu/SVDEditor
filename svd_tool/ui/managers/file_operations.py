@@ -6,7 +6,7 @@ import os
 import logging
 from typing import Optional
 
-from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QFileDialog, QMessageBox, QLabel
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from ...core.svd_parser import SVDParser
@@ -201,42 +201,52 @@ class FileOperations(QObject):
         msg_box.exec()
         return msg_box.clickedButton() == save_btn
 
+    # 地址冲突相关的 Schema 类别，由 AddressConflictDetector 专门处理
+    _ADDRESS_CONFLICT_CATEGORIES = {
+        "外设地址", "地址重叠", "寄存器偏移", "位域重叠", "中断号重复",
+    }
+
     def validate_svd(self):
-        """独立的 SVD 验证功能（菜单触发），包含地址冲突实时检测结果"""
+        """独立的 SVD 验证功能（菜单触发），去重后显示合并结果"""
         try:
             # 从UI更新设备信息
             self.update_device_info_from_ui()
 
-            # ===== 1. 执行 CMSIS-SVD Schema 完整验证 =====
+            # ===== 1. 执行 CMSIS-SVD Schema 验证 =====
             validator = SVDSchemaValidator()
             validator.validate_all(self.state_manager.device_info)
 
-            # ===== 2. 执行地址冲突实时检测（复用冲突检测器） =====
+            # 过滤掉地址冲突相关的重复项（由 AddressConflictDetector 专门处理）
+            schema_items = [
+                r for r in validator.results
+                if r.category not in self._ADDRESS_CONFLICT_CATEGORIES
+            ]
+            schema_errors = sum(1 for r in schema_items if r.severity.value == "error")
+            schema_warnings = sum(1 for r in schema_items if r.severity.value == "warning")
+            schema_infos = sum(1 for r in schema_items if r.severity.value == "info")
+
+            # ===== 2. 执行地址冲突检测 =====
             conflict_results = []
             main_win = self.layout_manager.main_window
             if hasattr(main_win, 'conflict_detector') and main_win.conflict_detector:
                 main_win.conflict_detector.detect_all(self.state_manager.device_info)
                 conflict_results = main_win.conflict_detector.conflicts
 
-            # ===== 3. 合并结果 =====
-            schema_summary = validator.get_summary()
-            
-            # 将冲突检测结果作为额外信息附加
             conflict_count = len(conflict_results)
             conflict_errors = sum(1 for c in conflict_results if c.severity.value == "error")
             conflict_warnings = sum(1 for c in conflict_results if c.severity.value == "warning")
 
-            total_errors = schema_summary['errors'] + conflict_errors
-            total_warnings = schema_summary['warnings'] + conflict_warnings
-            has_any_errors = total_errors > 0
-            has_any_warnings = total_warnings > 0
+            # ===== 3. 合并统计 =====
+            total_errors = schema_errors + conflict_errors
+            total_warnings = schema_warnings + conflict_warnings
+            total_infos = schema_infos
 
-            # 构建完整结果文本
-            result_text = validator.format_results_text(max_items=50)
+            # ===== 4. 构建格式化结果文本 =====
+            result_lines = []
+
+            # 4a. 地址冲突检测（放在前面，因为最关键）
             if conflict_results:
                 from ...core.address_conflict_detector import ConflictType
-                result_text += "\n\n" + "=" * 60
-                result_text += f"\n🔍 地址冲突实时检测: {conflict_count} 个冲突\n"
                 type_map = {
                     ConflictType.PERIPHERAL_ADDRESS_OVERLAP: "外设地址重叠",
                     ConflictType.PERIPHERAL_BASE_DUPLICATE: "外设基地址重复",
@@ -245,42 +255,67 @@ class FileOperations(QObject):
                     ConflictType.FIELD_BIT_OVERLAP: "位域位重叠",
                     ConflictType.INTERRUPT_VALUE_DUPLICATE: "中断号重复",
                 }
+                result_lines.append(f"[地址冲突检测] 共 {conflict_count} 个冲突")
+                result_lines.append("-" * 50)
                 for i, c in enumerate(conflict_results[:30]):
-                    severity_icon = "🔴" if c.severity.value == "error" else "🟡"
+                    icon = "[ERROR]" if c.severity.value == "error" else "[WARN]"
                     c_type = type_map.get(c.conflict_type, str(c.conflict_type))
-                    result_text += f"\n  {severity_icon} {i+1}. [{c_type}] {c.message}"
+                    result_lines.append(f"  {i+1}. {icon} [{c_type}] {c.message}")
                     if c.detail:
-                        result_text += f"\n     → {c.detail}"
+                        result_lines.append(f"       -> {c.detail}")
                 if len(conflict_results) > 30:
-                    result_text += f"\n  ... 还有 {len(conflict_results) - 30} 个冲突"
+                    result_lines.append(f"  ... 还有 {len(conflict_results) - 30} 个冲突")
 
-            # ===== 4. 显示合并结果 =====
-            if not has_any_errors and not has_any_warnings:
+            # 4b. Schema 验证结果（按严重程度分组）
+            if schema_items:
+                errors = [r for r in schema_items if r.severity.value == "error"]
+                warnings = [r for r in schema_items if r.severity.value == "warning"]
+                infos = [r for r in schema_items if r.severity.value == "info"]
+
+                if errors:
+                    result_lines.append("")
+                    result_lines.append(f"[Schema 错误] 共 {len(errors)} 项")
+                    result_lines.append("-" * 50)
+                    for i, item in enumerate(errors[:30]):
+                        loc = f" [{item.location}]" if item.location else ""
+                        result_lines.append(f"  {i+1}. {item.category}{loc}: {item.message}")
+                        if item.suggestion:
+                            result_lines.append(f"       -> 建议: {item.suggestion}")
+
+                if warnings:
+                    result_lines.append("")
+                    result_lines.append(f"[Schema 警告] 共 {len(warnings)} 项")
+                    result_lines.append("-" * 50)
+                    for i, item in enumerate(warnings[:20]):
+                        loc = f" [{item.location}]" if item.location else ""
+                        result_lines.append(f"  {i+1}. {item.category}{loc}: {item.message}")
+
+                if infos:
+                    result_lines.append("")
+                    result_lines.append(f"[Schema 信息] 共 {len(infos)} 项")
+                    result_lines.append("-" * 50)
+                    for i, item in enumerate(infos[:10]):
+                        loc = f" [{item.location}]" if item.location else ""
+                        result_lines.append(f"  {i+1}. {item.category}{loc}: {item.message}")
+                    if len(infos) > 10:
+                        result_lines.append(f"  ... 还有 {len(infos) - 10} 条信息")
+
+            result_text = "\n".join(result_lines)
+
+            # ===== 5. 显示结果 =====
+            if total_errors == 0 and total_warnings == 0:
                 QMessageBox.information(
                     self.layout_manager.main_window,
                     "SVD 验证通过",
-                    "✅ 验证通过，未发现任何问题。\n\n"
-                    f"已检查 {schema_summary.get('total', 0)} 项 Schema 验证规则。\n"
+                    "验证通过，未发现任何问题。\n\n"
+                    f"已检查 Schema 验证规则 {len(schema_items)} 项。\n"
                     f"已检查地址冲突检测（0 个冲突）。"
                 )
             else:
-                icon = QMessageBox.Icon.Critical if has_any_errors else QMessageBox.Icon.Warning
-                msg_box = QMessageBox(self.layout_manager.main_window)
-                msg_box.setIcon(icon)
-                msg_box.setWindowTitle("SVD 验证结果")
-
-                status = "❌" if has_any_errors else "⚠️"
-                msg_text = (
-                    f"{status} 验证发现 {total_errors} 个错误，"
-                    f"{total_warnings} 个警告，"
-                    f"{schema_summary['infos']} 条信息。"
+                self._show_validation_result_dialog(
+                    total_errors, total_warnings, total_infos,
+                    conflict_count, result_text
                 )
-                if conflict_count > 0:
-                    msg_text += f"\n\n其中地址冲突检测发现 {conflict_count} 个问题（{conflict_errors} 错误, {conflict_warnings} 警告）。"
-                msg_box.setText(msg_text)
-                msg_box.setDetailedText(result_text)
-                msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-                msg_box.exec()
 
             self.layout_manager.update_status(
                 f"验证完成: {total_errors} 错误, {total_warnings} 警告"
@@ -294,6 +329,51 @@ class FileOperations(QObject):
                 "验证错误",
                 f"验证过程出错: {str(e)}"
             )
+
+    def _show_validation_result_dialog(self, errors, warnings, infos,
+                                        conflict_count, detail_text):
+        """显示验证结果汇总对话框"""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox
+
+        dialog = QDialog(self.layout_manager.main_window)
+        dialog.setWindowTitle("SVD 验证结果")
+        dialog.setMinimumSize(640, 480)
+        dialog.resize(720, 560)
+
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(8)
+
+        # 摘要标签
+        summary_parts = []
+        if errors > 0:
+            summary_parts.append(f"{errors} 个错误")
+        if warnings > 0:
+            summary_parts.append(f"{warnings} 个警告")
+        if infos > 0:
+            summary_parts.append(f"{infos} 条信息")
+        if conflict_count > 0:
+            summary_parts.append(f"{conflict_count} 个地址冲突")
+
+        summary_label = QLabel(
+            f"验证发现: {'，'.join(summary_parts)}。\n"
+            f"建议优先修复错误项，警告项可酌情处理。"
+        )
+        summary_label.setWordWrap(True)
+        layout.addWidget(summary_label)
+
+        # 详细结果文本
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setPlainText(detail_text)
+        text_edit.setFontFamily("Consolas, Microsoft YaHei, monospace")
+        layout.addWidget(text_edit)
+
+        # 按钮
+        btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        btn_box.accepted.connect(dialog.accept)
+        layout.addWidget(btn_box)
+
+        dialog.exec()
 
     def check_unsaved_changes(self) -> bool:
         """检查未保存的更改"""
@@ -522,27 +602,17 @@ class FileOperations(QObject):
         if endian_combo:
             self.state_manager.device_info.cpu.endian = endian_combo.currentText()
         if mpu_combo:
-            self.state_manager.device_info.cpu.mpu_present = (mpu_combo.currentText() == "是")
+            self.state_manager.device_info.cpu.mpu_present = mpu_combo.isChecked()
         if fpu_combo:
-            self.state_manager.device_info.cpu.fpu_present = (fpu_combo.currentText() == "是")
+            self.state_manager.device_info.cpu.fpu_present = fpu_combo.isChecked()
         if nvic_prio_spin:
             self.state_manager.device_info.cpu.nvic_prio_bits = nvic_prio_spin.value()
-        if company_name_edit and company_checkbox:
-            if company_checkbox.isChecked():
-                self.state_manager.device_info.vendor = ""
-            else:
-                self.state_manager.device_info.vendor = company_name_edit.text()
-        elif company_name_edit:
-            self.state_manager.device_info.vendor = company_name_edit.text()
-        if copyright_edit and copyright_checkbox:
-            if copyright_checkbox.isChecked():
-                self.state_manager.device_info.copyright = ""
-            else:
-                self.state_manager.device_info.copyright = copyright_edit.text()
-        elif copyright_edit:
-            self.state_manager.device_info.copyright = copyright_edit.text()
+        if company_name_edit:
+            self.state_manager.device_info.vendor = company_name_edit.text().strip()
+        if copyright_edit:
+            self.state_manager.device_info.copyright = copyright_edit.text().strip()
         if author_edit:
-            self.state_manager.device_info.author = author_edit.text()
+            self.state_manager.device_info.author = author_edit.text().strip()
         if license_combo:
             license_text = license_combo.currentText()
             if license_text != "不显示":

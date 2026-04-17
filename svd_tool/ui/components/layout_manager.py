@@ -46,7 +46,7 @@ class LayoutManager:
         self.logger.debug("create_layout开始")
 
         # 设置窗口标题
-        self.main_window.setWindowTitle("SVD工具 - 专业版")
+        self.main_window.setWindowTitle(t("app.title"))
         
         # 自适应窗口大小（基于屏幕分辨率）
         self._restore_window_geometry()
@@ -227,7 +227,9 @@ class LayoutManager:
 
     def create_preview_tab(self, tab_widget):
         """创建预览标签页"""
-        tab = self.tab_builder.create_preview_tab(tab_widget)
+        tab, widgets = self.tab_builder.create_preview_tab(tab_widget)
+        # 注册控件到widget_manager
+        self.widget_manager.register_widgets(widgets)
         return tab
 
     def get_widget(self, name: str):

@@ -104,75 +104,33 @@ class UIUpdater:
                     combo.addItem(current_text)
                     combo.setCurrentText(current_text)
             if self.widget_manager.has_widget('mpu_combo'):
-                combo = self.widget_manager.get_widget('mpu_combo')
-                # device_info.cpu.mpu_present 是布尔值，转换为"是"/"否"
-                mpu_text = t("value.yes") if device_info.cpu.mpu_present else t("value.no")
-                index = combo.findText(mpu_text)
-                if index >= 0:
-                    combo.setCurrentIndex(index)
-                else:
-                    combo.addItem(mpu_text)
-                    combo.setCurrentText(mpu_text)
+                mpu_widget = self.widget_manager.get_widget('mpu_combo')
+                if hasattr(mpu_widget, 'setChecked'):
+                    mpu_widget.setChecked(bool(device_info.cpu.mpu_present))
+                elif hasattr(mpu_widget, 'findText'):
+                    mpu_text = t("value.yes") if device_info.cpu.mpu_present else t("value.no")
+                    index = mpu_widget.findText(mpu_text)
+                    if index >= 0:
+                        mpu_widget.setCurrentIndex(index)
             if self.widget_manager.has_widget('fpu_combo'):
-                combo = self.widget_manager.get_widget('fpu_combo')
-                fpu_text = t("value.yes") if device_info.cpu.fpu_present else t("value.no")
-                index = combo.findText(fpu_text)
-                if index >= 0:
-                    combo.setCurrentIndex(index)
-                else:
-                    combo.addItem(fpu_text)
-                    combo.setCurrentText(fpu_text)
+                fpu_widget = self.widget_manager.get_widget('fpu_combo')
+                if hasattr(fpu_widget, 'setChecked'):
+                    fpu_widget.setChecked(bool(device_info.cpu.fpu_present))
+                elif hasattr(fpu_widget, 'findText'):
+                    fpu_text = t("value.yes") if device_info.cpu.fpu_present else t("value.no")
+                    index = fpu_widget.findText(fpu_text)
+                    if index >= 0:
+                        fpu_widget.setCurrentIndex(index)
             if self.widget_manager.has_widget('nvic_prio_spin'):
                 self.widget_manager.get_widget('nvic_prio_spin').setValue(device_info.cpu.nvic_prio_bits)
 
-            # 更新公司版权信息字段
-            if self.widget_manager.has_widget('company_name_edit') and self.widget_manager.has_widget('company_checkbox'):
-                # 更新厂商名称字段和复选框状态
-                company_name_edit = self.widget_manager.get_widget('company_name_edit')
-                company_checkbox = self.widget_manager.get_widget('company_checkbox')
-
-                # 如果厂商名称为空或为None，则勾选"不显示"
-                if not device_info.vendor or device_info.vendor.strip() == "":
-                    company_checkbox.setChecked(True)
-                    company_name_edit.clear()
-                    company_name_edit.setEnabled(False)
-                else:
-                    company_checkbox.setChecked(False)
-                    company_name_edit.setText(device_info.vendor)
-                    company_name_edit.setEnabled(True)
-            elif self.widget_manager.has_widget('company_name_edit'):
-                self.widget_manager.get_widget('company_name_edit').setText(device_info.vendor)
-
-            if self.widget_manager.has_widget('copyright_edit') and self.widget_manager.has_widget('copyright_checkbox'):
-                # 更新版权信息字段和复选框状态
-                copyright_edit = self.widget_manager.get_widget('copyright_edit')
-                copyright_checkbox = self.widget_manager.get_widget('copyright_checkbox')
-
-                # 如果版权信息为空或为None，则勾选"不显示"
-                if not device_info.copyright or device_info.copyright.strip() == "":
-                    copyright_checkbox.setChecked(True)
-                    copyright_edit.clear()
-                    copyright_edit.setEnabled(False)
-                else:
-                    copyright_checkbox.setChecked(False)
-                    copyright_edit.setText(device_info.copyright)
-                    copyright_edit.setEnabled(True)
-            elif self.widget_manager.has_widget('copyright_edit'):
-                self.widget_manager.get_widget('copyright_edit').setText(device_info.copyright)
-            if self.widget_manager.has_widget('author_edit') and self.widget_manager.has_widget('author_checkbox'):
-                # 更新作者字段和复选框状态
-                author_edit = self.widget_manager.get_widget('author_edit')
-                author_checkbox = self.widget_manager.get_widget('author_checkbox')
-
-                # 如果作者字段为空或为None，则勾选"不显示"
-                if not device_info.author or device_info.author.strip() == "":
-                    author_checkbox.setChecked(True)
-                    author_edit.clear()
-                    author_edit.setEnabled(False)
-                else:
-                    author_checkbox.setChecked(False)
-                    author_edit.setText(device_info.author)
-                    author_edit.setEnabled(True)
+            # 更新公司版权信息字段（留空=不写入）
+            if self.widget_manager.has_widget('company_name_edit'):
+                self.widget_manager.get_widget('company_name_edit').setText(device_info.vendor or "")
+            if self.widget_manager.has_widget('copyright_edit'):
+                self.widget_manager.get_widget('copyright_edit').setText(device_info.copyright or "")
+            if self.widget_manager.has_widget('author_edit'):
+                self.widget_manager.get_widget('author_edit').setText(device_info.author or "")
 
             if self.widget_manager.has_widget('license_combo'):
                 # 更新许可证字段

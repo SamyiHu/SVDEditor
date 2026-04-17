@@ -386,10 +386,71 @@ class SVDGenerator:
             
             # 合并所有部分
             final_xml = declaration + copyright_comment + formatted_body
-            
+
             return final_xml
-            
+
         except Exception as e:
             # 如果美化失败，返回原始字符串
             self.logger.error(f"美化XML失败: {e}")
             return xml_bytes.decode('utf-8')
+
+    # ==================== 部分 XML 生成（用于编辑对话框实时预览） ====================
+
+    @staticmethod
+    def _format_element(elem) -> str:
+        """将 ElementTree 元素格式化为可读 XML 字符串"""
+        xml_bytes = ET.tostring(elem, encoding="utf-8", method="xml")
+        dom = minidom.parseString(xml_bytes)
+        pretty = dom.toprettyxml(indent="  ")
+        # 去掉 XML 声明行
+        lines = [l for l in pretty.split('\n') if l.strip() and not l.strip().startswith('<?xml')]
+        return '\n'.join(lines)
+
+    @staticmethod
+    def generate_peripheral_xml(peripheral) -> str:
+        """生成单个外设的 XML 片段"""
+        gen = SVDGenerator.__new__(SVDGenerator)
+        gen.device_info = None
+        gen.indent = "  "
+        gen.logger = Logger("svd_generator_preview")
+        elem = gen._create_peripheral_element(peripheral)
+        if elem is None:
+            return ""
+        return SVDGenerator._format_element(elem)
+
+    @staticmethod
+    def generate_register_xml(register) -> str:
+        """生成单个寄存器的 XML 片段"""
+        gen = SVDGenerator.__new__(SVDGenerator)
+        gen.indent = "  "
+        gen.logger = Logger("svd_generator_preview")
+        elem = gen._create_register_element(register)
+        if elem is None:
+            return ""
+        return SVDGenerator._format_element(elem)
+
+    @staticmethod
+    def generate_field_xml(field) -> str:
+        """生成单个位域的 XML 片段"""
+        gen = SVDGenerator.__new__(SVDGenerator)
+        gen.indent = "  "
+        gen.logger = Logger("svd_generator_preview")
+        elem = gen._create_field_element(field)
+        if elem is None:
+            return ""
+        return SVDGenerator._format_element(elem)
+
+    @staticmethod
+    def generate_interrupt_xml(interrupt) -> str:
+        """生成单个中断的 XML 片段"""
+        irq_elem = ET.Element("interrupt")
+        ET.SubElement(irq_elem, "name").text = interrupt.name
+        desc = interrupt.description or f"{interrupt.name} interrupt"
+        ET.SubElement(irq_elem, "description").text = desc
+        ET.SubElement(irq_elem, "value").text = str(interrupt.value)
+        if interrupt.peripherals:
+            # 多外设关联 — 用注释显示
+            peripherals_elem = ET.SubElement(irq_elem, "peripherals")
+            for p in interrupt.peripherals:
+                ET.SubElement(peripherals_elem, "peripheral").text = p
+        return SVDGenerator._format_element(irq_elem)

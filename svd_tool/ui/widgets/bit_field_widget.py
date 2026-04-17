@@ -438,7 +438,7 @@ class BitFieldWidget(QWidget):
         使用 _paint_fields 中通过 _compute_display_mode 计算的统一显示模式，
         确保内外判断使用完全一致的字体度量，避免"既不在内部显示也不生成外部标签"的问题。
         """
-        label_y_base = self._bit_area_y + self._bit_area_height + 30
+        label_y_base = self._bit_area_y + self._bit_area_height + 45
         
         # 每个位域都需要外部标签显示下标
         labels_needed = []

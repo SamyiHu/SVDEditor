@@ -163,7 +163,9 @@ class MainWindowRefactored(QMainWindow):
                 self.layout_manager.create_peripheral_tab(tab_widget)
                 self.logger.debug("创建中断标签页")
                 self.layout_manager.create_interrupt_tab(tab_widget)
-                # 设置预览管理器（支持多种显示模式）
+                # 创建预览标签页（占位）
+                self.layout_manager.create_preview_tab(tab_widget)
+                # 设置预览管理器（注入预览组件到标签页）
                 self.logger.debug("设置预览管理器")
                 self.preview_manager.setup_preview_modes(tab_widget, main_splitter)
                 self.logger.debug("预览管理器设置完成")
@@ -203,14 +205,7 @@ class MainWindowRefactored(QMainWindow):
             tab_bar.close_others_requested.connect(self._on_close_others)
             tab_bar.close_all_requested.connect(self._on_close_all)
             tab_bar.new_tab_requested.connect(self.new_file)
-            # 比较标签信号
-            tab_bar.diff_tab_clicked.connect(self._on_diff_tab_clicked)
-            tab_bar.diff_tab_close_requested.connect(self._on_diff_tab_close)
-        
-        # 比较视图存储: diff_id -> DiffViewWidget
-        self._diff_views = {}
-        self._active_diff_id = None
-        
+
         # 连接文档管理器的所有关闭信号
         self.document_manager.all_documents_closed.connect(self._on_all_documents_closed_show_welcome)
     
@@ -408,8 +403,8 @@ class MainWindowRefactored(QMainWindow):
         """文档标签关闭请求"""
         doc = self.document_manager.get_document(doc_id)
         if doc and doc.modified:
-            reply = QMessageBox.question(self, "关闭文档",
-                f"文档 '{doc.display_name}' 有未保存的修改，确定关闭吗？",
+            reply = QMessageBox.question(self, t("msg.close_doc_title"),
+                t("msg.close_doc_confirm", name=doc.display_name),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if reply != QMessageBox.StandardButton.Yes:
                 return
@@ -440,7 +435,7 @@ class MainWindowRefactored(QMainWindow):
     def _on_all_documents_closed_show_welcome(self):
         """所有文档关闭时，切换回欢迎页"""
         self.layout_manager.show_welcome()
-        self.layout_manager.update_status("所有文档已关闭")
+        self.layout_manager.update_status(t("status.all_docs_closed"))
     
     def init_data(self):
         """初始化数据"""
@@ -458,15 +453,12 @@ class MainWindowRefactored(QMainWindow):
         
         # 连接搜索功能（使用search_manager）
         self.search_manager.connect_search_signals()
-        
-        # 连接其他按钮
-        generate_btn = self.layout_manager.get_widget('generate_btn')
-        if generate_btn:
-            generate_btn.clicked.connect(self.generate_svd)
-        
-        export_btn = self.layout_manager.get_widget('export_btn')
-        if export_btn:
-            export_btn.clicked.connect(self.export_file)
+
+        # 连接预览标签页的导出按钮
+        if self.preview_manager and self.preview_manager.preview_widget:
+            export_btn = getattr(self.preview_manager.preview_widget, '_export_btn', None)
+            if export_btn:
+                export_btn.clicked.connect(self.export_file)
         
         
         # 连接右键菜单
@@ -887,16 +879,15 @@ class MainWindowRefactored(QMainWindow):
         field_table.blockSignals(False)
     
     def on_compact_tree_changed(self, state):
-        """紧凑模式复选框状态变化 → 重建树"""
-        from PyQt6.QtCore import Qt
-        checked = (state == Qt.CheckState.Checked.value)
+        """紧凑模式复选框/开关状态变化 → 重建树"""
+        checked = bool(state)
         self.logger.info(f"紧凑模式: {'启用' if checked else '禁用'}")
         
         # 重建树（保留展开状态）
         self.peripheral_manager.update_peripheral_tree(preserve_expanded=True)
         
         # 更新状态栏
-        status = "紧凑模式已启用（树状图只显示到寄存器级别）" if checked else "完整模式（树状图显示所有级别）"
+        status = t("status.compact_mode_on") if checked else t("status.compact_mode_off")
         self.layout_manager.update_status(status)
     
     def on_field_table_double_clicked(self, index):
@@ -1140,16 +1131,16 @@ class MainWindowRefactored(QMainWindow):
         self.state_manager.set_selection(peripheral=None, register=None, field=None)
         self.update_data_stats()
         
-        status_msg = f"已批量删除 {deleted_count} 个项目"
+        status_msg = t("status.batch_deleted", count=deleted_count)
         if chain_messages:
-            status_msg += f" (连锁: {len(chain_messages)}项)"
+            status_msg += " " + t("status.chain_items", count=len(chain_messages))
         self.layout_manager.update_status(status_msg)
-        self.logger.info(f"批量删除完成: {deleted_count} 个项目")
-        
+        self.logger.info(f"Batch delete complete: {deleted_count} items")
+
         # 显示连锁结果
         if chain_messages:
-            QMessageBox.information(self, "连锁操作",
-                "已同步删除以下关联项:\n" + "\n".join(chain_messages))
+            QMessageBox.information(self, t("msg.chain_operation"),
+                t("msg.chain_result") + "\n".join(chain_messages))
         
         self.data_changed.emit()
     
@@ -1275,7 +1266,7 @@ class MainWindowRefactored(QMainWindow):
             if hasattr(self.layout_manager, 'update_basic_info'):
                 self.layout_manager.update_basic_info(device_info)
             
-            self.layout_manager.update_status(f"已创建新文件: {chip_name}")
+            self.layout_manager.update_status(t("status.file_created", name=chip_name))
             
             # 注册到文档管理器
             try:
@@ -1299,7 +1290,7 @@ class MainWindowRefactored(QMainWindow):
                 self.layout_manager.show_editor()
                 self.layout_manager.add_recent_file(file_path)
             except Exception as e:
-                QMessageBox.critical(self, "错误", f"无法打开文件:\n{e}")
+                QMessageBox.critical(self, t("message.error"), t("msg.cannot_open_file", error=str(e)))
 
     def _load_svd_from_path(self, file_path: str):
         """从指定路径加载SVD文件"""
@@ -1338,7 +1329,7 @@ class MainWindowRefactored(QMainWindow):
         
         if hasattr(self.layout_manager, 'update_basic_info'):
             self.layout_manager.update_basic_info(device_info)
-        self.layout_manager.update_status(f"已打开: {os.path.basename(file_path)}")
+        self.layout_manager.update_status(t("status.file_opened", name=os.path.basename(file_path)))
 
     def save_svd_file(self):
         """保存SVD文件"""
@@ -1377,22 +1368,22 @@ class MainWindowRefactored(QMainWindow):
         from ..core.header_generator import HeaderGenerator
         
         if not self.state_manager.device_info or not self.state_manager.device_info.peripherals:
-            QMessageBox.warning(self, "提示", "请先加载或创建SVD数据")
+            QMessageBox.warning(self, t("message.info"), t("msg.load_svd_first"))
             return
         
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "导出C头文件", 
+            self, t("msg.export_header_title"),
             f"{self.state_manager.device_info.name or 'device'}.h",
-            "C头文件 (*.h);;所有文件 (*.*)"
+            t("msg.export_header_filter")
         )
         
         if file_path:
             generator = HeaderGenerator(self.state_manager.device_info)
             if generator.save_to_file(file_path):
-                QMessageBox.information(self, "导出成功", f"C头文件已保存到:\n{file_path}")
-                self.layout_manager.update_status(f"头文件已导出: {file_path}")
+                QMessageBox.information(self, t("msg.export_success"), t("msg.export_header_saved", path=file_path))
+                self.layout_manager.update_status(t("status.header_exported", path=file_path))
             else:
-                QMessageBox.critical(self, "导出失败", "头文件生成失败")
+                QMessageBox.critical(self, t("msg.export_failed"), t("msg.header_gen_failed"))
 
     def show_advanced_search(self):
         """显示高级搜索对话框"""
@@ -1427,322 +1418,57 @@ class MainWindowRefactored(QMainWindow):
         self.layout_manager.update_status(desc)
         self.logger.info(desc)
 
-    def show_svd_diff(self):
-        """显示 SVD 差异比较（支持多标签页联动，结果在标签页中展示）"""
-        # 检查是否打开了多个文档，可以自动比较
-        doc_ids = self.document_manager.document_ids
-        if len(doc_ids) >= 2:
-            # 多文档打开：提供选择比较两个已打开文档的选项
-            from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QComboBox, QDialogButtonBox
-            
-            select_dialog = QDialog(self)
-            select_dialog.setWindowTitle("SVD 文件比较")
-            select_dialog.setMinimumWidth(450)
-            layout = QVBoxLayout(select_dialog)
-            
-            layout.addWidget(QLabel("检测到已打开多个文档，可以直接比较："))
-            
-            # 文档A选择
-            layout.addWidget(QLabel("文档 A（基准）："))
-            combo_a = QComboBox()
-            for doc_id in doc_ids:
-                doc = self.document_manager.get_document(doc_id)
-                if doc:
-                    combo_a.addItem(doc.display_name or "未命名", doc_id)
-            combo_a.setCurrentIndex(0)
-            layout.addWidget(combo_a)
-            
-            # 文档B选择
-            layout.addWidget(QLabel("文档 B（比较）："))
-            combo_b = QComboBox()
-            for doc_id in doc_ids:
-                doc = self.document_manager.get_document(doc_id)
-                if doc:
-                    combo_b.addItem(doc.display_name or "未命名", doc_id)
-            combo_b.setCurrentIndex(min(1, combo_b.count() - 1))
-            layout.addWidget(combo_b)
-            
-            # 按钮组（使用自定义result值：1=标签页显示, 2=弹窗显示）
-            btn_box = QDialogButtonBox()
-            compare_tab_btn = QPushButton("比较并在标签页显示")
-            compare_tab_btn.clicked.connect(lambda: select_dialog.done(1))
-            compare_dialog_btn = QPushButton("比较(弹窗)")
-            compare_dialog_btn.clicked.connect(lambda: select_dialog.done(2))
-            browse_btn = QPushButton("从文件选择...")
-            browse_btn.clicked.connect(lambda: select_dialog.done(0))
-            btn_box.addButton(compare_tab_btn, QDialogButtonBox.ButtonRole.AcceptRole)
-            btn_box.addButton(compare_dialog_btn, QDialogButtonBox.ButtonRole.ActionRole)
-            btn_box.addButton(browse_btn, QDialogButtonBox.ButtonRole.RejectRole)
-            layout.addWidget(btn_box)
-            
-            result = select_dialog.exec()
-            
-            if result == 1:
-                # 在标签页中显示比较结果
-                doc_a_id = combo_a.currentData()
-                doc_b_id = combo_b.currentData()
-                
-                if doc_a_id == doc_b_id:
-                    QMessageBox.warning(self, "提示", "请选择两个不同的文档进行比较")
-                    return
-                
-                doc_a = self.document_manager.get_document(doc_a_id)
-                doc_b = self.document_manager.get_document(doc_b_id)
-                
-                if doc_a and doc_b:
-                    self._show_diff_in_tab(doc_a.device_info, doc_b.device_info,
-                                           doc_a.display_name, doc_b.display_name)
-                return
-            elif result == 2:
-                # 在弹窗中显示
-                doc_a_id = combo_a.currentData()
-                doc_b_id = combo_b.currentData()
-                
-                if doc_a_id == doc_b_id:
-                    QMessageBox.warning(self, "提示", "请选择两个不同的文档进行比较")
-                    return
-                
-                doc_a = self.document_manager.get_document(doc_a_id)
-                doc_b = self.document_manager.get_document(doc_b_id)
-                
-                if doc_a and doc_b:
-                    from .dialogs.svd_diff_dialog import SVDDiffDialog
-                    dialog = SVDDiffDialog(self, current_device=doc_a.device_info)
-                    dialog.other_device = doc_b.device_info
-                    name_b = doc_b.display_name or "未命名"
-                    n_periphs = len(doc_b.device_info.peripherals) if doc_b.device_info else 0
-                    dialog.file_label.setText(f"比较文件: {name_b} ({n_periphs} 外设)")
-                    dialog.file_label.setStyleSheet("color: black;")
-                    dialog.compare_btn.setEnabled(True)
-                    dialog.setWindowTitle(f"SVD 比较: {doc_a.display_name} vs {name_b}")
-                    dialog.exec()
-                return
-        
-        # 单文档或无文档：使用文件选择后标签页显示
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "选择要比较的SVD文件", "", "SVD文件 (*.svd);;XML文件 (*.xml)")
-        if file_path:
-            try:
-                parser = SVDParser()
-                other_device = parser.parse_file(file_path)
-                other_name = os.path.basename(file_path)
-                current_name = "当前文档"
-                doc = self.document_manager.active_document
-                if doc:
-                    current_name = doc.display_name or "当前文档"
-                self._show_diff_in_tab(
-                    self.state_manager.device_info, other_device,
-                    current_name, other_name)
-            except Exception as e:
-                QMessageBox.critical(self, "错误", f"无法加载比较文件:\n{e}")
-    
-    def _show_diff_in_tab(self, device_a, device_b, name_a="文档A", name_b="文档B"):
-        """在主内容区域显示SVD差异比较结果（不创建次级标签页）"""
-        from .widgets.diff_view_widget import DiffViewWidget
-        
-        # 创建差异视图组件
-        diff_view = DiffViewWidget(self)
-        diff_view.set_diff_data(device_a, device_b, name_a, name_b)
-        
-        # 在顶部文档标签栏中添加比较标签（与SVD文档同级）
-        tab_bar = self.layout_manager.get_document_tab_bar()
-        diff_name = f"{name_a} vs {name_b}"
-        diff_id = None
-        if tab_bar:
-            diff_id = tab_bar.add_diff_tab(diff_name)
-            self._diff_views[diff_id] = diff_view
-        
-        # 将差异视图添加到主分割器的编辑区域（不使用tab_widget的次级标签）
-        # 先确保编辑器视图可见（不是欢迎页）
-        self.layout_manager.show_editor()
-        
-        editor_stack = self.layout_manager.get_widget('editor_stack')
-        self.logger.info(f"editor_stack found: {editor_stack is not None}")
-        if editor_stack:
-            editor_stack.addWidget(diff_view)
-            editor_stack.setCurrentWidget(diff_view)
-            self.logger.info(f"diff_view added to editor_stack, index={editor_stack.indexOf(diff_view)}")
-        else:
-            # 回退方案：如果editor_stack不存在，直接替换中央区域
-            central = self.centralWidget()
-            if central:
-                main_layout = central.layout()
-                if main_layout:
-                    # 隐藏当前编辑器内容，显示diff_view
-                    diff_view.setParent(central)
-                    main_layout.addWidget(diff_view)
-                    diff_view.show()
-        
-        self._active_diff_id = diff_id
-        
-        # 统计信息
-        summary = ""
-        if hasattr(diff_view, '_differ') and diff_view._differ:
-            summary = diff_view._differ.generate_summary(diff_view._diffs)
-        total = summary.count('\n') if summary else 0
-        
-        self.layout_manager.update_status(f"SVD比较完成: {diff_name}")
-    
-    def _on_diff_tab_clicked(self, diff_id: str):
-        """比较标签被点击 - 显示对应的比较结果"""
-        if diff_id not in self._diff_views:
-            return
-        
-        # 保存当前文档状态
-        if self.document_manager.active_doc_id:
-            self._save_current_document_state()
-        
-        diff_view = self._diff_views[diff_id]
-        
-        # 在editor_stack中显示diff_view
-        editor_stack = self.layout_manager.get_widget('editor_stack')
-        if editor_stack:
-            editor_stack.setCurrentWidget(diff_view)
-        
-        self._active_diff_id = diff_id
-        
-        # 确保编辑器视图可见
-        self.layout_manager.show_editor()
-    
-    def _on_diff_tab_close(self, diff_id: str):
-        """比较标签被关闭"""
-        if diff_id not in self._diff_views:
-            return
-        
-        diff_view = self._diff_views.pop(diff_id)
-        
-        # 从editor_stack中移除
-        editor_stack = self.layout_manager.get_widget('editor_stack')
-        if editor_stack:
-            idx = editor_stack.indexOf(diff_view)
-            if idx >= 0:
-                editor_stack.removeWidget(diff_view)
-        
-        diff_view.deleteLater()
-        
-        # 从标签栏移除
-        tab_bar = self.layout_manager.get_document_tab_bar()
-        if tab_bar:
-            tab_bar.remove_diff_tab(diff_id)
-        
-        if self._active_diff_id == diff_id:
-            self._active_diff_id = None
-            # 切换回最后活动的文档
-            if self.document_manager.document_ids:
-                last_id = self.document_manager.active_doc_id or self.document_manager.document_ids[-1]
-                self._on_document_tab_clicked(last_id)
-    
-    def _diff_has_type(self, item, diff_type):
-        """递归检查差异类型"""
-        from ..core.svd_differ import DiffType
-        if item.diff_type == diff_type:
-            return True
-        return any(self._diff_has_type(c, diff_type) for c in item.children)
-    
-    def _populate_diff_tree(self, parent, items, 
-                            color_added, color_removed, color_modified,
-                            color_added_text, color_removed_text, color_modified_text):
-        """递归填充差异树"""
-        from ..core.svd_differ import DiffType
-        
-        for item in items:
-            tree_item = QTreeWidgetItem()
-            path_parts = item.path.rsplit('.', 1)
-            display_name = path_parts[-1] if len(path_parts) > 1 else item.path
-            tree_item.setText(0, display_name)
-            
-            type_text = {
-                DiffType.ADDED: "新增 [+]",
-                DiffType.REMOVED: "删除 [-]",
-                DiffType.MODIFIED: "修改 [~]",
-                DiffType.UNCHANGED: "",
-            }.get(item.diff_type, "")
-            tree_item.setText(1, type_text)
-            
-            old_str = str(item.old_value) if item.old_value is not None else ""
-            new_str = str(item.new_value) if item.new_value is not None else ""
-            if len(old_str) > 100: old_str = old_str[:97] + "..."
-            if len(new_str) > 100: new_str = new_str[:97] + "..."
-            tree_item.setText(2, old_str)
-            tree_item.setText(3, new_str)
-            
-            if item.diff_type == DiffType.ADDED:
-                bg, fg = color_added, color_added_text
-            elif item.diff_type == DiffType.REMOVED:
-                bg, fg = color_removed, color_removed_text
-            elif item.diff_type == DiffType.MODIFIED:
-                bg, fg = color_modified, color_modified_text
-            else:
-                bg = fg = None
-            
-            if bg and fg:
-                for col in range(4):
-                    tree_item.setBackground(col, QBrush(bg))
-                    tree_item.setForeground(col, QBrush(fg))
-            
-            tree_item.setToolTip(0, item.path)
-            
-            if item.children:
-                self._populate_diff_tree(tree_item, item.children,
-                                          color_added, color_removed, color_modified,
-                                          color_added_text, color_removed_text, color_modified_text)
-            
-            parent.addChild(tree_item)
-        
-        if isinstance(parent, QTreeWidgetItem):
-            parent.setExpanded(True)
-    
-    def show_svd_merge(self):
-        """显示 SVD 导入合并对话框（非模态，不阻塞主窗口）"""
-        from .dialogs.svd_merge_dialog import SVDMergeDialog
+    def show_svd_diff_merge(self):
+        """显示 SVD 比较与合并对话框（非模态）"""
+        from .dialogs.svd_diff_merge_dialog import SVDDiffMergeDialog
         if not self.state_manager.device_info:
             from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "提示", "请先打开或新建一个 SVD 文件")
+            QMessageBox.warning(self, t("message.info"), t("msg.open_or_create_first"))
             return
-        
+
         # 保存引用防止被垃圾回收
-        self._merge_dialog = SVDMergeDialog(self, self.state_manager.device_info)
-        self._merge_dialog.merge_completed.connect(self._on_merge_completed)
-        self._merge_dialog.finished.connect(lambda: self._cleanup_merge_dialog())
-        self._merge_dialog.setWindowFlags(
-            self._merge_dialog.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint
+        self._diff_merge_dialog = SVDDiffMergeDialog(self, self.state_manager.device_info)
+        self._diff_merge_dialog.merge_completed.connect(self._on_merge_completed)
+        self._diff_merge_dialog.finished.connect(lambda: self._cleanup_diff_merge_dialog())
+        self._diff_merge_dialog.setWindowFlags(
+            self._diff_merge_dialog.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint
         )
-        self._merge_dialog.show()
-    
-    def _cleanup_merge_dialog(self):
-        """清理合并对话框引用"""
-        if hasattr(self, '_merge_dialog'):
-            self._merge_dialog = None
-    
+        self._diff_merge_dialog.show()
+
+    def _cleanup_diff_merge_dialog(self):
+        """清理比较合并对话框引用"""
+        if hasattr(self, '_diff_merge_dialog'):
+            self._diff_merge_dialog = None
+
     def _on_merge_completed(self, merged_device):
         """合并完成后的回调"""
         from PyQt6.QtWidgets import QApplication
-        
+
         # 更新状态管理器
         self.state_manager.device_info = merged_device
         self.state_manager.clear_selection()
-        
+
         # 通知状态变更
         self.state_manager._notify_state_change()
-        
+
         # 发射事件
         if hasattr(self, 'coordinator') and self.coordinator:
             self.coordinator.emit_event("device_info_updated", merged_device)
-        
+
         # 刷新 UI
         self.peripheral_manager.update_peripheral_tree()
         self.update_data_stats()
         self._update_interrupt_table()
-        
+
         # 更新预览
         if self.preview_manager:
             self.preview_manager.refresh_preview(immediate=True)
-        
+
         # 更新基础信息
         if hasattr(self.layout_manager, 'update_basic_info'):
             self.layout_manager.update_basic_info(merged_device)
-        
-        self.layout_manager.update_status("SVD 导入合并完成")
+
+        self.layout_manager.update_status(t("status.merge_complete"))
         self.logger.info("SVD 导入合并完成")
 
     def open_svd_file(self):
@@ -1750,7 +1476,7 @@ class MainWindowRefactored(QMainWindow):
         # 检查未保存的更改
         if self.check_unsaved_changes():
             file_paths, _ = QFileDialog.getOpenFileNames(
-                self, "选择SVD文件", "", "SVD文件 (*.svd);;XML文件 (*.xml)"
+                self, t("msg.svd_select_file"), "", t("msg.svd_file_filter")
             )
             
             if file_paths:
@@ -1759,7 +1485,7 @@ class MainWindowRefactored(QMainWindow):
                         # 先保存当前文档状态（确保数据隔离）
                         self._save_current_document_state()
                         
-                        self.layout_manager.update_status(f"正在解析SVD文件: {os.path.basename(file_path)}...")
+                        self.layout_manager.update_status(t("status.file_parsing", name=os.path.basename(file_path)))
                         QApplication.processEvents()  # 更新UI
                         
                         # 解析文件
@@ -1803,7 +1529,7 @@ class MainWindowRefactored(QMainWindow):
                         if hasattr(self.layout_manager, 'update_basic_info'):
                             self.layout_manager.update_basic_info(device_info)
                         
-                        self.layout_manager.update_status(f"已加载: {os.path.basename(file_path)}")
+                        self.layout_manager.update_status(t("status.file_loaded", name=os.path.basename(file_path)))
                         
                         # 注册到文档管理器
                         try:
@@ -1829,7 +1555,7 @@ class MainWindowRefactored(QMainWindow):
                 
                 # 多文件加载完成后更新状态
                 if len(file_paths) > 1:
-                    self.layout_manager.update_status(f"已加载 {len(file_paths)} 个SVD文件")
+                    self.layout_manager.update_status(t("status.files_loaded", count=len(file_paths)))
     
     def save_svd_file(self):
         """保存SVD文件"""
@@ -1867,7 +1593,7 @@ class MainWindowRefactored(QMainWindow):
             
             # 更新状态
             self.current_file_path = file_path
-            self.layout_manager.update_status(f"SVD文件已保存: {file_path}")
+            self.layout_manager.update_status(t("status.svd_saved", path=file_path))
             QMessageBox.information(self, t("msg.save_success"), t("msg.svd_file_saved", path=file_path))
             
         except Exception as e:
@@ -1902,7 +1628,7 @@ class MainWindowRefactored(QMainWindow):
                 preview_edit.setPlainText(pretty_xml(svd_xml))
             
             self.logger.info("SVD生成成功")
-            self.layout_manager.update_status("SVD生成成功")
+            self.layout_manager.update_status(t("status.svd_generated"))
             
         except Exception as e:
             self.logger.error(f"SVD生成失败: {str(e)}")
@@ -2276,7 +2002,7 @@ class MainWindowRefactored(QMainWindow):
         state_mgr.command_history.current_index = len(state_mgr.command_history.history) - 1
         state_mgr.command_history.redo_stack.clear()
         
-        self.layout_manager.update_status(f"已调整位域顺序: {source_name}")
+        self.layout_manager.update_status(t("status.field_reordered", name=source_name))
     
     def _validate_and_fix_tree_structure_after_drop(self, moved_periph_name):
         """拖放后验证并修正树结构"""
@@ -2334,7 +2060,7 @@ class MainWindowRefactored(QMainWindow):
                 # 更新数据模型
                 self.update_data_model_from_tree()
                 # 更新状态栏
-                self.layout_manager.update_status(f"已调整外设顺序: {moved_periph_name}")
+                self.layout_manager.update_status(t("status.periph_reordered", name=moved_periph_name))
                 
                 # 延迟重新选中项目
                 from PyQt6.QtCore import QTimer
@@ -2361,7 +2087,7 @@ class MainWindowRefactored(QMainWindow):
         if visualization_widget:
             visualization_widget.update()
         
-        status = "深色模式已启用" if checked else "浅色模式已启用"
+        status = t("status.dark_mode_on") if checked else t("status.dark_mode_off")
         self.layout_manager.update_status(status)
     
     # ===================== 撤销/重做功能 =====================
@@ -2457,10 +2183,10 @@ class MainWindowRefactored(QMainWindow):
             current_idx = field_names.index(field_name)
             
             if direction == "up" and current_idx <= 0:
-                self.layout_manager.update_status(f"位域 '{field_name}' 已在最上方")
+                self.layout_manager.update_status(t("status.field_at_top", name=field_name))
                 return
             elif direction == "down" and current_idx >= len(field_names) - 1:
-                self.layout_manager.update_status(f"位域 '{field_name}' 已在最下方")
+                self.layout_manager.update_status(t("status.field_at_bottom", name=field_name))
                 return
             
             # 计算交换后的顺序
@@ -2506,9 +2232,9 @@ class MainWindowRefactored(QMainWindow):
                 # 延迟选中位域
                 from PyQt6.QtCore import QTimer
                 QTimer.singleShot(50, lambda: self.peripheral_manager.select_field(periph_name, reg_name, field_name))
-                self.layout_manager.update_status(f"已{'上移' if direction == 'up' else '下移'}位域: {field_name}")
+                self.layout_manager.update_status(t("status.field_moved_up" if direction == "up" else "status.field_moved_down", name=field_name))
             else:
-                self.layout_manager.update_status(f"位域 '{field_name}' 已在最{'上方' if direction == 'up' else '下方'}")
+                self.layout_manager.update_status(t("status.field_at_top" if direction == "up" else "status.field_at_bottom", name=field_name))
                 
         except Exception as e:
             self.logger.error(f"移动位域失败: {str(e)}")
@@ -2566,7 +2292,7 @@ class MainWindowRefactored(QMainWindow):
             ]
             
             if old_field_names == new_field_names:
-                self.layout_manager.update_status("位域已按位偏移排序，无需调整")
+                self.layout_manager.update_status(t("status.field_already_sorted"))
                 return
             
             captured_old = old_field_names[:]
@@ -2600,7 +2326,7 @@ class MainWindowRefactored(QMainWindow):
                 description=f"按位偏移排序位域: {periph_name}/{reg_name}"
             )
             self.state_manager.execute_command(command)
-            self.layout_manager.update_status(f"已按位偏移排序 {reg_name} 的位域")
+            self.layout_manager.update_status(t("status.sort_field_offset", name=reg_name))
             
         except Exception as e:
             self.logger.error(f"按位偏移排序位域失败: {str(e)}")
@@ -2624,11 +2350,11 @@ class MainWindowRefactored(QMainWindow):
                     self.peripheral_manager.select_peripheral(selected_periph)
                 
                 # 更新状态
-                self.layout_manager.update_status("已按字母顺序排序")
+                self.layout_manager.update_status(t("status.sort_alpha"))
                 self.logger.info("按字母顺序排序完成")
             else:
-                self.layout_manager.update_status("顺序未变化，无需排序")
-                
+                self.layout_manager.update_status(t("status.no_change_sort"))
+
         except Exception as e:
             self.logger.error(f"按字母排序失败: {str(e)}")
             QMessageBox.warning(self, t("msg.sort_error"), t("msg.sort_alphabetically_failed", error=str(e)))
@@ -2646,19 +2372,19 @@ class MainWindowRefactored(QMainWindow):
                 changed = self.state_manager.sort_registers_by_address(selected_periph)
                 if changed:
                     self.peripheral_manager.update_peripheral_tree()
-                    self.layout_manager.update_status(f"已按偏移地址排序寄存器")
+                    self.layout_manager.update_status(t("status.sort_register_offset"))
             elif selected_periph:
                 # 排序外设
                 changed = self.state_manager.sort_peripherals_by_address()
                 if changed:
                     self.peripheral_manager.update_peripheral_tree()
-                    self.layout_manager.update_status("已按基地址排序外设")
+                    self.layout_manager.update_status(t("status.sort_address"))
             else:
                 # 默认排序外设
                 changed = self.state_manager.sort_peripherals_by_address()
                 if changed:
                     self.peripheral_manager.update_peripheral_tree()
-                    self.layout_manager.update_status("已按基地址排序外设")
+                    self.layout_manager.update_status(t("status.sort_address"))
             
             # 恢复选中项
             if selected_periph:
@@ -2670,8 +2396,8 @@ class MainWindowRefactored(QMainWindow):
             if changed:
                 self.logger.info("按地址排序完成")
             else:
-                self.layout_manager.update_status("顺序未变化，无需排序")
-                
+                self.layout_manager.update_status(t("status.no_change_sort"))
+
         except Exception as e:
             self.logger.error(f"按地址排序失败: {str(e)}")
             QMessageBox.warning(self, t("msg.sort_error"), t("msg.sort_by_address_failed", error=str(e)))
@@ -2681,14 +2407,14 @@ class MainWindowRefactored(QMainWindow):
         periph_tree = self.layout_manager.get_widget('periph_tree')
         if periph_tree:
             periph_tree.expandAll()
-            self.layout_manager.update_status("已展开所有树节点")
-    
+            self.layout_manager.update_status(t("status.tree_expanded"))
+
     def collapse_all_tree(self):
         """折叠所有树节点"""
         periph_tree = self.layout_manager.get_widget('periph_tree')
         if periph_tree:
             periph_tree.collapseAll()
-            self.layout_manager.update_status("已折叠所有树节点")
+            self.layout_manager.update_status(t("status.tree_collapsed"))
     
     def add_register(self):
         """添加寄存器"""
@@ -2736,7 +2462,7 @@ class MainWindowRefactored(QMainWindow):
             self.peripheral_manager.select_register(current_peripheral, register.name)
             
             # 更新状态
-            self.layout_manager.update_status(f"已添加寄存器: {register.name}")
+            self.layout_manager.update_status(t("status.register_added", name=register.name))
             self.logger.info(f"添加寄存器: {register.name}")
             
             # 发射数据变化信号
@@ -2814,7 +2540,7 @@ class MainWindowRefactored(QMainWindow):
             self.peripheral_manager.select_register(current_peripheral, new_name)
             
             # 更新状态
-            self.layout_manager.update_status(f"已更新寄存器: {new_name}")
+            self.layout_manager.update_status(t("status.register_updated", name=new_name))
             self.logger.info(f"编辑寄存器: {old_name} -> {new_name}")
             
             # 发射数据变化信号
@@ -2867,7 +2593,7 @@ class MainWindowRefactored(QMainWindow):
         self.state_manager.set_selection(register=None, field=None)
         
         # 更新状态
-        self.layout_manager.update_status(f"已删除寄存器: {reg_name}")
+        self.layout_manager.update_status(t("status.register_deleted", name=reg_name))
         self.logger.info(f"删除寄存器: {reg_name}")
         
         # 发射数据变化信号
@@ -2935,7 +2661,7 @@ class MainWindowRefactored(QMainWindow):
         
         # 更新状态
         if deleted_count > 0:
-            self.layout_manager.update_status(f"已批量删除 {deleted_count} 个寄存器")
+            self.layout_manager.update_status(t("status.registers_batch_deleted", count=deleted_count))
             self.logger.info(f"批量删除 {deleted_count} 个寄存器")
         
         # 发射数据变化信号
@@ -2994,7 +2720,7 @@ class MainWindowRefactored(QMainWindow):
             self.peripheral_manager.select_field(current_peripheral, current_register, field.name)
             
             # 更新状态
-            self.layout_manager.update_status(f"已添加位域: {field.name}")
+            self.layout_manager.update_status(t("status.field_added", name=field.name))
             self.logger.info(f"添加位域: {field.name}")
             
             # 发射数据变化信号
@@ -3079,7 +2805,7 @@ class MainWindowRefactored(QMainWindow):
             self.peripheral_manager.select_field(current_peripheral, current_register, new_name)
             
             # 更新状态
-            self.layout_manager.update_status(f"已更新位域: {new_name}")
+            self.layout_manager.update_status(t("status.field_updated", name=new_name))
             self.logger.info(f"编辑位域: {old_name} -> {new_name}")
             
             # 发射数据变化信号
@@ -3148,11 +2874,11 @@ class MainWindowRefactored(QMainWindow):
         self.state_manager.set_selection(field=None)
         
         # 更新状态
-        status_msg = f"已删除位域: {field_name}"
+        status_msg = t("status.field_deleted", name=field_name)
         if chain_messages:
-            status_msg += f" (连锁: {len(chain_messages)}项)"
+            status_msg += " " + t("status.chain_items", count=len(chain_messages))
         self.layout_manager.update_status(status_msg)
-        self.logger.info(f"删除位域: {field_name}")
+        self.logger.info(f"Deleted field: {field_name}")
         
         # 显示连锁结果
         if chain_messages:
@@ -3199,7 +2925,7 @@ class MainWindowRefactored(QMainWindow):
             self._update_interrupt_table()
             
             # 更新状态
-            self.layout_manager.update_status(f"已添加中断: {interrupt.name}")
+            self.layout_manager.update_status(t("status.interrupt_added", name=interrupt.name))
             self.logger.info(f"添加中断: {interrupt.name}")
             
             # 发射数据变化信号
@@ -3275,7 +3001,7 @@ class MainWindowRefactored(QMainWindow):
             self._update_interrupt_table()
             
             # 更新状态
-            self.layout_manager.update_status(f"已更新中断: {new_name}")
+            self.layout_manager.update_status(t("status.interrupt_updated", name=new_name))
             self.logger.info(f"编辑中断: {old_name} -> {new_name}")
             
             # 发射数据变化信号
@@ -3322,7 +3048,7 @@ class MainWindowRefactored(QMainWindow):
         self._update_interrupt_table()
         
         # 更新状态
-        self.layout_manager.update_status(f"已删除中断: {interrupt_name}")
+        self.layout_manager.update_status(t("status.interrupt_deleted", name=interrupt_name))
         self.logger.info(f"删除中断: {interrupt_name}")
         
         # 发射数据变化信号
@@ -3559,7 +3285,7 @@ class MainWindowRefactored(QMainWindow):
         try:
             if hasattr(self, 'log_text') and self.log_text:
                 self.log_text.clear()
-                self.layout_manager.update_status("日志已清空")
+                self.layout_manager.update_status(t("status.log_cleared"))
                 self.logger.info("日志面板已清空")
         except Exception as e:
             self.logger.error(f"清空日志时出错: {str(e)}")
@@ -3584,7 +3310,7 @@ class MainWindowRefactored(QMainWindow):
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(log_content)
                 
-                self.layout_manager.update_status(f"日志已保存到: {file_path}")
+                self.layout_manager.update_status(t("status.log_saved", path=file_path))
                 self.logger.info(f"日志已保存到: {file_path}")
                 QMessageBox.information(self, t("message.success"), t("msg.log_save_success"))
             
@@ -3605,10 +3331,10 @@ class MainWindowRefactored(QMainWindow):
             
             if checked:
                 self.log_dock.show()
-                self.layout_manager.update_status("日志面板已显示")
+                self.layout_manager.update_status(t("status.log_panel_shown"))
             else:
                 self.log_dock.hide()
-                self.layout_manager.update_status("日志面板已隐藏")
+                self.layout_manager.update_status(t("status.log_panel_hidden"))
                 
         except Exception as e:
             self.logger.error(f"切换日志面板时出错: {str(e)}")
@@ -3639,348 +3365,8 @@ class MainWindowRefactored(QMainWindow):
     
     def show_chain_rules_dialog(self):
         """显示连锁规则编辑对话框"""
-        from ..core.chain_rules import ChainRule, ChainAction
-        from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-            QLineEdit, QPushButton, QListWidget, QListWidgetItem, QComboBox,
-            QCheckBox, QTextEdit, QGroupBox, QFormLayout, QSplitter, QWidget)
-        
-        dialog = QDialog(self)
-        dialog.setWindowTitle(t("dialog.chain_rules", default="连锁规则编辑"))
-        dialog.setMinimumSize(700, 500)
-        layout = QVBoxLayout(dialog)
-        
-        # 全局启用开关
-        enable_cb = QCheckBox(t("label.chain_enabled", default="启用连锁操作"))
-        enable_cb.setChecked(self.chain_rules_engine.enabled)
-        layout.addWidget(enable_cb)
-        
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        
-        # 左侧：规则列表
-        left = QWidget()
-        left_layout = QVBoxLayout(left)
-        left_layout.addWidget(QLabel(t("label.rules_list", default="规则列表")))
-        rules_list = QListWidget()
-        for i, rule in enumerate(self.chain_rules_engine.rules):
-            item = QListWidgetItem(f"{'✓' if rule.enabled else '✗'} {rule.name}")
-            rules_list.addItem(item)
-        left_layout.addWidget(rules_list)
-        
-        btn_layout = QHBoxLayout()
-        add_rule_btn = QPushButton(t("button.add", default="添加"))
-        del_rule_btn = QPushButton(t("button.delete", default="删除"))
-        batch_gen_btn = QPushButton(t("button.batch_generate", default="⚡批量生成"))
-        batch_gen_btn.setToolTip(t("tooltip.batch_generate", 
-            default="根据模板批量生成规则，例如为每个引脚PA0-15生成连锁规则"))
-        btn_layout.addWidget(add_rule_btn)
-        btn_layout.addWidget(del_rule_btn)
-        btn_layout.addWidget(batch_gen_btn)
-        left_layout.addLayout(btn_layout)
-        splitter.addWidget(left)
-        
-        # 右侧：规则详情
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-        
-        form = QFormLayout()
-        name_edit = QLineEdit()
-        form.addRow(t("label.rule_name", default="规则名称:"), name_edit)
-        
-        source_type_combo = QComboBox()
-        source_type_combo.addItems(["peripheral", "register", "field"])
-        form.addRow(t("label.source_type", default="源类型:"), source_type_combo)
-        
-        source_periph = QLineEdit()
-        source_periph.setPlaceholderText(t("placeholder.wildcard_hint", default="* 表示通配符，如 GPIO*"))
-        form.addRow(t("label.source_peripheral", default="源外设:"), source_periph)
-        
-        source_reg = QLineEdit()
-        source_reg.setPlaceholderText(t("placeholder.no_limit", default="留空表示不限"))
-        form.addRow(t("label.source_register", default="源寄存器:"), source_reg)
-        
-        source_field = QLineEdit()
-        source_field.setPlaceholderText(t("placeholder.no_limit", default="留空表示不限"))
-        form.addRow(t("label.source_field", default="源位域:"), source_field)
-        
-        enabled_cb = QCheckBox(t("label.enabled", default="启用"))
-        enabled_cb.setChecked(True)
-        form.addRow(enabled_cb)
-        
-        right_layout.addLayout(form)
-        
-        # 动作列表
-        right_layout.addWidget(QLabel(t("label.actions", default="连锁动作:")))
-        actions_text = QTextEdit()
-        actions_text.setPlaceholderText(
-            t("placeholder.chain_actions",
-              default="每行一个动作，格式：目标外设,目标寄存器,目标位域,动作类型\n"
-                      "例如：PBCON,MODE0,MODE0,delete\n"
-                      "支持变量：$PERIPHERAL, $REGISTER, $FIELD"))
-        actions_text.setMaximumHeight(150)
-        right_layout.addWidget(actions_text)
-        
-        right_layout.addStretch()
-        splitter.addWidget(right)
-        splitter.setSizes([250, 450])
-        layout.addWidget(splitter)
-        
-        # 按钮
-        btn_box = QHBoxLayout()
-        save_btn = QPushButton(t("button.save", default="保存"))
-        cancel_btn = QPushButton(t("button.cancel", default="取消"))
-        btn_box.addStretch()
-        btn_box.addWidget(save_btn)
-        btn_box.addWidget(cancel_btn)
-        layout.addLayout(btn_box)
-        
-        # 选择规则时加载详情
-        def on_rule_selected():
-            row = rules_list.currentRow()
-            if 0 <= row < len(self.chain_rules_engine.rules):
-                rule = self.chain_rules_engine.rules[row]
-                name_edit.setText(rule.name)
-                source_type_combo.setCurrentText(rule.source_type)
-                source_periph.setText(rule.source_peripheral)
-                source_reg.setText(rule.source_register)
-                source_field.setText(rule.source_field)
-                enabled_cb.setChecked(rule.enabled)
-                actions_lines = []
-                for a in rule.actions:
-                    actions_lines.append(f"{a.target_peripheral},{a.target_register},{a.target_field},{a.action}")
-                actions_text.setPlainText("\n".join(actions_lines))
-        
-        rules_list.currentRowChanged.connect(on_rule_selected)
-        
-        # 添加规则
-        def add_rule():
-            rule = ChainRule(name=t("label.new_rule", default="新规则"))
-            self.chain_rules_engine.add_rule(rule)
-            rules_list.addItem(f"✓ {rule.name}")
-            rules_list.setCurrentRow(rules_list.count() - 1)
-        
-        add_rule_btn.clicked.connect(add_rule)
-        
-        # 删除规则
-        def del_rule():
-            row = rules_list.currentRow()
-            if 0 <= row < len(self.chain_rules_engine.rules):
-                self.chain_rules_engine.remove_rule(row)
-                rules_list.takeItem(row)
-        
-        del_rule_btn.clicked.connect(del_rule)
-        
-        # 批量生成规则
-        def batch_generate():
-            """批量生成连锁规则"""
-            from PyQt6.QtWidgets import (QDialog as BatchDialog, QVBoxLayout as BatchVLayout,
-                QHBoxLayout as BatchHLayout, QLabel as BatchLabel, QLineEdit as BatchLineEdit,
-                QPushButton as BatchBtn, QSpinBox as BatchSpin, QGroupBox as BatchGroup,
-                QFormLayout as BatchForm, QListWidget as BatchList, QCheckBox as BatchCheck,
-                QDialogButtonBox)
-            
-            batch_dlg = BatchDialog(dialog)
-            batch_dlg.setWindowTitle(t("dialog.batch_generate_rules", default="⚡批量生成连锁规则"))
-            batch_dlg.setMinimumSize(550, 500)
-            batch_lay = BatchVLayout(batch_dlg)
-            
-            # === 模板选择 ===
-            tpl_group = BatchGroup(t("label.template", default="模板"))
-            tpl_lay = BatchForm(tpl_group)
-            
-            tpl_combo = QComboBox()
-            tpl_combo.addItems([
-                t("tpl.gpio_pin", default="GPIO引脚 → 配置/上下拉/电平寄存器"),
-                t("tpl.custom", default="自定义模板"),
-            ])
-            tpl_lay.addRow(t("label.template_type", default="模板类型:"), tpl_combo)
-            batch_lay.addWidget(tpl_group)
-            
-            # === 参数设置 ===
-            param_group = BatchGroup(t("label.params", default="参数"))
-            param_form = BatchForm(param_group)
-            
-            # GPIO端口前缀
-            port_prefix_edit = BatchLineEdit("PA,PB,PC,PD,PE")
-            port_prefix_edit.setToolTip(t("tooltip.port_prefix", default="逗号分隔的端口前缀列表"))
-            param_form.addRow(t("label.port_prefix", default="端口前缀:"), port_prefix_edit)
-            
-            # 引脚范围
-            pin_range_widget = QWidget()
-            pin_range_lay = BatchHLayout(pin_range_widget)
-            pin_range_lay.setContentsMargins(0, 0, 0, 0)
-            pin_start_spin = BatchSpin()
-            pin_start_spin.setRange(0, 31)
-            pin_start_spin.setValue(0)
-            pin_end_spin = BatchSpin()
-            pin_end_spin.setRange(0, 31)
-            pin_end_spin.setValue(15)
-            pin_range_lay.addWidget(pin_start_spin)
-            pin_range_lay.addWidget(BatchLabel("-"))
-            pin_range_lay.addWidget(pin_end_spin)
-            param_form.addRow(t("label.pin_range", default="引脚范围:"), pin_range_widget)
-            
-            # 目标配置寄存器后缀
-            config_reg_edit = BatchLineEdit("CON")
-            param_form.addRow(t("label.config_reg", default="配置寄存器后缀:"), config_reg_edit)
-            config_field_edit = BatchLineEdit("MODE")
-            param_form.addRow(t("label.config_field", default="配置位域前缀:"), config_field_edit)
-            
-            # 目标上下拉寄存器
-            pull_reg_edit = BatchLineEdit("PH")
-            param_form.addRow(t("label.pull_reg", default="上下拉寄存器后缀:"), pull_reg_edit)
-            pull_field_edit = BatchLineEdit("PUPD")
-            param_form.addRow(t("label.pull_field", default="上下拉位域前缀:"), pull_field_edit)
-            
-            # 目标电平寄存器
-            level_reg_edit = BatchLineEdit("VEV")
-            param_form.addRow(t("label.level_reg", default="电平寄存器后缀:"), level_reg_edit)
-            level_field_edit = BatchLineEdit("LEV")
-            param_form.addRow(t("label.level_field", default="电平位域前缀:"), level_field_edit)
-            
-            batch_lay.addWidget(param_group)
-            
-            # === 预览 ===
-            preview_group = BatchGroup(t("label.preview", default="预览（将生成的规则）"))
-            preview_lay = BatchVLayout(preview_group)
-            preview_list = BatchList()
-            preview_lay.addWidget(preview_list)
-            batch_lay.addWidget(preview_group)
-            
-            count_label = BatchLabel("")
-            batch_lay.addWidget(count_label)
-            
-            def refresh_preview():
-                preview_list.clear()
-                prefixes = [p.strip() for p in port_prefix_edit.text().split(",") if p.strip()]
-                start_pin = pin_start_spin.value()
-                end_pin = pin_end_spin.value()
-                rules_count = 0
-                
-                for prefix in prefixes:
-                    for pin in range(start_pin, end_pin + 1):
-                        name = f"{prefix}{pin}"
-                        port = prefix  # PA, PB, etc.
-                        con_reg = f"{port}{config_reg_edit.text()}"
-                        ph_reg = f"{port}{pull_reg_edit.text()}"
-                        vev_reg = f"{port}{level_reg_edit.text()}"
-                        mode_field = f"{config_field_edit.text()}{pin}"
-                        pupd_field = f"{pull_field_edit.text()}{pin}"
-                        lev_field = f"{level_field_edit.text()}{pin}"
-                        
-                        preview_list.addItem(
-                            f"✓ 删除 {name} → 删除 {con_reg}.{mode_field}, {ph_reg}.{pupd_field}, {vev_reg}.{lev_field}")
-                        rules_count += 1
-                
-                count_label.setText(t("label.total_rules", default=f"共 {rules_count} 条规则"))
-            
-            # 连接信号实时预览
-            port_prefix_edit.textChanged.connect(refresh_preview)
-            pin_start_spin.valueChanged.connect(refresh_preview)
-            pin_end_spin.valueChanged.connect(refresh_preview)
-            config_reg_edit.textChanged.connect(refresh_preview)
-            config_field_edit.textChanged.connect(refresh_preview)
-            pull_reg_edit.textChanged.connect(refresh_preview)
-            pull_field_edit.textChanged.connect(refresh_preview)
-            level_reg_edit.textChanged.connect(refresh_preview)
-            level_field_edit.textChanged.connect(refresh_preview)
-            
-            refresh_preview()
-            
-            # 按钮
-            btn_box = QDialogButtonBox(
-                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-            btn_box.accepted.connect(batch_dlg.accept)
-            btn_box.rejected.connect(batch_dlg.reject)
-            batch_lay.addWidget(btn_box)
-            
-            if batch_dlg.exec() == BatchDialog.DialogCode.Accepted:
-                # 生成规则
-                prefixes = [p.strip() for p in port_prefix_edit.text().split(",") if p.strip()]
-                start_pin = pin_start_spin.value()
-                end_pin = pin_end_spin.value()
-                generated = 0
-                
-                for prefix in prefixes:
-                    for pin in range(start_pin, end_pin + 1):
-                        name = f"{prefix}{pin}"
-                        port = prefix
-                        con_reg = f"{port}{config_reg_edit.text()}"
-                        ph_reg = f"{port}{pull_reg_edit.text()}"
-                        vev_reg = f"{port}{level_reg_edit.text()}"
-                        mode_field = f"{config_field_edit.text()}{pin}"
-                        pupd_field = f"{pull_field_edit.text()}{pin}"
-                        lev_field = f"{level_field_edit.text()}{pin}"
-                        
-                        rule = ChainRule(
-                            name=f"删除{name}时连锁删除配置",
-                            enabled=True,
-                            source_type="field",
-                            source_peripheral="GPIO*",
-                            source_register="*" + name,
-                            source_field=name,
-                            trigger="delete",
-                            actions=[
-                                ChainAction(target_peripheral="*", target_register=con_reg,
-                                           target_field=mode_field, action="delete",
-                                           description=f"删除{con_reg}.{mode_field}"),
-                                ChainAction(target_peripheral="*", target_register=ph_reg,
-                                           target_field=pupd_field, action="delete",
-                                           description=f"删除{ph_reg}.{pupd_field}"),
-                                ChainAction(target_peripheral="*", target_register=vev_reg,
-                                           target_field=lev_field, action="delete",
-                                           description=f"删除{vev_reg}.{lev_field}"),
-                            ]
-                        )
-                        self.chain_rules_engine.add_rule(rule)
-                        rules_list.addItem(f"✓ {rule.name}")
-                        generated += 1
-                
-                self.chain_rules_engine.save_rules()
-                QMessageBox.information(dialog,
-                    t("msg.batch_gen_complete", default="批量生成完成"),
-                    t("msg.batch_gen_result", default=f"已生成 {generated} 条连锁规则"))
-        
-        batch_gen_btn.clicked.connect(batch_generate)
-        
-        # 保存
-        def save():
-            row = rules_list.currentRow()
-            if 0 <= row < len(self.chain_rules_engine.rules):
-                # 解析动作
-                actions = []
-                for line in actions_text.toPlainText().strip().split("\n"):
-                    if not line.strip():
-                        continue
-                    parts = [p.strip() for p in line.split(",")]
-                    if len(parts) >= 2:
-                        action = ChainAction(
-                            target_peripheral=parts[0],
-                            target_register=parts[1],
-                            target_field=parts[2] if len(parts) > 2 else "",
-                            action=parts[3] if len(parts) > 3 else "delete"
-                        )
-                        actions.append(action)
-                
-                rule = ChainRule(
-                    name=name_edit.text() or t("label.unnamed", default="未命名"),
-                    enabled=enabled_cb.isChecked(),
-                    source_type=source_type_combo.currentText(),
-                    source_peripheral=source_periph.text(),
-                    source_register=source_reg.text(),
-                    source_field=source_field.text(),
-                    actions=actions
-                )
-                self.chain_rules_engine.update_rule(row, rule)
-                rules_list.item(row).setText(
-                    f"{'✓' if rule.enabled else '✗'} {rule.name}")
-            
-            self.chain_rules_engine.enabled = enable_cb.isChecked()
-            self.chain_rules_engine.save_rules()
-            dialog.accept()
-        
-        save_btn.clicked.connect(save)
-        cancel_btn.clicked.connect(dialog.reject)
-        
+        from .dialogs.chain_rules_dialog import ChainRulesDialog
+        dialog = ChainRulesDialog(self, self.chain_rules_engine)
         dialog.exec()
 
     def set_language(self, locale: str):
@@ -4151,11 +3537,11 @@ class MainWindowRefactored(QMainWindow):
             if hasattr(self, 'peripheral_manager'):
                 self.peripheral_manager.move_selected_peripheral_up()
             else:
-                self.show_message("功能不可用", "外设管理器未初始化", 'warning')
+                self.show_message(t("msg.func_unavailable"), t("msg.peripheral_mgr_not_init"), 'warning')
         except Exception as e:
             self.logger.error(f"上移项目时出错: {str(e)}")
-            self.show_message("操作失败", f"上移项目时发生错误: {str(e)}", 'error')
-    
+            self.show_message(t("msg.operation_failed"), t("msg.move_up_error", error=str(e)), 'error')
+
     def move_item_down(self):
         """下移选中项目（只支持外设）"""
         try:
@@ -4163,10 +3549,10 @@ class MainWindowRefactored(QMainWindow):
             if hasattr(self, 'peripheral_manager'):
                 self.peripheral_manager.move_selected_peripheral_down()
             else:
-                self.show_message("功能不可用", "外设管理器未初始化", 'warning')
+                self.show_message(t("msg.func_unavailable"), t("msg.peripheral_mgr_not_init"), 'warning')
         except Exception as e:
             self.logger.error(f"下移项目时出错: {str(e)}")
-            self.show_message("操作失败", f"下移项目时发生错误: {str(e)}", 'error')
+            self.show_message(t("msg.operation_failed"), t("msg.move_down_error", error=str(e)), 'error')
     
     def show_message(self, title: str, text: str, icon: str = 'info'):
         """统一消息弹窗接口：icon in ['info','warning','error']"""
@@ -4268,7 +3654,7 @@ class MainWindowRefactored(QMainWindow):
             device_info.peripherals = new_peripherals
             
             # 更新状态栏
-            self.layout_manager.update_status("已调整外设顺序")
+            self.layout_manager.update_status(t("status.periph_order_updated"))
             
             # 触发数据变化通知
             self.state_manager._notify_state_change()

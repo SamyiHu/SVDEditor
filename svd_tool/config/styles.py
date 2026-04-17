@@ -835,9 +835,62 @@ class StyleScheme:
             border-radius: {s.radius_sm};
             padding: {s.input_padding};
             background-color: {c.white};
+            min-height: 28px;
         }}
         QSpinBox:focus {{
             border-color: {c.accent};
+            border-width: 1.5px;
+        }}
+        QSpinBox:hover {{
+            border-color: {c.accent};
+        }}
+        QSpinBox::up-button {{
+            subcontrol-origin: border;
+            subcontrol-position: top right;
+            width: 22px;
+            border-left: 1px solid {c.border_light};
+            border-top-right-radius: {s.radius_sm};
+            background-color: {c.white};
+        }}
+        QSpinBox::up-button:hover {{
+            background-color: {c.accent_light};
+        }}
+        QSpinBox::up-button:pressed {{
+            background-color: {c.accent};
+        }}
+        QSpinBox::up-arrow {{
+            width: 8px;
+            height: 8px;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-bottom: 5px solid {c.gray};
+        }}
+        QSpinBox::up-button:hover QSpinBox::up-arrow {{
+            border-bottom-color: {c.accent};
+        }}
+        QSpinBox::down-button {{
+            subcontrol-origin: border;
+            subcontrol-position: bottom right;
+            width: 22px;
+            border-left: 1px solid {c.border_light};
+            border-bottom-right-radius: {s.radius_sm};
+            background-color: {c.white};
+        }}
+        QSpinBox::down-button:hover {{
+            background-color: {c.accent_light};
+        }}
+        QSpinBox::down-button:pressed {{
+            background-color: {c.accent};
+        }}
+        QSpinBox::down-arrow {{
+            width: 8px;
+            height: 8px;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 5px solid {c.gray};
+        }}
+        QSpinBox::down-button:hover QSpinBox::down-arrow {{
+            border-top-color: {c.accent};
         }}
 
         QCheckBox {{
