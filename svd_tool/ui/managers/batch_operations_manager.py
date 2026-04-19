@@ -542,24 +542,31 @@ class BatchOperationsManager(QObject):
         template_layout.setSpacing(6)
         template_layout.setContentsMargins(12, 20, 12, 8)
 
+        _INPUT_HEIGHT = 32  # 统一输入控件高度
+
         offset_edit = QLineEdit("0x04")
         offset_edit.setPlaceholderText(t("batch.offset_placeholder"))
+        offset_edit.setFixedHeight(_INPUT_HEIGHT)
         template_layout.addRow(t("batch.offset_step"), offset_edit)
 
         access_combo = QComboBox()
         access_combo.addItems(["read-write", "read-only", "write-only"])
+        access_combo.setFixedHeight(_INPUT_HEIGHT)
         template_layout.addRow(t("batch.access_label"), access_combo)
 
         size_combo = QComboBox()
         size_combo.addItems(["8", "16", "32"])
         size_combo.setCurrentText("32")
+        size_combo.setFixedHeight(_INPUT_HEIGHT)
         template_layout.addRow(t("batch.size_bits"), size_combo)
 
         reset_edit = QLineEdit("0x00000000")
+        reset_edit.setFixedHeight(_INPUT_HEIGHT)
         template_layout.addRow(t("batch.reset_label"), reset_edit)
 
         desc_edit = QLineEdit("")
         desc_edit.setPlaceholderText(t("batch.desc_placeholder"))
+        desc_edit.setFixedHeight(_INPUT_HEIGHT)
         template_layout.addRow(t("label.description"), desc_edit)
 
         left_layout.addWidget(template_group, 1)

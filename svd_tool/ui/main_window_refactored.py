@@ -1278,9 +1278,8 @@ class MainWindowRefactored(QMainWindow):
             # 切换到编辑器视图
             self.layout_manager.show_editor()
         else:
-            # 用户取消向导，创建空白文件
-            self.file_operations.new_file()
-            self.layout_manager.show_editor()
+            # 用户取消向导，不做任何操作，留在当前页面
+            pass
 
     def _open_recent_file(self, file_path: str):
         """从欢迎页打开最近文件"""

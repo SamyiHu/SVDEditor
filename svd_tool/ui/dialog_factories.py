@@ -226,8 +226,7 @@ class PeripheralEditDialog(BaseEditDialog):
             self._conflict_label.setStyleSheet("color: red; font-weight: bold; font-size: 11px;")
             self._has_address_conflict = True
         else:
-            self._conflict_label.setText("✓ 地址无冲突")
-            self._conflict_label.setStyleSheet("color: green; font-size: 11px;")
+            self._conflict_label.setText("")
             self._has_address_conflict = False
     
     def validate_input(self):

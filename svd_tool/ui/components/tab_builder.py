@@ -189,12 +189,32 @@ class TabBuilder:
 
             # === 数据汇总组 ===
             summary_group = QGroupBox(t("label.data_summary"))
-            summary_layout = QHBoxLayout(summary_group)
-            summary_layout.setSpacing(16)
-            summary_layout.setContentsMargins(12, 20, 12, 12)
+            summary_outer = QVBoxLayout(summary_group)
+            summary_outer.setSpacing(8)
+            summary_outer.setContentsMargins(12, 20, 12, 12)
 
             _scheme = get_style_scheme()
             _c = _scheme.colors
+
+            # 筛选行
+            filter_row = QHBoxLayout()
+            filter_row.setSpacing(8)
+
+            filter_label = QLabel(t("label.filter_periph", default="筛选外设:"))
+            filter_label.setStyleSheet(f"color: {_c.text_secondary}; font-size: 9pt;")
+            filter_row.addWidget(filter_label)
+
+            periph_filter_combo = QComboBox()
+            periph_filter_combo.addItem(t("value.all", default="全部"), "__all__")
+            periph_filter_combo.setMinimumWidth(160)
+            periph_filter_combo.setFixedHeight(28)
+            filter_row.addWidget(periph_filter_combo)
+            filter_row.addStretch()
+            summary_outer.addLayout(filter_row)
+
+            # 卡片行
+            summary_layout = QHBoxLayout()
+            summary_layout.setSpacing(16)
 
             card_style = """
                 QFrame {
@@ -274,6 +294,7 @@ class TabBuilder:
             icl.addWidget(itl)
             summary_layout.addWidget(irq_card)
 
+            summary_outer.addLayout(summary_layout)
             layout.addWidget(summary_group)
             layout.addStretch(1)
 
@@ -301,6 +322,7 @@ class TabBuilder:
                 'reg_count_label': reg_count_label,
                 'field_count_label': field_count_label,
                 'irq_count_label': irq_count_label,
+                'data_summary_filter': periph_filter_combo,
             }
             return tab, widgets
 

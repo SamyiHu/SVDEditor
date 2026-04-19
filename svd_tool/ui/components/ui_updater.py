@@ -6,7 +6,7 @@ import sys
 import logging
 from typing import Dict, Any, Optional
 
-from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
+from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QComboBox
 from PyQt6.QtCore import Qt
 from ...i18n.i18n import t
 
@@ -29,29 +29,134 @@ class UIUpdater:
         更新数据统计
 
         Args:
-            stats: 统计数据字典
+            stats: 统计数据字典（全局统计）
         """
         label = self.widget_manager.get_widget('data_stats_label')
         if label:
             text = t("status.data_stats", peripherals=stats.get('peripherals', 0), registers=stats.get('registers', 0), fields=stats.get('fields', 0), interrupts=stats.get('interrupts', 0))
             label.setText(text)
-        
+
+        # 获取筛选控件
+        filter_combo = self.widget_manager.get_widget('data_summary_filter')
+
+        # 获取当前筛选的外设名
+        selected_periph = None
+        if filter_combo and isinstance(filter_combo, QComboBox):
+            selected_periph = filter_combo.currentData()
+            # 更新筛选下拉框的选项列表
+            self._update_filter_options(filter_combo, stats)
+
+        # 根据筛选计算统计数据
+        display_stats = stats
+        if selected_periph and selected_periph != "__all__":
+            display_stats = self._get_filtered_stats(selected_periph, stats)
+
         # 更新基本信息页面的统计卡片
         periph_label = self.widget_manager.get_widget('periph_count_label')
         if periph_label:
-            periph_label.setText(str(stats.get('peripherals', 0)))
-        
+            periph_label.setText(str(display_stats.get('peripherals', 0)))
+
         reg_label = self.widget_manager.get_widget('reg_count_label')
         if reg_label:
-            reg_label.setText(str(stats.get('registers', 0)))
-        
+            reg_label.setText(str(display_stats.get('registers', 0)))
+
         field_label = self.widget_manager.get_widget('field_count_label')
         if field_label:
-            field_label.setText(str(stats.get('fields', 0)))
-        
+            field_label.setText(str(display_stats.get('fields', 0)))
+
         irq_label = self.widget_manager.get_widget('irq_count_label')
         if irq_label:
-            irq_label.setText(str(stats.get('interrupts', 0)))
+            irq_label.setText(str(display_stats.get('interrupts', 0)))
+
+    def _update_filter_options(self, combo: QComboBox, stats: Dict[str, int]):
+        """更新筛选下拉框选项"""
+        # 获取 state_manager 来读取外设列表
+        state_mgr = getattr(self.widget_manager, 'main_window', None)
+        if state_mgr:
+            state_mgr = getattr(state_mgr, 'state_manager', None)
+        if not state_mgr or not hasattr(state_mgr, 'device_info'):
+            return
+
+        current_data = combo.currentData()
+        periph_names = sorted(state_mgr.device_info.peripherals.keys())
+
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem(t("value.all", default="全部"), "__all__")
+        for name in periph_names:
+            combo.addItem(name, name)
+
+        # 恢复之前的选择
+        idx = combo.findData(current_data)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+        combo.blockSignals(False)
+
+    def _get_filtered_stats(self, periph_name: str, global_stats: Dict[str, int]) -> Dict[str, int]:
+        """获取指定外设的统计数据"""
+        state_mgr = getattr(self.widget_manager, 'main_window', None)
+        if state_mgr:
+            state_mgr = getattr(state_mgr, 'state_manager', None)
+        if not state_mgr or not hasattr(state_mgr, 'device_info'):
+            return global_stats
+
+        peripherals = state_mgr.device_info.peripherals
+        if periph_name not in peripherals:
+            return global_stats
+
+        periph = peripherals[periph_name]
+        reg_count = len(periph.registers)
+        field_count = 0
+        for reg in periph.registers.values():
+            field_count += len(reg.fields)
+
+        return {
+            'peripherals': 1,
+            'registers': reg_count,
+            'fields': field_count,
+            'interrupts': 0,  # 单个外设的中断数不好界定，显示为 "-"
+        }
+
+    def update_data_stats_by_filter(self):
+        """根据当前筛选条件刷新统计显示"""
+        filter_combo = self.widget_manager.get_widget('data_summary_filter')
+        if not filter_combo:
+            return
+
+        selected_periph = filter_combo.currentData()
+
+        # 获取全局统计
+        state_mgr = getattr(self.widget_manager, 'main_window', None)
+        if state_mgr:
+            state_mgr = getattr(state_mgr, 'state_manager', None)
+        if not state_mgr:
+            return
+
+        global_stats = state_mgr.get_data_stats()
+
+        # 根据筛选计算
+        if selected_periph and selected_periph != "__all__":
+            display_stats = self._get_filtered_stats(selected_periph, global_stats)
+        else:
+            display_stats = global_stats
+
+        # 更新卡片（不更新状态栏和筛选框，避免循环）
+        periph_label = self.widget_manager.get_widget('periph_count_label')
+        if periph_label:
+            periph_label.setText(str(display_stats.get('peripherals', 0)))
+
+        reg_label = self.widget_manager.get_widget('reg_count_label')
+        if reg_label:
+            reg_label.setText(str(display_stats.get('registers', 0)))
+
+        field_label = self.widget_manager.get_widget('field_count_label')
+        if field_label:
+            field_label.setText(str(display_stats.get('fields', 0)))
+
+        irq_label = self.widget_manager.get_widget('irq_count_label')
+        if irq_label:
+            val = display_stats.get('interrupts', 0)
+            irq_label.setText("-" if val == 0 and selected_periph != "__all__" else str(val))
 
     def update_status(self, message: str):
         """

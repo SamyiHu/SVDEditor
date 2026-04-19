@@ -164,7 +164,7 @@ class ChainRulesDialog(QDialog):
             act_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
             act_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
             act_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-            act_header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+            act_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.actions_table.setAlternatingRowColors(True)
         self.actions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.actions_table.verticalHeader().setVisible(False)

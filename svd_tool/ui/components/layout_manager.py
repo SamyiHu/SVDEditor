@@ -209,6 +209,13 @@ class LayoutManager:
         tab, widgets = self.tab_builder.create_basic_info_tab(tab_widget)
         # 注册控件到widget_manager
         self.widget_manager.register_widgets(widgets)
+        # 连接数据汇总筛选信号
+        filter_combo = widgets.get('data_summary_filter')
+        if filter_combo:
+            from PyQt6.QtWidgets import QComboBox
+            filter_combo.currentIndexChanged.connect(
+                lambda: self.ui_updater.update_data_stats_by_filter()
+            )
         return tab
 
     def create_peripheral_tab(self, tab_widget):

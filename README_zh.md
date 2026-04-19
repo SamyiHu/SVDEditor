@@ -1,251 +1,170 @@
 # SVD Editor
 
-一个基于组件化架构的 CMSIS SVD解析/编辑/可视化工具，支持外设添加、寄存器编辑、中断管理，基于Python/Qt开发，提供更佳的可维护性和扩展性。
-
-## 主要改进
-
-- **组件化架构**：将主窗口逻辑拆分为独立组件（StateManager, LayoutManager, PeripheralManager）
-- **更好的代码组织**：减少耦合，提高可测试性
-- **增强的状态管理**：集中化状态处理，支持快照和恢复
-- **现代化 UI 组件**：使用专用 widgets 实现可视化功能
-- **完整的测试套件**：包含单元测试、集成测试和 GUI 测试
+专业的 CMSIS-SVD 解析、编辑、可视化和 CLI 工具。支持外设管理、寄存器编辑、位域可视化、批量操作、差异比较/合并、C头文件生成等。
 
 ## 功能特性
 
-### 核心功能
-- **SVD/XML 文件解析**：导入标准 SVD 文件，解析设备、外设、寄存器、位域等层次结构
-- **可视化编辑**：树形视图展示三级结构（外设 → 寄存器 → 位域），支持增删改查操作
-- **继承外设支持**：自动合并基类外设的寄存器定义，可视化显示继承关系
-- **地址映射可视化**：图形化显示外设地址空间布局和寄存器偏移
-- **位域可视化**：寄存器位域图形化展示，支持位域高亮和编辑
-- **中断管理**：配置和管理外设中断向量
+### GUI 编辑器
+- **SVD/XML 解析**：导入标准 CMSIS-SVD 文件，解析设备/外设/寄存器/位域层次结构
+- **可视化树形编辑**：三级树形视图（外设 -> 寄存器 -> 位域），完整增删改查
+- **继承外设支持**：自动合并 `derivedFrom` 基类外设的寄存器定义
+- **地址映射可视化**：图形化外设地址空间布局和寄存器偏移
+- **位域可视化**：寄存器位域图，支持高亮和编辑
+- **中断管理**：配置和管理中断向量
+- **撤销/重做**：无限操作历史，支持快照恢复
+- **高级搜索**：统一搜索语法（`type:periph name:GPIO* addr:0x4001*`），支持结构化和全文搜索
+- **批量操作**：批量修改属性、批量生成寄存器、批量克隆到其他外设
+- **连锁规则**：级联删除/修改规则，支持可配置的动作类型
+- **拖放排序**：直观调整外设和寄存器顺序
+- **多文档标签**：打开和切换多个 SVD 文件
+- **实时预览**：实时 XML 预览，支持语法高亮
+- **深色/浅色主题**：内置主题切换，现代化扁平 UI
 
-### 用户体验
-- **撤销/重做**：完整的操作历史记录，支持无限级撤销重做
-- **搜索与过滤**：快速定位外设、寄存器、位域
-- **拖放排序**：直观调整外设、寄存器顺序
-- **多标签界面**：分页管理不同功能模块
-- **实时预览**：编辑时实时更新可视化效果
+### CLI 命令（可集成 CI/CD）
+
+| 命令 | 说明 |
+|------|------|
+| `validate` | 验证 SVD 的 CMSIS-SVD Schema 完整性（位域重叠、地址冲突、必需字段等） |
+| `export` | 导出为 CSV、Markdown 或 HTML 文档 |
+| `generate` | 重新生成/格式化 SVD XML |
+| `diff` | 比较两个 SVD 文件的结构差异 |
+| `info` | 显示设备信息和统计数据 |
+| `merge` | 合并两个 SVD 文件，支持冲突策略配置 |
+| `header` | 从 SVD 生成 C 语言头文件 |
+| `conflicts` | 检测地址重叠、寄存器偏移重复、位域冲突 |
+| `extract` | 从 SVD 中提取指定外设到新文件 |
 
 ### 输出与导出
-- **美化 SVD 生成**：生成格式规范、缩进整齐的 SVD/XML 文件
-- **自定义配置**：支持输出格式定制（缩进、属性顺序等）
-- **批量处理**：支持批量导入导出
+- **SVD 生成**：格式规范、缩进整齐的 SVD/XML 输出
+- **文档导出**：CSV、Markdown、HTML 寄存器文档
+- **C 头文件生成**：寄存器地址宏和位域掩码 `#define`
+- **差异报告**：文本或 JSON 格式的差异对比报告
 
 ## 安装与运行
 
 ### 环境要求
-- Python 3.10 或更高版本
+- Python 3.10+
 - PyQt6 6.5.0+
 
 ### 快速开始
 
-1. **克隆仓库**
-   ```bash
-   git clone https://github.com/SamyiHu/SVDEditor.git
-   cd SVDEditor
-   ```
+```bash
+git clone https://github.com/SamyiHu/SVDEditor.git
+cd SVDEditor
+pip install PyQt6
+python run.py                # GUI 模式
+python run.py info file.svd  # CLI 模式
+```
 
-2. **创建虚拟环境（推荐）**
-   ```bash
-   python -m venv .venv
-   # Windows
-   .\.venv\Scripts\activate
-   # Linux/Mac
-   source .venv/bin/activate
-   ```
+## CLI 使用
 
-3. **安装依赖**
-   ```bash
-   pip install PyQt6
-   # 或使用 requirements.txt（如果存在）
-   pip install -r requirements.txt
-   ```
+```bash
+# 验证
+python run.py validate chip.svd [--json] [--strict]
 
-4. **运行应用**
-   ```bash
-   python run.py
-   ```
+# 导出文档
+python run.py export chip.svd --format markdown -o registers.md
+python run.py export chip.svd --format csv --peripheral GPIOA --summary-only
 
-## 构建与分发
+# 重新生成 SVD
+python run.py generate chip.svd -o output.svd
 
-本项目包含专业的构建工具，用于为Windows平台创建独立可执行文件。
+# 比较两个版本
+python run.py diff chip_v1.svd chip_v2.svd [--json] [--ignore-description]
 
-### 📚 详细构建指南
-完整构建说明请参阅[BUILD_INSTRUCTIONS_EN.md](docs/BUILD_INSTRUCTIONS_EN.md)（英文）或[BUILD_INSTRUCTIONS.md](docs/BUILD_INSTRUCTIONS.md)（中文）。
+# 设备信息
+python run.py info chip.svd [--json]
 
-### 构建工具
+# 合并 SVD 文件
+python run.py merge target.svd source.svd --strategy source -o merged.svd
 
-构建脚本位于 `build_tools/` 目录下：
+# 生成 C 头文件
+python run.py header chip.svd --style upper_case --prefix CHIP_ -o device.h
 
-- **`build_professional_fixed.py`**（推荐）- 专业的构建脚本，减少杀毒软件误报
-- **`build_windows.py`** - 基础Windows构建脚本，支持32/64位架构选择
+# 检查地址冲突
+python run.py conflicts chip.svd [--json] [--strict]
 
-### 快速构建指南
+# 提取外设
+python run.py extract chip.svd --peripherals GPIOA,GPIOB,GPIOC -o gpio.svd
+```
 
-1. **安装构建依赖项**
-   ```bash
-   pip install -r requirements.txt
-   pip install pyinstaller
-   ```
+### 键盘快捷键（GUI）
 
-2. **使用便捷脚本（可选）**
-   - **Windows**：在项目根目录运行 `build.bat`
-   - **Linux/Mac**：在项目根目录运行 `./build.sh`
-   
-   或手动进入构建工具目录：
-   ```bash
-   cd build_tools
-   ```
+| 快捷键 | 功能 |
+|--------|------|
+| `Ctrl+N` | 新建 SVD 文件 |
+| `Ctrl+O` | 打开文件 |
+| `Ctrl+S` | 保存文件 |
+| `Ctrl+Z` | 撤销 |
+| `Ctrl+Y` | 重做 |
+| `Ctrl+F` | 快速搜索 |
+| `Ctrl+H` | 高级搜索 |
+| `Ctrl+Shift+G` | 跳转到地址 |
+| `F5` | 刷新视图 |
 
-3. **运行专业构建脚本**
-   ```bash
-   python build_professional_fixed.py
-   ```
-
-4. **查找输出文件**
-   - 可执行文件：`../_dist/SVDEditor_64bit.exe`
-   - 发布文件：`../release/64bit/`
-
-### 构建特点
-
-- **减少杀毒软件误报**：包含版本信息并使用标准构建技术
-- **清晰的目录结构**：构建产物组织在 `_build/` 和 `_dist/` 目录中
-- **图标支持**：自动包含项目根目录的 `icon.ico`
-- **版本信息**：从 `version_info.txt` 读取
-
-### 重要说明
-
-- 构建脚本必须在 `build_tools/` 目录下运行
-- 如果遇到“文件未找到”错误，请确保您位于正确的目录
-- 如需32位构建，请使用 `python build_windows.py` 并选择32位选项
-
-## 使用指南
-
-### 基本工作流程
-1. **导入 SVD 文件**：点击"文件" → "打开"，选择 SVD/XML 文件
-2. **浏览结构**：左侧树形视图展示设备→外设→寄存器→位域层次
-3. **编辑项目**：
-   - 双击树节点编辑属性
-   - 右键菜单添加/删除项目
-   - 拖放调整顺序
-4. **可视化查看**：
-   - 选择外设查看地址映射图
-   - 选择寄存器查看位域分布图
-   - 选择位域查看详细属性
-5. **保存结果**：点击"生成"按钮保存美化后的 SVD 文件
-
-### 继承外设处理
-当外设使用 `derivedFrom` 属性时，工具会自动：
-- 合并基类外设的寄存器定义
-- 在地址映射图中用不同颜色区分继承寄存器
-- 保持寄存器定义的完整性
-
-### 快捷键
-- `Ctrl+O`：打开文件
-- `Ctrl+S`：保存文件
-- `Ctrl+Z`：撤销
-- `Ctrl+Y`：重做
-- `Ctrl+F`：搜索
-- `F5`：刷新视图
-
-## 项目结构（重构版）
+## 项目结构
 
 ```
 SVDEditor/
-├── run.py                    # 应用启动脚本
-├── config.py                 # 配置文件
-├── README.md                 # 本文档
-├── svd_tool/                 # 主包目录
-│   ├── main.py              # 应用入口（使用 MainWindowRefactored）
-│   ├── core/                # 核心逻辑
-│   │   ├── data_model.py    # 数据模型（Device, Peripheral, Register, Field）
-│   │   ├── svd_parser.py    # SVD 解析器
-│   │   ├── svd_generator.py # SVD 生成器
-│   │   ├── validators.py    # 数据验证
-│   │   └── command_history.py # 命令历史（撤销/重做）
-│   ├── ui/                  # 用户界面（组件化）
-│   │   ├── main_window_refactored.py   # 重构主窗口（组件化架构）
-│   │   ├── dialog_factories.py # 对话框工厂
-│   │   ├── dialogs.py       # 各种对话框
-│   │   ├── form_builder.py  # 表单构建器
-│   │   ├── tree_manager.py  # 树形视图管理
-│   │   ├── components/      # 组件目录
-│   │   │   ├── state_manager.py     # 状态管理组件
-│   │   │   ├── layout_manager.py    # UI布局管理组件
-│   │   │   ├── peripheral_manager.py # 外设管理组件
-│   │   │   ├── menu_bar.py          # 菜单栏组件
-│   │   │   └── toolbar.py           # 工具栏组件
-│   │   └── widgets/         # 专用小部件
-│   │       ├── address_map_widget.py   # 地址映射小部件
-│   │       ├── bit_field_widget.py     # 位域小部件
-│   │       └── visualization_widget.py # 可视化小部件
-│   └── utils/               # 工具函数
-│       ├── helpers.py       # 辅助函数
-│       └── logger.py        # 日志配置
-├── tests/                   # 测试套件
-│   ├── unit_tests/         # 单元测试
-│   ├── integration_tests/  # 集成测试
-│   └── gui_tests/          # GUI测试
-├── GITHUB_SETUP.md         # GitHub仓库设置指南
-├── MIGRATION_PROGRESS.md   # 迁移进度文档
-├── PR_DESCRIPTION.md       # PR描述模板
-├── LICENSE                 # MIT许可证
-└── .venv/                  # 虚拟环境（可选）
+├── run.py                          # 入口（GUI + CLI）
+├── svd_tool/
+│   ├── cli.py                      # CLI 模块（9 个命令）
+│   ├── main.py                     # GUI 入口
+│   ├── core/
+│   │   ├── data_model.py           # 数据模型
+│   │   ├── svd_parser.py           # SVD 解析器
+│   │   ├── svd_generator.py        # SVD 生成器
+│   │   ├── svd_schema_validator.py # Schema 验证
+│   │   ├── svd_exporter.py         # CSV/Markdown/HTML 导出
+│   │   ├── svd_differ.py           # 差异比较引擎
+│   │   ├── svd_merger.py           # 合并引擎
+│   │   ├── header_generator.py     # C 头文件生成器
+│   │   ├── address_conflict_detector.py  # 冲突检测
+│   │   ├── chain_rules.py          # 连锁规则引擎
+│   │   └── command_history.py      # 撤销/重做
+│   ├── ui/
+│   │   ├── main_window_refactored.py     # 主窗口
+│   │   ├── components/                   # 组件目录
+│   │   │   ├── state_manager.py          # 状态管理
+│   │   │   ├── layout_manager.py         # 布局协调
+│   │   │   ├── tab_builder.py            # 标签页构建
+│   │   │   └── menu_bar.py / toolbar.py  # 菜单和工具栏
+│   │   ├── managers/                     # 管理器目录
+│   │   │   ├── search_manager.py         # 搜索（快速+高级）
+│   │   │   ├── batch_operations_manager.py  # 批量操作
+│   │   │   └── file_operations.py        # 文件 I/O
+│   │   ├── dialogs/                      # 对话框目录
+│   │   │   ├── chain_rules_dialog.py     # 连锁规则编辑器
+│   │   │   └── new_svd_wizard.py         # 新建文件向导
+│   │   └── widgets/                      # 控件目录
+│   │       ├── bit_field_widget.py       # 位域可视化
+│   │       ├── address_map_widget.py     # 地址映射
+│   │       ├── toggle_switch.py          # iOS 风格开关
+│   │       └── welcome_page.py           # 欢迎页
+│   ├── config/
+│   │   └── styles.py               # 主题/样式系统（深色/浅色）
+│   └── i18n/
+│       ├── zh_CN.json              # 中文翻译
+│       └── en_US.json              # 英文翻译
+├── build_tools/                    # PyInstaller 构建脚本
+├── test_data/                      # 测试 SVD 文件
+└── tests/                          # 测试套件
 ```
 
-## 开发与贡献
+## 构建
 
-### 代码规范
-- 遵循 PEP 8 Python 代码规范
-- 使用类型注解（Type Hints）
-- 模块化设计，关注点分离
+详见 [BUILD_INSTRUCTIONS.md](docs/BUILD_INSTRUCTIONS.md)。
 
-### 测试
-项目包含多个测试脚本，验证核心功能：
-- `test_all_improvements.py`：综合测试所有改进功能
-- `test_inheritance_fix.py`：测试继承外设功能
-- `test_graphics.py`：测试图形化组件
-- `test_rectangle_fix.py`：测试矩形绘制
-- `test_final_verification.py`：最终验证测试
-
-运行测试：
 ```bash
-python test_all_improvements.py
+pip install pyinstaller
+cd build_tools
+python build_professional_fixed.py
 ```
 
-### 提交贡献
-1. Fork 本仓库
-2. 创建功能分支 (`git checkout -b feature/your-feature`)
-3. 提交更改 (`git commit -m 'Add some feature'`)
-4. 推送到分支 (`git push origin feature/your-feature`)
-5. 创建 Pull Request
+## 许可证
 
-### 开源许可证说明
-
-本项目采用 MIT 许可证，这是一种宽松的开源许可证，允许：
-
-- 商业使用
-- 修改和分发
-- 私人使用
-- 子许可证
-- 专利授权
-
-唯一的要求是保留原始的版权声明和许可证声明。
-
-### 贡献者协议
-
-通过向本项目提交代码，您同意您的贡献将在 MIT 许可证下发布。
+MIT License - 详见 [LICENSE](LICENSE)。
 
 ## 维护者
 
-- SamyiHu (@SamyiHu) - 项目创建者和主要维护者
-
-## 更新日志
-
-### 最新版本 (v2.1)
-- **可视化改进**：添加地址映射图和位域可视化组件
-- **继承外设支持**：完善 derivedFrom 外设的寄存器合并显示
-- **UI 优化**：重构工具栏，移除冗余按钮，优化布局
-- **测试套件**：添加多个功能测试脚本
-- **Bug 修复**：修复树形视图选择、撤销重做等已知问题
+- SamyiHu (@SamyiHu)

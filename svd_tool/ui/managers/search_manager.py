@@ -11,11 +11,13 @@ from typing import List, Dict, Any, Optional, Tuple
 from PyQt6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QTableWidget, QTableWidgetItem,
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget,
-    QListWidgetItem, QComboBox, QLineEdit, QSizePolicy
+    QListWidgetItem, QComboBox, QLineEdit, QSizePolicy, QGroupBox,
+    QFormLayout, QFrame
 )
 from PyQt6.QtCore import QObject, pyqtSignal, Qt
 from PyQt6.QtGui import QBrush, QColor, QIcon
 from ...i18n.i18n import t
+from ...config.styles import get_style_scheme
 
 
 class SearchManager(QObject):
@@ -566,17 +568,50 @@ class SearchManager(QObject):
     
     def show_advanced_search_dialog(self, parent=None):
         """显示高级搜索对话框（Ctrl+H）- 支持统一搜索语法"""
-        from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QTextEdit
-        
+        from PyQt6.QtWidgets import QDialog, QTextEdit
+
+        _c = get_style_scheme().colors
+
         dlg = QDialog(parent or None)
         dlg.setWindowTitle(t("dialog.advanced_search", default="🔍 高级搜索"))
-        dlg.setMinimumSize(700, 550)
-        dlg.resize(850, 650)
-        layout = QVBoxLayout(dlg)
-        
-        # === 搜索条件 ===
-        cond_layout = QHBoxLayout()
-        
+        dlg.setMinimumSize(750, 580)
+        dlg.resize(880, 660)
+        dlg.setStyleSheet(dlg.styleSheet())  # 继承全局样式
+
+        main_layout = QVBoxLayout(dlg)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(8)
+
+        # === 搜索条件分组 ===
+        def _make_group(title: str) -> QGroupBox:
+            g = QGroupBox(title)
+            g.setStyleSheet(f"""
+                QGroupBox {{
+                    font-weight: bold;
+                    color: {_c.text_primary};
+                    border: 1px solid {_c.border_light};
+                    border-radius: 8px;
+                    margin-top: 12px;
+                    padding-top: 16px;
+                }}
+                QGroupBox::title {{
+                    subcontrol-origin: margin;
+                    left: 12px;
+                    padding: 0 6px;
+                    color: {_c.text_secondary};
+                }}
+            """)
+            return g
+
+        search_group = _make_group(t("search.condition_group", default="搜索条件"))
+        search_layout = QVBoxLayout(search_group)
+        search_layout.setContentsMargins(12, 20, 12, 8)
+        search_layout.setSpacing(6)
+
+        # 搜索输入行
+        input_row = QHBoxLayout()
+        input_row.setSpacing(6)
+
         search_edit = QLineEdit()
         search_edit.setPlaceholderText(
             t("search.advanced_placeholder",
@@ -591,80 +626,107 @@ class SearchManager(QObject):
             "  access:ro        按权限\n"
             "  periph:GPIOA     限定外设\n"
             "  纯文本           全属性搜索")
-        cond_layout.addWidget(search_edit)
-        
-        # 搜索范围（兼容旧模式）
+        input_row.addWidget(search_edit, 1)
+
+        # 搜索范围
         scope_combo = QComboBox()
         scope_combo.addItem(t("search.scope_all", default="全部属性"), "all")
         scope_combo.addItem(t("search.scope_name", default="仅名称"), "name")
         scope_combo.addItem(t("search.scope_desc", default="仅描述"), "description")
         scope_combo.addItem(t("search.scope_addr", default="仅地址"), "address")
         scope_combo.addItem(t("search.scope_value", default="仅复位值"), "value")
-        cond_layout.addWidget(scope_combo)
-        
+        scope_combo.setFixedWidth(120)
+        input_row.addWidget(scope_combo)
+
         # 语法帮助按钮
-        help_btn = QPushButton("❓")
-        help_btn.setFixedWidth(35)
+        help_btn = QPushButton("?")
+        help_btn.setFixedSize(32, 32)
         help_btn.setToolTip("搜索语法帮助")
-        cond_layout.addWidget(help_btn)
-        
+        input_row.addWidget(help_btn)
+
         search_btn = QPushButton(t("search.button", default="搜索"))
+        search_btn.setFixedHeight(32)
         search_btn.setDefault(True)
-        cond_layout.addWidget(search_btn)
-        
-        layout.addLayout(cond_layout)
-        
-        # === 语法提示栏 ===
-        from ...config.styles import get_style_scheme
-        _sc = get_style_scheme().colors
+        input_row.addWidget(search_btn)
+
+        search_layout.addLayout(input_row)
+
+        # 语法提示栏
         syntax_label = QLabel(
-            f'<span style="color:{_sc.gray}; font-size:11px;">'
+            f'<span style="color:{_c.text_secondary}; font-size:11px;">'
             '💡 语法: <b>type:</b>periph <b>name:</b>GPIO* <b>addr:</b>0x4001* <b>access:</b>ro <b>periph:</b>GPIOA <b>desc:</b>"clock"  |  纯文本搜索所有属性'
             '</span>')
         syntax_label.setWordWrap(True)
-        layout.addWidget(syntax_label)
-        
+        search_layout.addWidget(syntax_label)
+
+        main_layout.addWidget(search_group)
+
+        # === 搜索结果分组 ===
+        results_group = _make_group(t("search.results_group", default="搜索结果"))
+        results_layout = QVBoxLayout(results_group)
+        results_layout.setContentsMargins(12, 20, 12, 8)
+        results_layout.setSpacing(6)
+
         # 结果统计
         count_label = QLabel("")
-        layout.addWidget(count_label)
-        
+        results_layout.addWidget(count_label)
+
         # 结果列表
         results_list = QListWidget()
         results_list.setAlternatingRowColors(True)
-        layout.addWidget(results_list, 1)
-        
+        results_list.setStyleSheet(f"""
+            QListWidget {{
+                border: 1px solid {_c.border_light};
+                border-radius: 4px;
+                padding: 2px;
+                background-color: {_c.background_secondary if hasattr(_c, 'background_secondary') else _c.background};
+            }}
+            QListWidget::item {{
+                padding: 4px 8px;
+                border-bottom: 1px solid {_c.border_light};
+            }}
+            QListWidget::item:selected {{
+                background-color: {_c.accent};
+                color: white;
+            }}
+            QListWidget::item:alternate {{
+                background-color: {_c.row_alternate if hasattr(_c, 'row_alternate') else 'transparent'};
+            }}
+        """)
+        results_layout.addWidget(results_list, 1)
+
+        main_layout.addWidget(results_group, 1)
+
         # 双击跳转
         _search_results_data = []
         state_mgr = self._get_state_manager()
-        
+
         def _is_structured_query(text: str) -> bool:
             """检测是否使用了结构化搜索语法"""
             return bool(re.search(r'\w+:', text))
-        
+
         def do_search():
             nonlocal _search_results_data
-            from ...config.styles import get_style_scheme as _gss
-            _sc2 = _gss().colors
             text = search_edit.text().strip()
             if not text:
                 return
-            
+
             # 自动检测：如果输入包含 key: 语法，使用结构化搜索
             if _is_structured_query(text):
                 _search_results_data = self.structured_search(text)
                 count_label.setText(
-                    f'<span style="color:{_sc2.accent};">🔤 结构化搜索</span> | '
+                    f'<span style="color:{_c.accent};">🔤 结构化搜索</span> | '
                     f'找到 <b>{len(_search_results_data)}</b> 个结果')
             else:
                 # 使用传统的深度搜索
                 scope = scope_combo.currentData() or 'all'
                 _search_results_data = self.deep_search(text, scope)
                 count_label.setText(
-                    f'<span style="color:{_sc2.gray};">🔎 全文搜索</span> | '
+                    f'<span style="color:{_c.text_secondary};">🔎 全文搜索</span> | '
                     f'找到 <b>{len(_search_results_data)}</b> 个结果')
-            
+
             results_list.clear()
-            
+
             level_icons = {
                 'peripheral': '📦', 'register': '📋', 'field': '🔹', 'interrupt': '⚡'
             }
@@ -672,48 +734,60 @@ class SearchManager(QObject):
                 'peripheral': '外设', 'register': '寄存器', 'field': '位域', 'interrupt': '中断'
             }
             level_colors = {
-                'peripheral': _sc2.accent, 'register': _sc2.success, 'field': _sc2.warning, 'interrupt': _sc2.search_interrupt_color
+                'peripheral': _c.accent, 'register': _c.success, 'field': _c.warning,
+                'interrupt': getattr(_c, 'search_interrupt_color', _c.accent)
             }
-            
+
             for r in _search_results_data:
                 icon = level_icons.get(r['level'], '')
                 label = level_labels.get(r['level'], r['level'])
-                color = level_colors.get(r['level'], _sc2.text_primary)
+                color = level_colors.get(r['level'], _c.text_primary)
                 item = QListWidgetItem(
                     f"{icon} [{label}] {r['path']}  ← {r['match_field']}: {r['match_text']}"
                 )
                 item.setForeground(QBrush(QColor(color)))
                 item.setData(Qt.ItemDataRole.UserRole, r)
                 results_list.addItem(item)
-        
+
         def show_help():
             """显示搜索语法帮助"""
             help_dlg = QDialog(dlg)
             help_dlg.setWindowTitle("🔍 搜索语法帮助")
-            help_dlg.resize(550, 500)
+            help_dlg.setMinimumSize(580, 520)
+            help_dlg.resize(600, 560)
             help_layout = QVBoxLayout(help_dlg)
-            
+            help_layout.setContentsMargins(12, 12, 12, 12)
+
             help_text = QTextEdit()
             help_text.setReadOnly(True)
-            help_text.setHtml(f'<pre style="font-size:12px; line-height:1.5;">{self.get_search_syntax_help()}</pre>')
+            raw_help = self.get_search_syntax_help()
+            # 将纯文本转为格式化 HTML，保留换行和空格
+            import html as _html
+            escaped = _html.escape(raw_help)
+            help_text.setHtml(
+                f'<pre style="font-family:Consolas,monospace; font-size:13px; '
+                f'line-height:1.5; color:{_c.text_primary}; '
+                f'background:transparent; white-space:pre-wrap;">'
+                f'{escaped}</pre>')
             help_layout.addWidget(help_text)
-            
+
             close_btn = QPushButton("关闭")
+            close_btn.setFixedHeight(32)
             close_btn.clicked.connect(help_dlg.accept)
             help_layout.addWidget(close_btn)
-            
+
             help_dlg.exec()
-        
+
         def on_result_double_clicked(item):
             data = item.data(Qt.ItemDataRole.UserRole)
             if not data or not state_mgr:
                 return
-            
+
             periph = data.get('peripheral')
             reg = data.get('register')
             field = data.get('field')
             interrupt = data.get('interrupt')
-            
+
             if interrupt:
                 state_mgr.set_selection(peripheral=None, register=None, field=None)
                 irq_table = self.get_widget('irq_table')
@@ -759,14 +833,14 @@ class SearchManager(QObject):
                     tab_widget = self.get_widget('tab_widget')
                     if tab_widget:
                         tab_widget.setCurrentIndex(1)
-            
+
             dlg.accept()
-        
+
         search_btn.clicked.connect(do_search)
         search_edit.returnPressed.connect(do_search)
         results_list.itemDoubleClicked.connect(on_result_double_clicked)
         help_btn.clicked.connect(show_help)
-        
+
         # 快捷搜索: 输入时自动搜索（延迟）
         from PyQt6.QtCore import QTimer
         search_timer = QTimer()
@@ -774,11 +848,11 @@ class SearchManager(QObject):
         search_timer.setInterval(400)
         search_timer.timeout.connect(do_search)
         search_edit.textChanged.connect(lambda: search_timer.start())
-        
+
         # 初始焦点
         search_edit.setFocus()
         search_edit.selectAll()
-        
+
         dlg.exec()
     
     def show_goto_address_dialog(self, parent=None):

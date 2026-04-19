@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 SVDEditor CLI 模块
-提供命令行接口，支持：验证、导出、生成、比较、信息查看
+提供命令行接口，支持：验证、导出、生成、比较、信息查看、合并、头文件生成、冲突检测、外设提取
 可集成到 CI/CD 流水线中
 
 用法:
@@ -10,6 +10,10 @@ SVDEditor CLI 模块
     python -m svd_tool.cli generate <input.svd> --output <output.svd>
     python -m svd_tool.cli diff <old.svd> <new.svd> [--output <file>] [--json]
     python -m svd_tool.cli info <input.svd> [--json]
+    python -m svd_tool.cli merge <target.svd> <source.svd> [--strategy source|target] [-o output]
+    python -m svd_tool.cli header <input.svd> [--style upper_case|camel_case] [--prefix PREFIX] [-o output.h]
+    python -m svd_tool.cli conflicts <input.svd> [--json] [--strict]
+    python -m svd_tool.cli extract <input.svd> --peripherals GPIOA,GPIOB [-o output.svd]
 """
 import argparse
 import json
@@ -29,6 +33,9 @@ from svd_tool.core.svd_generator import SVDGenerator
 from svd_tool.core.svd_schema_validator import SVDSchemaValidator, Severity
 from svd_tool.core.svd_exporter import SVDExporter
 from svd_tool.core.svd_differ import SVDDiffer
+from svd_tool.core.svd_merger import SVDMerger, MergeAction
+from svd_tool.core.header_generator import HeaderGenerator
+from svd_tool.core.address_conflict_detector import AddressConflictDetector
 
 
 # ==================== 工具函数 ====================
@@ -303,19 +310,230 @@ def cmd_info(args):
             print(f"  {p['name']:<20} {p['base_address']:<14} {p['registers']:>6} {p['fields']:>6} {p['clusters']:>4} {derived:<15}")
 
 
+# ==================== 新增子命令 ====================
+
+def cmd_merge(args):
+    """合并两个 SVD 文件"""
+    device_target, _ = _load_svd(args.target)
+    device_source, _ = _load_svd(args.source)
+
+    merger = SVDMerger()
+    merge_items = merger.analyze(device_target, device_source)
+
+    if not merge_items:
+        print("✅ 两个 SVD 文件结构一致，无需合并。")
+        return
+
+    # 策略处理
+    strategy = args.strategy
+    for item in merge_items:
+        if item.action == MergeAction.NO_ACTION:
+            if strategy == "source":
+                item.action = MergeAction.USE_SOURCE
+            elif strategy == "target":
+                item.action = MergeAction.USE_TARGET
+            elif strategy == "prefer-new":
+                item.action = MergeAction.USE_SOURCE
+
+    # 执行合并
+    merged_device, stats = merger.execute_merge(device_target, merge_items)
+
+    # 输出合并统计
+    if args.json:
+        result = {
+            "target": os.path.abspath(args.target),
+            "source": os.path.abspath(args.source),
+            "total_items": len(merge_items),
+            "stats": stats,
+            "items": [
+                {
+                    "path": item.path,
+                    "level": item.level,
+                    "action": item.action.value if hasattr(item.action, 'value') else str(item.action),
+                }
+                for item in merge_items
+            ],
+        }
+        _output_json(result, args.output)
+    else:
+        print(f"合并分析: 发现 {len(merge_items)} 个差异项")
+        print(f"  使用源(新): {stats.get('use_source', 0)}")
+        print(f"  使用目标(旧): {stats.get('use_target', 0)}")
+        print(f"  跳过: {stats.get('skip', 0)}")
+        print()
+
+        for item in merge_items[:50]:
+            action_str = item.action.value if hasattr(item.action, 'value') else str(item.action)
+            print(f"  [{action_str}] {item.path}")
+        if len(merge_items) > 50:
+            print(f"  ... 还有 {len(merge_items) - 50} 项")
+
+    # 保存合并结果
+    output_path = args.output if args.output else None
+    if not output_path:
+        base_name = os.path.splitext(args.target)[0]
+        output_path = base_name + "_merged.svd"
+
+    generator = SVDGenerator(merged_device)
+    xml_str = generator.generate(pretty_print=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(xml_str)
+    print(f"\n✅ 合并结果已保存到: {output_path}")
+
+
+def cmd_header(args):
+    """生成 C 头文件"""
+    device, _ = _load_svd(args.input)
+
+    style = args.style or "upper_case"
+    prefix = args.prefix or ""
+
+    generator = HeaderGenerator(device)
+    header_content = generator.generate(style=style, prefix=prefix)
+
+    output_path = args.output
+    if not output_path:
+        base_name = os.path.splitext(args.input)[0]
+        output_path = base_name + ".h"
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(header_content)
+
+    periph_count = len(device.peripherals)
+    reg_count = sum(len(p.registers) for p in device.peripherals.values())
+    print(f"✅ C 头文件已生成: {output_path}")
+    print(f"   设备: {device.name}, 外设: {periph_count}, 寄存器: {reg_count}")
+    print(f"   命名风格: {style}, 前缀: {prefix or '(无)'}")
+
+
+def cmd_conflicts(args):
+    """检测地址冲突"""
+    device, _ = _load_svd(args.input)
+
+    detector = AddressConflictDetector()
+    conflicts = detector.detect_all(device)
+    summary = detector.get_summary()
+
+    if args.json:
+        from svd_tool.core.address_conflict_detector import ConflictSeverity
+        result = {
+            "file": os.path.abspath(args.input),
+            "summary": summary,
+            "conflicts": [
+                {
+                    "severity": c.severity.value if hasattr(c.severity, 'value') else str(c.severity),
+                    "type": c.conflict_type.value if hasattr(c.conflict_type, 'value') else str(c.conflict_type),
+                    "location": c.location,
+                    "message": c.message,
+                    "detail": c.detail,
+                }
+                for c in conflicts
+            ],
+        }
+        _output_json(result, args.output)
+        if summary["errors"] > 0:
+            sys.exit(1)
+        return
+
+    # 文本模式
+    if not conflicts:
+        print("✅ 未检测到地址冲突。")
+        return
+
+    print(f"⚠ 检测到 {summary['total']} 个冲突 ({summary['errors']} 错误, {summary['warnings']} 警告)")
+    print()
+
+    type_labels = {
+        "peripheral_address_overlap": "外设地址重叠",
+        "peripheral_base_duplicate": "外设基地址重复",
+        "register_offset_duplicate": "寄存器偏移重复",
+        "register_address_overlap": "寄存器地址重叠",
+        "field_bit_overlap": "位域位重叠",
+        "interrupt_value_duplicate": "中断号重复",
+    }
+
+    for c in conflicts:
+        sev_icon = "🔴" if "ERROR" in str(c.severity) else "🟡"
+        ctype = c.conflict_type.value if hasattr(c.conflict_type, 'value') else str(c.conflict_type)
+        type_label = type_labels.get(ctype, ctype)
+        print(f"  {sev_icon} [{type_label}] {c.location}")
+        print(f"     {c.message}")
+        if c.detail:
+            print(f"     详情: {c.detail}")
+        print()
+
+    if args.strict and summary["errors"] > 0:
+        sys.exit(1)
+
+
+def cmd_extract(args):
+    """从 SVD 文件中提取指定外设"""
+    device, _ = _load_svd(args.input)
+
+    periph_names = [n.strip() for n in args.peripherals.split(",") if n.strip()]
+
+    missing = [n for n in periph_names if n not in device.peripherals]
+    if missing:
+        print(f"❌ 外设不存在: {', '.join(missing)}", file=sys.stderr)
+        available = sorted(device.peripherals.keys())
+        print(f"   可用外设: {', '.join(available[:20])}", file=sys.stderr)
+        if len(available) > 20:
+            print(f"   ... 还有 {len(available) - 20} 个", file=sys.stderr)
+        sys.exit(1)
+
+    # 创建只包含指定外设的新 DeviceInfo
+    from svd_tool.core.data_model import DeviceInfo
+    import copy
+
+    new_device = copy.deepcopy(device)
+    new_device.peripherals = {
+        name: new_device.peripherals[name]
+        for name in periph_names
+        if name in new_device.peripherals
+    }
+
+    # 输出
+    output_path = args.output
+    if not output_path:
+        base_name = os.path.splitext(args.input)[0]
+        periph_suffix = "_".join(periph_names[:3])
+        if len(periph_names) > 3:
+            periph_suffix += f"_+{len(periph_names) - 3}"
+        output_path = f"{base_name}_{periph_suffix}.svd"
+
+    generator = SVDGenerator(new_device)
+    xml_str = generator.generate(pretty_print=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(xml_str)
+
+    reg_count = sum(len(p.registers) for p in new_device.peripherals.values())
+    field_count = sum(
+        len(r.fields)
+        for p in new_device.peripherals.values()
+        for r in p.registers.values()
+    )
+    print(f"✅ 已提取 {len(periph_names)} 个外设到: {output_path}")
+    print(f"   外设: {', '.join(periph_names)}")
+    print(f"   寄存器: {reg_count}, 位域: {field_count}")
+
+
 # ==================== 参数解析 ====================
 
 def build_parser() -> argparse.ArgumentParser:
     """构建命令行参数解析器"""
     main_parser = argparse.ArgumentParser(
         prog="svd-editor",
-        description="SVDEditor 命令行工具 — CMSIS-SVD 验证、导出、生成、比较",
+        description="SVDEditor 命令行工具 — CMSIS-SVD 验证、导出、生成、比较、合并、冲突检测",
         epilog="示例:\n"
                "  svd-editor validate chip.svd\n"
                "  svd-editor export chip.svd --format markdown -o registers.md\n"
                "  svd-editor diff chip_v1.svd chip_v2.svd\n"
                "  svd-editor generate chip.svd -o output.svd\n"
-               "  svd-editor info chip.svd --json\n",
+               "  svd-editor info chip.svd --json\n"
+               "  svd-editor merge chip_v1.svd chip_v2.svd --strategy source\n"
+               "  svd-editor header chip.svd --style upper_case -o device.h\n"
+               "  svd-editor conflicts chip.svd --json\n"
+               "  svd-editor extract chip.svd --peripherals GPIOA,GPIOB -o gpio.svd\n",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     main_parser.add_argument(
@@ -392,6 +610,64 @@ def build_parser() -> argparse.ArgumentParser:
     p_info.add_argument("--json", action="store_true", help="以 JSON 格式输出")
     p_info.add_argument("-o", "--output", help="将 JSON 结果保存到指定文件")
 
+    # ---------- merge ----------
+    p_merge = subparsers.add_parser(
+        "merge",
+        help="合并两个 SVD 文件",
+        description="将源 SVD 文件的内容合并到目标 SVD 中，支持多种合并策略",
+    )
+    p_merge.add_argument("target", help="目标 SVD 文件路径")
+    p_merge.add_argument("source", help="源 SVD 文件路径")
+    p_merge.add_argument(
+        "-s", "--strategy",
+        choices=["source", "target", "prefer-new"],
+        default="source",
+        help="冲突解决策略（默认: source，使用源文件的新值）",
+    )
+    p_merge.add_argument("-o", "--output", help="合并结果输出路径（默认: <target>_merged.svd）")
+    p_merge.add_argument("--json", action="store_true", help="以 JSON 格式输出合并详情")
+
+    # ---------- header ----------
+    p_header = subparsers.add_parser(
+        "header",
+        help="生成 C 头文件",
+        description="从 SVD 文件生成 C 语言头文件，包含寄存器地址宏和位域定义",
+    )
+    p_header.add_argument("input", help="输入 SVD 文件路径")
+    p_header.add_argument(
+        "--style",
+        choices=["upper_case", "camel_case"],
+        default="upper_case",
+        help="命名风格（默认: upper_case）",
+    )
+    p_header.add_argument("--prefix", help="自定义宏前缀（如: CHIP_）")
+    p_header.add_argument("-o", "--output", help="输出头文件路径（默认: <input>.h）")
+
+    # ---------- conflicts ----------
+    p_conflicts = subparsers.add_parser(
+        "conflicts",
+        help="检测 SVD 文件中的地址冲突",
+        description="检测外设地址重叠、寄存器偏移重复、位域位重叠、中断号重复等冲突",
+    )
+    p_conflicts.add_argument("input", help="输入 SVD 文件路径")
+    p_conflicts.add_argument("--json", action="store_true", help="以 JSON 格式输出冲突详情")
+    p_conflicts.add_argument("--strict", action="store_true", help="严格模式：有冲突则返回非零退出码")
+    p_conflicts.add_argument("-o", "--output", help="将 JSON 结果保存到指定文件")
+
+    # ---------- extract ----------
+    p_extract = subparsers.add_parser(
+        "extract",
+        help="从 SVD 文件中提取指定外设",
+        description="提取指定外设及其寄存器、位域，生成新的 SVD 文件",
+    )
+    p_extract.add_argument("input", help="输入 SVD 文件路径")
+    p_extract.add_argument(
+        "-p", "--peripherals",
+        required=True,
+        help="要提取的外设名称，逗号分隔（如: GPIOA,GPIOB,GPIOC）",
+    )
+    p_extract.add_argument("-o", "--output", help="输出文件路径（默认自动生成）")
+
     return main_parser
 
 
@@ -412,6 +688,10 @@ def run_cli(argv=None):
         "generate": cmd_generate,
         "diff": cmd_diff,
         "info": cmd_info,
+        "merge": cmd_merge,
+        "header": cmd_header,
+        "conflicts": cmd_conflicts,
+        "extract": cmd_extract,
     }
 
     handler = cmd_map.get(args.command)
