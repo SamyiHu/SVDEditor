@@ -191,40 +191,43 @@ class DocumentManager(QObject):
     
     def close_document(self, doc_id: str) -> bool:
         """关闭文档
-        
+
         Args:
             doc_id: 文档ID
-            
+
         Returns:
             是否成功关闭
         """
         if doc_id not in self._documents:
             return False
-        
+
         doc = self._documents[doc_id]
         self.logger.info(f"关闭文档: {doc.display_name} (id={doc_id})")
-        
+
         # 如果关闭的是活动文档，切换到相邻文档
         was_active = (doc_id == self._active_doc_id)
         next_doc_id = None
-        
+
         if was_active:
             next_doc_id = self._get_adjacent_doc_id(doc_id)
-        
+
         # 先发送移除信号（让TabBar在文档还存在时能找到对应的标签索引）
         self.document_removed.emit(doc_id)
-        
+
         # 然后移除文档
         del self._documents[doc_id]
-        
+
         if was_active:
             if next_doc_id and next_doc_id in self._documents:
                 self.switch_to(next_doc_id)
             else:
                 self._active_doc_id = None
-                if len(self._documents) == 0:
-                    self.all_documents_closed.emit()
-        
+
+        # 无论关闭的是否为活动文档，如果文档已清空则发出信号
+        if len(self._documents) == 0:
+            self._active_doc_id = None
+            self.all_documents_closed.emit()
+
         return True
     
     def switch_to(self, doc_id: str) -> bool:

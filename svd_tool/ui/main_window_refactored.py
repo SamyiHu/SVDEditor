@@ -434,6 +434,11 @@ class MainWindowRefactored(QMainWindow):
     
     def _on_all_documents_closed_show_welcome(self):
         """所有文档关闭时，切换回欢迎页"""
+        # 重置状态管理器的数据为空
+        if hasattr(self, 'state_manager'):
+            self.state_manager.device_info = DeviceInfo()
+            self.state_manager.clear_selection()
+        # 切换到欢迎页
         self.layout_manager.show_welcome()
         self.layout_manager.update_status(t("status.all_docs_closed"))
     
@@ -3387,6 +3392,11 @@ class MainWindowRefactored(QMainWindow):
             
             # 重新创建标签页以更新文本（但保留数据）
             self._recreate_tabs()
+
+            # 刷新欢迎页文本
+            welcome_page = self.layout_manager.get_widget('welcome_page')
+            if welcome_page and hasattr(welcome_page, 'refresh_ui'):
+                welcome_page.refresh_ui()
     
     def _recreate_toolbar(self):
         """重新创建工具栏以更新语言"""
@@ -3503,30 +3513,54 @@ class MainWindowRefactored(QMainWindow):
         self._refresh_all_data()
     
     def show_about(self):
-        """显示关于对话框"""
-        about_text = """
-        <h2>SVD工具 - 重构版</h2>
-        <p>版本: 2.1 (重构架构)</p>
-        <p>一个强大的SVD文件生成和解析工具</p>
-        <p>功能特性:</p>
-        <ul>
-            <li>可视化编辑SVD文件</li>
-            <li>支持外设、寄存器、位域三级结构</li>
-            <li>支持中断配置</li>
-            <li>支持撤消/重做操作</li>
-            <li>支持搜索功能</li>
-            <li>支持导入/导出SVD文件</li>
-            <li>支持多种SVD版本(1.1, 1.3, 2.0)</li>
-            <li>组件化架构，提高可维护性</li>
-        </ul>
-        <p>© 2025 SVD工具开发者@SamyiHu</p>
+        """显示关于对话框（内容来自配置文件，支持国际化）"""
+        import json
+        from .. import __version__
+
+        # 读取 about.json 配置
+        config_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "config", "about.json"
+        )
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                about_cfg = json.load(f)
+        except Exception:
+            about_cfg = {}
+
+        app_name = about_cfg.get("app_name", "SVD Tool")
+        author = about_cfg.get("author", {})
+        license_info = about_cfg.get("license", {})
+        copyright_year = about_cfg.get("copyright_year", "2025")
+
+        # 通过 i18n 获取翻译文本
+        version_text = t("about.version", version=__version__)
+        description = t("about.description")
+        features_title = t("about.features")
+        features = [t(key) for key in about_cfg.get("features", [])]
+        author_label = t("about.author")
+        license_label = t("about.license")
+        copyright_text = t("about.copyright", year=copyright_year, author=author.get("name", ""))
+
+        # 构造 HTML
+        features_html = "".join(f"<li>{f}</li>" for f in features)
+        about_text = f"""
+        <h2>{app_name}</h2>
+        <p>{version_text}</p>
+        <p>{description}</p>
+        <p>{features_title}:</p>
+        <ul>{features_html}</ul>
+        <hr>
+        <p>{author_label}: <a href="{author.get('url', '')}">{author.get('name', '')}</a></p>
+        <p>{license_label}: <a href="{license_info.get('url', '')}">{license_info.get('name', '')}</a></p>
+        <p>{copyright_text}</p>
         """
-        
+
         # 创建日志面板（如果不存在）
         if not hasattr(self, 'log_dock') or not self.log_dock:
             self.create_log_panel()
-        
-        QMessageBox.about(self, "关于SVD工具", about_text)
+
+        QMessageBox.about(self, t("about.title"), about_text)
         self.logger.info("显示关于对话框")
     
     def move_item_up(self):

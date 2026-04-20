@@ -123,10 +123,17 @@ class DocumentTabBar(QWidget):
                 background: {c.doc_tab_hover_background};
             }}
             QTabBar::close-button {{
-                image: none;
                 subcontrol-position: right;
                 subcontrol-origin: padding;
                 padding: 0 4px;
+                background: transparent;
+                border: none;
+                border-radius: 3px;
+                max-width: 16px;
+                max-height: 16px;
+            }}
+            QTabBar::close-button:hover {{
+                background: {c.doc_tab_hover_background};
             }}
             QToolButton {{
                 background: transparent;
@@ -253,15 +260,25 @@ class DocumentTabBar(QWidget):
         doc = self.doc_manager.get_document(doc_id)
         if not doc:
             return
-        
+
         self._tab_bar.blockSignals(True)
-        
+
         index = self._tab_bar.addTab(doc.get_tab_title())
         self._tab_bar.setTabToolTip(index, doc.get_tooltip())
         self._tab_bar.setCurrentIndex(index)
-        
+
+        # 设置可见的关闭按钮
+        close_btn = QToolButton()
+        close_btn.setText("×")
+        close_btn.setFixedSize(16, 16)
+        close_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        close_btn.setToolTip(t("menu.file.close_doc", default="关闭文档"))
+        close_btn.setStyleSheet("QToolButton { background: transparent; border: none; font-size: 14px; font-weight: bold; color: gray; } QToolButton:hover { color: red; background: rgba(255,0,0,50); border-radius: 2px; }")
+        close_btn.clicked.connect(lambda checked, did=doc_id: self.tab_close_requested.emit(did))
+        self._tab_bar.setTabButton(index, QTabBar.ButtonPosition.RightSide, close_btn)
+
         self._tab_bar.blockSignals(False)
-        
+
         if self.doc_manager.document_count == 1 and len(self._diff_tabs) == 0:
             self.show()
         self.show()

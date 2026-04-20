@@ -121,6 +121,7 @@ SVDEditor/
 │   │   ├── header_generator.py     # C 头文件生成器
 │   │   ├── address_conflict_detector.py  # 冲突检测
 │   │   ├── chain_rules.py          # 连锁规则引擎
+│   │   ├── document_manager.py     # 多文档管理
 │   │   └── command_history.py      # 撤销/重做
 │   ├── ui/
 │   │   ├── main_window_refactored.py     # 主窗口
@@ -135,17 +136,21 @@ SVDEditor/
 │   │   │   └── file_operations.py        # 文件 I/O
 │   │   ├── dialogs/                      # 对话框目录
 │   │   │   ├── chain_rules_dialog.py     # 连锁规则编辑器
+│   │   │   ├── svd_diff_merge_dialog.py  # 差异比较与合并
 │   │   │   └── new_svd_wizard.py         # 新建文件向导
 │   │   └── widgets/                      # 控件目录
 │   │       ├── bit_field_widget.py       # 位域可视化
 │   │       ├── address_map_widget.py     # 地址映射
-│   │       ├── toggle_switch.py          # iOS 风格开关
+│   │       ├── document_tab_bar.py       # 多文档标签
 │   │       └── welcome_page.py           # 欢迎页
 │   ├── config/
+│   │   ├── about.json              # 关于对话框配置
 │   │   └── styles.py               # 主题/样式系统（深色/浅色）
 │   └── i18n/
+│       ├── i18n.py                 # 国际化管理器
 │       ├── zh_CN.json              # 中文翻译
 │       └── en_US.json              # 英文翻译
+├── docs/                           # 文档
 ├── build_tools/                    # PyInstaller 构建脚本
 ├── test_data/                      # 测试 SVD 文件
 └── tests/                          # 测试套件
@@ -163,8 +168,8 @@ python build_professional_fixed.py
 
 ## 许可证
 
-MIT License - 详见 [LICENSE](LICENSE)。
+Apache License 2.0 - 详见 [LICENSE](LICENSE)。
 
 ## 维护者
 
-- SamyiHu (@SamyiHu)
+- SamyiHu ([@SamyiHu](https://github.com/SamyiHu))

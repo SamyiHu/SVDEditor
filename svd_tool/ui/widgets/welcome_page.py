@@ -10,6 +10,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QIcon, QCursor, QPainter, QPen, QLinearGradient
 
+from ...i18n.i18n import t
+
 
 class WelcomePage(QWidget):
     """VSCode风格欢迎页面"""
@@ -22,6 +24,7 @@ class WelcomePage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._recent_files = []
+        self._content = None
         self._setup_ui()
     
     def _setup_ui(self):
@@ -35,10 +38,10 @@ class WelcomePage(QWidget):
         top_bar.setFixedHeight(3)
         top_bar.setObjectName("welcomeTopBar")
         main_layout.addWidget(top_bar)
-        
+
         # 内容区域（居中）
-        content = QWidget()
-        content_layout = QHBoxLayout(content)
+        self._content = QWidget()
+        content_layout = QHBoxLayout(self._content)
         content_layout.setContentsMargins(60, 40, 60, 40)
         
         # 左侧：品牌区域
@@ -56,7 +59,7 @@ class WelcomePage(QWidget):
         left_layout.addWidget(title)
         
         # 版本信息
-        version = QLabel("Professional v2.1")
+        version = QLabel(t("welcome.version"))
         version_font = QFont()
         version_font.setPointSize(11)
         version.setFont(version_font)
@@ -64,7 +67,7 @@ class WelcomePage(QWidget):
         left_layout.addWidget(version)
         
         # 描述
-        desc = QLabel("专业的SVD文件可视化编辑工具\n支持 CMSIS-SVD 标准格式")
+        desc = QLabel(t("welcome.description"))
         desc_font = QFont()
         desc_font.setPointSize(10)
         desc.setFont(desc_font)
@@ -75,10 +78,10 @@ class WelcomePage(QWidget):
         left_layout.addSpacing(20)
         
         # 操作按钮
-        self._create_action_button(left_layout, "📂  打开 SVD 文件", 
-            "选择一个现有的 .svd 文件进行编辑", self.open_file_requested)
-        self._create_action_button(left_layout, "📄  新建 SVD 文件", 
-            "通过向导创建一个新的SVD文件", self.new_file_requested)
+        self._create_action_button(left_layout, "📂  " + t("welcome.open_file"),
+            t("welcome.open_file_desc"), self.open_file_requested)
+        self._create_action_button(left_layout, "📄  " + t("welcome.new_file"),
+            t("welcome.new_file_desc"), self.new_file_requested)
         
         left_layout.addStretch()
         
@@ -88,7 +91,7 @@ class WelcomePage(QWidget):
         right_layout.setContentsMargins(40, 0, 0, 0)
         
         # 最近文件
-        recent_title = QLabel("最近打开")
+        recent_title = QLabel(t("welcome.recent"))
         recent_title_font = QFont()
         recent_title_font.setPointSize(13)
         recent_title_font.setBold(True)
@@ -102,7 +105,7 @@ class WelcomePage(QWidget):
         right_layout.addLayout(self._recent_container)
         
         # 无最近文件提示
-        self._no_recent_label = QLabel("暂无最近打开的文件")
+        self._no_recent_label = QLabel(t("welcome.no_recent"))
         self._no_recent_label.setObjectName("welcomeNoRecent")
         no_recent_font = QFont()
         no_recent_font.setPointSize(10)
@@ -112,7 +115,7 @@ class WelcomePage(QWidget):
         right_layout.addSpacing(30)
         
         # 帮助/快捷操作
-        help_title = QLabel("快捷操作")
+        help_title = QLabel(t("welcome.shortcuts"))
         help_title_font = QFont()
         help_title_font.setPointSize(13)
         help_title_font.setBold(True)
@@ -121,13 +124,13 @@ class WelcomePage(QWidget):
         right_layout.addWidget(help_title)
         
         shortcuts = [
-            ("Ctrl+N", "新建文件"),
-            ("Ctrl+O", "打开文件"),
-            ("Ctrl+S", "保存文件"),
-            ("Ctrl+Z", "撤销操作"),
-            ("Ctrl+Y", "重做操作"),
-            ("Ctrl+F", "搜索"),
-            ("F9", "切换左侧面板"),
+            ("Ctrl+N", t("welcome.shortcut.new")),
+            ("Ctrl+O", t("welcome.shortcut.open")),
+            ("Ctrl+S", t("welcome.shortcut.save")),
+            ("Ctrl+Z", t("welcome.shortcut.undo")),
+            ("Ctrl+Y", t("welcome.shortcut.redo")),
+            ("Ctrl+F", t("welcome.shortcut.search")),
+            ("F9", t("welcome.shortcut.toggle_panel")),
         ]
         
         for key, desc_text in shortcuts:
@@ -155,11 +158,11 @@ class WelcomePage(QWidget):
         
         content_layout.addWidget(left_panel, 1)
         content_layout.addWidget(right_panel, 1)
-        
-        main_layout.addWidget(content, 1)
+
+        main_layout.addWidget(self._content, 1)
         
         # 底部信息
-        footer = QLabel("© 2025 SVD Editor  |  Powered by PyQt6")
+        footer = QLabel(t("welcome.footer"))
         footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         footer.setObjectName("welcomeFooter")
         footer_font = QFont()
@@ -195,8 +198,76 @@ class WelcomePage(QWidget):
         btn_frame.mousePressEvent = lambda e: signal.emit()
         parent_layout.addWidget(btn_frame)
     
+    def refresh_ui(self):
+        """刷新欢迎页文本（切换语言后调用）"""
+        if self._content is None:
+            return
+        # 按 objectName 更新静态文本
+        for label in self._content.findChildren(QLabel):
+            name = label.objectName()
+            if name == "welcomeSubtitle":
+                label.setText(t("welcome.version"))
+            elif name == "welcomeDesc":
+                label.setText(t("welcome.description"))
+            elif name == "welcomeNoRecent":
+                label.setText(t("welcome.no_recent"))
+            elif name == "welcomeSectionTitle":
+                # 区分"最近打开"和"快捷操作"靠位置判断
+                parent = label.parentWidget()
+                if parent and parent.objectName() == "":
+                    # 更简洁的方式：两个 section title 交替出现
+                    pass
+            elif name == "welcomeActionBtnText":
+                text = label.text()
+                if "📂" in text or "打开" in text or "Open" in text:
+                    label.setText("📂  " + t("welcome.open_file"))
+                elif "📄" in text or "新建" in text or "New" in text:
+                    label.setText("📄  " + t("welcome.new_file"))
+            elif name == "welcomeActionBtnDesc":
+                parent = label.parentWidget()
+                if parent:
+                    btn_texts = [lbl.text() for lbl in parent.findChildren(QLabel) if lbl.objectName() == "welcomeActionBtnText"]
+                    if btn_texts:
+                        txt = btn_texts[0]
+                        if "📂" in txt or "打开" in txt or "Open" in txt:
+                            label.setText(t("welcome.open_file_desc"))
+                        else:
+                            label.setText(t("welcome.new_file_desc"))
+            elif name == "welcomeShortcutDesc":
+                key_label = None
+                row = label.parentWidget()
+                if row:
+                    for child in row.findChildren(QLabel):
+                        if child.objectName() == "welcomeShortcutKey":
+                            key_label = child
+                            break
+                if key_label:
+                    key = key_label.text()
+                    shortcut_map = {
+                        "Ctrl+N": "welcome.shortcut.new",
+                        "Ctrl+O": "welcome.shortcut.open",
+                        "Ctrl+S": "welcome.shortcut.save",
+                        "Ctrl+Z": "welcome.shortcut.undo",
+                        "Ctrl+Y": "welcome.shortcut.redo",
+                        "Ctrl+F": "welcome.shortcut.search",
+                        "F9": "welcome.shortcut.toggle_panel",
+                    }
+                    if key in shortcut_map:
+                        label.setText(t(shortcut_map[key]))
+            elif name == "welcomeFooter":
+                label.setText(t("welcome.footer"))
+        # 更新 section titles (两个，按出现顺序)
+        section_titles = [lbl for lbl in self._content.findChildren(QLabel) if lbl.objectName() == "welcomeSectionTitle"]
+        if len(section_titles) >= 1:
+            section_titles[0].setText(t("welcome.recent"))
+        if len(section_titles) >= 2:
+            section_titles[1].setText(t("welcome.shortcuts"))
+        # 刷新最近文件列表（重新应用翻译）
+        self.set_recent_files(self._recent_files)
+
     def set_recent_files(self, files: list):
         """设置最近打开的文件列表"""
+        self._recent_files = files
         # 清除现有项
         while self._recent_container.count():
             item = self._recent_container.takeAt(0)
@@ -205,7 +276,7 @@ class WelcomePage(QWidget):
                 w.deleteLater()
         
         if not files:
-            no_label = QLabel("暂无最近打开的文件")
+            no_label = QLabel(t("welcome.no_recent"))
             no_label.setObjectName("welcomeNoRecent")
             font = QFont()
             font.setPointSize(10)

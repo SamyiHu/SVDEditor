@@ -4,8 +4,10 @@ SVD工具包
 """
 
 __version__ = "2.1.0"
-__author__ = "SVD Tool Team"
-__description__ = "A powerful SVD file generation and parsing tool"
+__author__ = "SamyiHu"
+__author_url__ = "https://github.com/SamyiHu"
+__license__ = "Apache-2.0"
+__description__ = "A powerful CMSIS SVD file generation and parsing tool"
 
 from .core.data_model import (
     DeviceInfo, Peripheral, Register, Field, Interrupt, CPUInfo

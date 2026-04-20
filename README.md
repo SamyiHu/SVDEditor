@@ -132,6 +132,7 @@ SVDEditor/
 │   │   ├── header_generator.py     # C header generator
 │   │   ├── address_conflict_detector.py  # Conflict detection
 │   │   ├── chain_rules.py          # Chain rules engine
+│   │   ├── document_manager.py     # Multi-document manager
 │   │   └── command_history.py      # Undo/Redo
 │   ├── ui/
 │   │   ├── main_window_refactored.py     # Main window
@@ -148,20 +149,21 @@ SVDEditor/
 │   │   │   └── register_manager.py       # Register management
 │   │   ├── dialogs/
 │   │   │   ├── chain_rules_dialog.py     # Chain rules editor
-│   │   │   ├── new_svd_wizard.py         # New file wizard
-│   │   │   └── svd_diff_dialog.py        # Diff dialog
+│   │   │   ├── svd_diff_merge_dialog.py  # Diff & merge dialog
+│   │   │   └── new_svd_wizard.py         # New file wizard
 │   │   └── widgets/
 │   │       ├── bit_field_widget.py       # Bitfield visualization
 │   │       ├── address_map_widget.py     # Address map
-│   │       ├── toggle_switch.py          # iOS-style toggle
-│   │       ├── labeled_slider.py         # Slider with input
+│   │       ├── document_tab_bar.py       # Multi-document tabs
 │   │       └── welcome_page.py           # Welcome page
 │   ├── config/
-│   │   ├── styles.py               # Theme/style system (dark/light)
-│   │   └── tree_branch_style.py    # Custom tree branches
+│   │   ├── about.json              # About dialog config
+│   │   └── styles.py               # Theme/style system (dark/light)
 │   └── i18n/
+│       ├── i18n.py                 # i18n manager
 │       ├── zh_CN.json              # Chinese translations
 │       └── en_US.json              # English translations
+├── docs/                           # Documentation
 ├── build_tools/                    # PyInstaller build scripts
 ├── test_data/                      # Test SVD files
 └── tests/                          # Test suite
@@ -169,7 +171,7 @@ SVDEditor/
 
 ## Building
 
-See [BUILD_INSTRUCTIONS_EN.md](docs/BUILD_INSTRUCTIONS_EN.md) for detailed build instructions.
+See [BUILD_INSTRUCTIONS.md](docs/BUILD_INSTRUCTIONS.md) for detailed build instructions.
 
 ```bash
 pip install pyinstaller
@@ -179,11 +181,11 @@ python build_professional_fixed.py
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+Apache License 2.0 - see [LICENSE](LICENSE) for details.
 
 ## Maintainer
 
-- SamyiHu (@SamyiHu)
+- SamyiHu ([@SamyiHu](https://github.com/SamyiHu))
 
 ---
 

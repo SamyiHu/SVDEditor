@@ -1,0 +1,32 @@
+{
+    "app_name": "SVD Tool",
+    "version_key": "about.version",
+    "description_key": "about.description",
+    "features_key": "about.features",
+    "features": [
+        "about.feature.cmsis_svd",
+        "about.feature.multi_doc",
+        "about.feature.visual_edit",
+        "about.feature.three_level",
+        "about.feature.interrupt",
+        "about.feature.undo_redo",
+        "about.feature.search",
+        "about.feature.batch_ops",
+        "about.feature.chain_ops",
+        "about.feature.diff_merge",
+        "about.feature.export_doc",
+        "about.feature.header_gen",
+        "about.feature.i18n",
+        "about.feature.dark_mode",
+        "about.feature.cli"
+    ],
+    "author": {
+        "name": "SamyiHu",
+        "url": "https://github.com/SamyiHu"
+    },
+    "license": {
+        "name": "Apache License 2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    "copyright_year": "2026"
+}
