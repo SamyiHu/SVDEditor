@@ -21,27 +21,27 @@ class SVDGenerator:
         """生成SVD XML字符串"""
         # 创建根节点
         root = self._create_root_element()
-        
+
         # 添加设备信息
         self._add_device_info(root)
-        
+
         # 添加CPU信息
         self._add_cpu_info(root)
-        
+
         # 添加标准字段
         self._add_standard_fields(root)
-        
+
         # 添加外设
         self._add_peripherals(root)
-        
+
         # 转换为XML字符串
         xml_str = ET.tostring(root, encoding="utf-8", method="xml")
-        
+
         if pretty_print:
             xml_str = self._pretty_format(xml_str)
         else:
-            xml_str = xml_str.decode('utf-8')
-        
+            xml_str = self._build_header() + xml_str.decode('utf-8')
+
         return xml_str
     
     def _create_root_element(self) -> ET.Element:
@@ -309,30 +309,33 @@ class SVDGenerator:
         
         return field_elem
     
+    def _build_header(self) -> str:
+        """生成XML声明 + 版权/作者/许可证注释"""
+        declaration = '<?xml version="1.0" encoding="utf-8" standalone="no"?>\n'
+
+        comment_lines = []
+        if self.device_info.copyright:
+            comment_lines.append(self.device_info.copyright)
+        if self.device_info.author:
+            comment_lines.append(f"Author: {self.device_info.author}")
+        if self.device_info.license:
+            comment_lines.append(f"License: {self.device_info.license}")
+
+        if comment_lines:
+            copyright_comment = '<!--\n' + '\n'.join(comment_lines) + '\n-->\n'
+        else:
+            copyright_comment = ''
+
+        return declaration + copyright_comment
+
     def _pretty_format(self, xml_bytes: bytes) -> str:
         """美化XML格式，确保格式与原版一致"""
         try:
             # 解析XML
             dom = minidom.parseString(xml_bytes)
-            
-            # 生成正确的XML头部
-            declaration = '<?xml version="1.0" encoding="utf-8" standalone="no"?>\n'
-            
-            # 生成版权注释
-            comment_lines = []
-            if hasattr(self.device_info, 'copyright'):
-                comment_lines.append(self.device_info.copyright)
-            
-            if hasattr(self.device_info, 'author') and self.device_info.author:
-                comment_lines.append(f"Author: {self.device_info.author}")
-            
-            if hasattr(self.device_info, 'license') and self.device_info.license:
-                comment_lines.append(f"License: {self.device_info.license}")
-            
-            if comment_lines:
-                copyright_comment = f'<!--\n' + '\n'.join(comment_lines) + '\n-->\n'
-            else:
-                copyright_comment = '<!--\nCopyright (c) 2024 SinOneMicroelectronics.\n-->\n'
+
+            # 生成XML头部（声明 + 版权注释）
+            header = self._build_header()
             
             # 美化XML内容
             pretty_xml_str = dom.toprettyxml(indent=self.indent)
@@ -385,7 +388,7 @@ class SVDGenerator:
             formatted_body = '\n'.join(formatted_lines)
             
             # 合并所有部分
-            final_xml = declaration + copyright_comment + formatted_body
+            final_xml = header + formatted_body
 
             return final_xml
 

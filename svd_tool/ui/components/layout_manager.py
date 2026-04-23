@@ -257,7 +257,14 @@ class LayoutManager:
         Args:
             device_info: DeviceInfo对象，包含设备信息
         """
-        self.ui_updater.update_basic_info(device_info)
+        # 设置防重入标志，防止程序填充控件时触发预览刷新
+        if hasattr(self.main_window, '_basic_info_updating'):
+            self.main_window._basic_info_updating = True
+        try:
+            self.ui_updater.update_basic_info(device_info)
+        finally:
+            if hasattr(self.main_window, '_basic_info_updating'):
+                self.main_window._basic_info_updating = False
 
     def update_field_table(self, peripheral_name=None, register_name=None, register=None):
         """更新位域表格

@@ -517,6 +517,180 @@ def cmd_extract(args):
     print(f"   寄存器: {reg_count}, 位域: {field_count}")
 
 
+# ==================== 从 JSON 创建 SVD ====================
+
+def cmd_create(args):
+    """从 JSON 数据文件创建新的 SVD 文件"""
+    from svd_tool.core.data_model import DeviceInfo
+
+    data_path = args.data
+    if not os.path.isfile(data_path):
+        print(f"错误: 数据文件不存在: {data_path}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        with open(data_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"错误: JSON 解析失败: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # 反序列化为 DeviceInfo
+    try:
+        device = DeviceInfo.from_dict(data)
+    except Exception as e:
+        print(f"错误: 数据反序列化失败: {e}", file=sys.stderr)
+        print("提示: JSON 格式应与 DeviceInfo.to_dict() 输出兼容", file=sys.stderr)
+        sys.exit(1)
+
+    if not device.name:
+        print("错误: 设备名称 (name) 为空，请在 JSON 中提供 name 字段", file=sys.stderr)
+        sys.exit(1)
+
+    if not device.peripherals:
+        print("警告: 没有外设数据，将生成空 SVD 文件", file=sys.stderr)
+
+    # 生成 SVD
+    output_path = args.output
+    if not output_path:
+        output_path = f"{device.name.lower().replace(' ', '_')}.svd"
+
+    generator = SVDGenerator(device)
+    xml_str = generator.generate(pretty_print=True)
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(xml_str)
+
+    periph_count = len(device.peripherals)
+    reg_count = sum(len(p.registers) for p in device.peripherals.values())
+    field_count = sum(
+        len(r.fields)
+        for p in device.peripherals.values()
+        for r in p.registers.values()
+    )
+    print(f"✅ SVD 文件已创建: {output_path}")
+    print(f"   设备: {device.name} (版本: {device.version})")
+    print(f"   外设: {periph_count}, 寄存器: {reg_count}, 位域: {field_count}")
+
+    # 可选校验
+    if args.validate:
+        validator = SVDSchemaValidator()
+        results = validator.validate_all(device)
+        summary = validator.get_summary()
+        print(f"\n校验结果: {summary['errors']} 错误, {summary['warnings']} 警告")
+        if summary["has_errors"]:
+            print(validator.format_results_text(max_items=20))
+            sys.exit(1)
+
+    # 可选打开 GUI
+    if args.open:
+        import subprocess
+        try:
+            svd_editor_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            subprocess.Popen(
+                [sys.executable, os.path.join(svd_editor_root, "run.py"),
+                 "--gui", "--file", os.path.abspath(output_path)],
+                cwd=svd_editor_root,
+            )
+            print(f"   已启动 SVDEditor GUI 打开: {output_path}")
+        except Exception as e:
+            print(f"   启动 GUI 失败: {e}", file=sys.stderr)
+
+
+def cmd_add_peripheral(args):
+    """向已有 SVD 文件添加外设"""
+    device, _ = _load_svd(args.input)
+
+    data_path = args.data
+    if not os.path.isfile(data_path):
+        print(f"错误: 数据文件不存在: {data_path}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        with open(data_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"错误: JSON 解析失败: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    from svd_tool.core.data_model import Peripheral
+    import copy
+
+    # 支持单个外设或外设列表
+    added = []
+    if isinstance(data, dict) and "registers" in data:
+        # 单个外设
+        periph = Peripheral.from_dict(data)
+        device.peripherals[periph.name] = periph
+        added.append(periph.name)
+    elif isinstance(data, dict) and "peripherals" in data:
+        # 完整设备描述，只取 peripherals
+        for pname, pdata in data["peripherals"].items():
+            if isinstance(pdata, dict):
+                periph = Peripheral.from_dict(pdata)
+                device.peripherals[periph.name] = periph
+                added.append(periph.name)
+    elif isinstance(data, list):
+        for pdata in data:
+            if isinstance(pdata, dict):
+                periph = Peripheral.from_dict(pdata)
+                device.peripherals[periph.name] = periph
+                added.append(periph.name)
+
+    if not added:
+        print("错误: JSON 中未找到有效的外设数据", file=sys.stderr)
+        sys.exit(1)
+
+    # 生成输出
+    output_path = args.output
+    if not output_path:
+        base_name = os.path.splitext(args.input)[0]
+        output_path = base_name + "_updated.svd"
+
+    generator = SVDGenerator(device)
+    xml_str = generator.generate(pretty_print=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(xml_str)
+
+    print(f"✅ 已添加 {len(added)} 个外设: {', '.join(added)}")
+    print(f"   输出到: {output_path}")
+    print(f"   总外设数: {len(device.peripherals)}")
+
+
+def cmd_remove_peripheral(args):
+    """从 SVD 文件中移除指定外设"""
+    device, _ = _load_svd(args.input)
+
+    periph_names = [n.strip() for n in args.names.split(",") if n.strip()]
+
+    missing = [n for n in periph_names if n not in device.peripherals]
+    if missing:
+        print(f"警告: 外设不存在: {', '.join(missing)}")
+
+    removed = [n for n in periph_names if n in device.peripherals]
+    if not removed:
+        print("错误: 没有可移除的外设", file=sys.stderr)
+        sys.exit(1)
+
+    for name in removed:
+        del device.peripherals[name]
+
+    output_path = args.output
+    if not output_path:
+        base_name = os.path.splitext(args.input)[0]
+        output_path = base_name + "_updated.svd"
+
+    import copy
+    generator = SVDGenerator(device)
+    xml_str = generator.generate(pretty_print=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(xml_str)
+
+    print(f"✅ 已移除 {len(removed)} 个外设: {', '.join(removed)}")
+    print(f"   输出到: {output_path}")
+    print(f"   剩余外设数: {len(device.peripherals)}")
+
+
 # ==================== 参数解析 ====================
 
 def build_parser() -> argparse.ArgumentParser:
@@ -668,6 +842,58 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_extract.add_argument("-o", "--output", help="输出文件路径（默认自动生成）")
 
+    # ---------- create ----------
+    p_create = subparsers.add_parser(
+        "create",
+        help="从 JSON 数据创建新的 SVD 文件",
+        description="读取 JSON 数据文件（DeviceInfo 格式），生成 CMSIS-SVD XML 文件。"
+                    "可从 AIfull_link 等工具导出的寄存器数据直接生成 SVD。",
+    )
+    p_create.add_argument(
+        "-d", "--data",
+        required=True,
+        help="输入 JSON 数据文件路径（DeviceInfo.to_dict() 格式）",
+    )
+    p_create.add_argument("-o", "--output", help="输出 SVD 文件路径（默认: <设备名>.svd）")
+    p_create.add_argument(
+        "--validate",
+        action="store_true",
+        help="生成后自动校验 SVD 文件",
+    )
+    p_create.add_argument(
+        "--open",
+        action="store_true",
+        help="生成后启动 SVDEditor GUI 打开文件",
+    )
+
+    # ---------- add-peripheral ----------
+    p_add = subparsers.add_parser(
+        "add-peripheral",
+        help="向已有 SVD 文件添加外设",
+        description="从 JSON 文件读取外设数据，添加到现有 SVD 文件中",
+    )
+    p_add.add_argument("input", help="输入 SVD 文件路径")
+    p_add.add_argument(
+        "-d", "--data",
+        required=True,
+        help="外设数据 JSON 文件路径（Peripheral 或外设列表）",
+    )
+    p_add.add_argument("-o", "--output", help="输出 SVD 文件路径（默认: <input>_updated.svd）")
+
+    # ---------- remove-peripheral ----------
+    p_remove = subparsers.add_parser(
+        "remove-peripheral",
+        help="从 SVD 文件中移除指定外设",
+        description="从 SVD 文件中移除指定的外设及其寄存器、位域",
+    )
+    p_remove.add_argument("input", help="输入 SVD 文件路径")
+    p_remove.add_argument(
+        "-n", "--names",
+        required=True,
+        help="要移除的外设名称，逗号分隔（如: GPIOC,GPIOD）",
+    )
+    p_remove.add_argument("-o", "--output", help="输出 SVD 文件路径（默认: <input>_updated.svd）")
+
     return main_parser
 
 
@@ -692,6 +918,9 @@ def run_cli(argv=None):
         "header": cmd_header,
         "conflicts": cmd_conflicts,
         "extract": cmd_extract,
+        "create": cmd_create,
+        "add-peripheral": cmd_add_peripheral,
+        "remove-peripheral": cmd_remove_peripheral,
     }
 
     handler = cmd_map.get(args.command)

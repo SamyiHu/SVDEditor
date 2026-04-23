@@ -436,9 +436,9 @@ class TreeManager:
             self.placeholder_item = None
             self.placeholder_tree = None
     
-    def create_context_menu(self, item: QTreeWidgetItem) -> QMenu:
+    def create_context_menu(self, item: QTreeWidgetItem, parent=None) -> QMenu:
         """创建右键菜单"""
-        menu = QMenu()
+        menu = QMenu(parent)
         
         item_type = self.get_item_type(item)
         

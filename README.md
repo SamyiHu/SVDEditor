@@ -45,12 +45,32 @@
 | `header` | Generate C header files from SVD |
 | `conflicts` | Detect address overlaps, register offset duplicates, bitfield conflicts |
 | `extract` | Extract specific peripherals into a new SVD file |
+| `create` | **Create new SVD from JSON data** (e.g. from AIfull_link) |
+| `add-peripheral` | Add peripherals from JSON to existing SVD |
+| `remove-peripheral` | Remove peripherals from SVD by name |
 
 ### Output & Export
 - **SVD Generation**: Well-formatted, indented SVD/XML output
 - **Documentation Export**: CSV, Markdown, HTML register documentation
 - **C Header Generation**: `#define` macros for register addresses and bitfield masks
 - **Diff Reports**: Text or JSON difference reports
+
+## AIfull_link Integration
+
+Create SVD files directly from [AIfull_link](https://github.com/SamyiHu/AIfull_link) parsed register data:
+
+```bash
+# 1. In AIfull_link, export register data as JSON
+#    (use export_svd tool in Agent Shell)
+
+# 2. Create SVD from the exported JSON
+python run.py create --data scf10t_svd_data.json -o SCF10T.svd --validate
+
+# 3. Open in GUI for visual editing
+python run.py --gui --file SCF10T.svd
+```
+
+The JSON format is compatible with `DeviceInfo.to_dict()` output. See `data_model.py` for schema details.
 
 ## Installation & Running
 
@@ -98,6 +118,18 @@ python run.py conflicts chip.svd [--json] [--strict]
 
 # Extract peripherals
 python run.py extract chip.svd --peripherals GPIOA,GPIOB,GPIOC -o gpio.svd
+
+# Create SVD from JSON (e.g. exported from AIfull_link)
+python run.py create --data device_data.json -o chip.svd [--validate] [--open]
+
+# Add peripherals from JSON
+python run.py add-peripheral chip.svd --data peripheral.json -o updated.svd
+
+# Remove peripherals
+python run.py remove-peripheral chip.svd --name GPIOC,GPIOD -o updated.svd
+
+# Open GUI with a specific file
+python run.py --gui --file chip.svd
 ```
 
 ### Keyboard Shortcuts (GUI)
@@ -119,7 +151,7 @@ python run.py extract chip.svd --peripherals GPIOA,GPIOB,GPIOC -o gpio.svd
 SVDEditor/
 ├── run.py                          # Entry point (GUI + CLI)
 ├── svd_tool/
-│   ├── cli.py                      # CLI module (9 commands)
+│   ├── cli.py                      # CLI module (12 commands)
 │   ├── main.py                     # GUI entry
 │   ├── core/
 │   │   ├── data_model.py           # Device, Peripheral, Register, Field

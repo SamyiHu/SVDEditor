@@ -311,7 +311,7 @@ class InterruptManager:
         interrupt_name = irq_table.item(row, 0).text()
         
         # 创建右键菜单
-        menu = QMenu()
+        menu = QMenu(irq_table)
         
         edit_action = menu.addAction("编辑中断")
         delete_action = menu.addAction("删除中断")

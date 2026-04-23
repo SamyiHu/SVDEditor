@@ -110,13 +110,6 @@ class PeripheralEditDialog(BaseEditDialog):
         # 调用父类初始化
         super().__init__(parent, title)
         
-        # 添加地址冲突检测标签
-        self._conflict_label = QLabel("")
-        self._conflict_label.setStyleSheet("color: red; font-weight: bold; font-size: 11px;")
-        self._conflict_label.setWordWrap(True)
-        # 插入到基地址输入框后面（第2行）
-        self._form_layout.insertRow(2, "", self._conflict_label)
-        
         # 是否存在地址冲突标志
         self._has_address_conflict = False
         
@@ -204,15 +197,15 @@ class PeripheralEditDialog(BaseEditDialog):
         """实时检测外设地址冲突"""
         base_addr = self.base_addr_edit.text().strip()
         if not base_addr:
-            self._conflict_label.setText("")
+            self._clear_conflict_style(self.base_addr_edit)
             self._has_address_conflict = False
             return
-        
+
         addr_block = {
             "offset": self.offset_edit.text().strip(),
             "size": self.size_edit.text().strip(),
         }
-        
+
         conflict = SVDSchemaValidator.check_peripheral_address_conflict(
             new_name=self.name_edit.text().strip(),
             new_base_addr=base_addr,
@@ -220,13 +213,12 @@ class PeripheralEditDialog(BaseEditDialog):
             existing_peripherals=self.existing_peripherals_data,
             exclude_name=self.original_name if self.is_edit else ""
         )
-        
+
         if conflict:
-            self._conflict_label.setText(f"⚠️ {conflict}")
-            self._conflict_label.setStyleSheet("color: red; font-weight: bold; font-size: 11px;")
+            self._set_conflict_style(self.base_addr_edit, conflict)
             self._has_address_conflict = True
         else:
-            self._conflict_label.setText("")
+            self._clear_conflict_style(self.base_addr_edit)
             self._has_address_conflict = False
     
     def validate_input(self):
@@ -315,11 +307,7 @@ class RegisterEditDialog(BaseEditDialog):
         
         super().__init__(parent, title)
         
-        # 添加偏移冲突检测标签
-        self._reg_conflict_label = QLabel("")
-        self._reg_conflict_label.setStyleSheet("color: red; font-weight: bold; font-size: 11px;")
-        self._reg_conflict_label.setWordWrap(True)
-        self._form_layout.insertRow(2, "", self._reg_conflict_label)
+        # 是否存在偏移冲突标志
         self._has_offset_conflict = False
         
         # 连接实时检测信号
@@ -395,7 +383,7 @@ class RegisterEditDialog(BaseEditDialog):
         """实时检测寄存器偏移冲突"""
         offset = self.offset_edit.text().strip()
         if not offset:
-            self._reg_conflict_label.setText("")
+            self._clear_conflict_style(self.offset_edit)
             self._has_offset_conflict = False
             return
         
@@ -407,12 +395,10 @@ class RegisterEditDialog(BaseEditDialog):
         )
         
         if conflict:
-            self._reg_conflict_label.setText(f"⚠️ {conflict}")
-            self._reg_conflict_label.setStyleSheet("color: red; font-weight: bold; font-size: 11px;")
+            self._set_conflict_style(self.offset_edit, conflict)
             self._has_offset_conflict = True
         else:
-            self._reg_conflict_label.setText("✓ 偏移地址无冲突")
-            self._reg_conflict_label.setStyleSheet("color: green; font-size: 11px;")
+            self._clear_conflict_style(self.offset_edit)
             self._has_offset_conflict = False
     
     def validate_input(self):
@@ -489,11 +475,7 @@ class FieldEditDialog(BaseEditDialog):
         
         super().__init__(parent, title)
         
-        # 添加位域冲突检测标签
-        self._field_conflict_label = QLabel("")
-        self._field_conflict_label.setStyleSheet("color: red; font-weight: bold; font-size: 11px;")
-        self._field_conflict_label.setWordWrap(True)
-        self._form_layout.insertRow(3, "", self._field_conflict_label)
+        # 是否存在位域冲突标志
         self._has_bit_conflict = False
         
         # 连接实时检测信号
@@ -584,7 +566,8 @@ class FieldEditDialog(BaseEditDialog):
         bit_width = self.width_spin.value()
         
         if not self.existing_fields_data:
-            self._field_conflict_label.setText("")
+            self._clear_conflict_style(self.offset_spin)
+            self._clear_conflict_style(self.width_spin)
             self._has_bit_conflict = False
             return
         
@@ -597,12 +580,12 @@ class FieldEditDialog(BaseEditDialog):
         )
         
         if conflict:
-            self._field_conflict_label.setText(f"⚠️ {conflict}")
-            self._field_conflict_label.setStyleSheet("color: red; font-weight: bold; font-size: 11px;")
+            self._set_conflict_style(self.offset_spin, conflict)
+            self._set_conflict_style(self.width_spin, conflict)
             self._has_bit_conflict = True
         else:
-            self._field_conflict_label.setText("✓ 位范围无冲突")
-            self._field_conflict_label.setStyleSheet("color: green; font-size: 11px;")
+            self._clear_conflict_style(self.offset_spin)
+            self._clear_conflict_style(self.width_spin)
             self._has_bit_conflict = False
     
     def validate_input(self):

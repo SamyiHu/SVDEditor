@@ -19,16 +19,33 @@ logger = get_logger("main")
 
 def main():
     """主函数"""
+    # 解析 --file 参数（在 QApplication 之前处理，避免 PyQt 消费参数）
+    file_to_open = None
+    args = sys.argv[1:]
+    i = 0
+    while i < len(args):
+        if args[i] == "--file" and i + 1 < len(args):
+            file_to_open = args[i + 1]
+            i += 2
+        else:
+            i += 1
+
     # 创建应用
     app = QApplication(sys.argv)
     app.setApplicationName("SVD工具")
     app.setOrganizationName("SVDTool")
-    
+
     # 创建主窗口
     logger.debug("开始创建主窗口...")
     window = MainWindow()
     logger.debug(f"主窗口创建完成，窗口大小: {window.size()}")
-    
+
+    # 如果指定了文件，打开它
+    if file_to_open and os.path.isfile(file_to_open):
+        logger.debug(f"打开文件: {file_to_open}")
+        if hasattr(window, 'load_file'):
+            window.load_file(file_to_open)
+
     # 延迟显示窗口，确保窗口完全初始化后再显示
     # 这样可以避免先显示小窗口，然后才调整到正确大小的问题
     from PyQt6.QtCore import QTimer

@@ -12,7 +12,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # CLI 子命令列表
-CLI_COMMANDS = {"validate", "export", "generate", "diff", "info", "merge", "header", "conflicts", "extract"}
+CLI_COMMANDS = {"validate", "export", "generate", "diff", "info", "merge", "header", "conflicts", "extract", "create", "add-peripheral", "remove-peripheral"}
 
 
 def is_cli_mode():

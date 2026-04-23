@@ -562,7 +562,51 @@ class MainWindowRefactored(QMainWindow):
         
         # 设置地址冲突实时检测
         self._setup_conflict_detection()
+
+        # 统一文本控件的右键菜单风格
+        self._install_styled_context_menus()
+
+        # 基本信息→预览实时同步
+        self._basic_info_updating = False
+        self._connect_basic_info_signals()
     
+    @staticmethod
+    def _show_styled_text_menu(widget, pos):
+        """为文本控件创建统一风格的右键菜单"""
+        from ..utils.context_menu_filter import _build_text_menu
+        menu = _build_text_menu(widget)
+        if menu.actions():
+            menu.exec(widget.mapToGlobal(pos))
+
+    def _install_styled_context_menus(self):
+        """为所有文本输入控件安装统一风格的右键菜单"""
+        from PyQt6.QtWidgets import QLineEdit, QPlainTextEdit, QTextEdit
+
+        # 基本信息页的 QLineEdit 控件
+        line_edit_keys = [
+            'ic_name_edit', 'ic_desc_edit', 'version_edit',
+            'cpu_name_edit', 'cpu_rev_edit',
+            'company_name_edit', 'copyright_edit', 'author_edit'
+        ]
+        for key in line_edit_keys:
+            w = self.layout_manager.get_widget(key)
+            if w and isinstance(w, QLineEdit):
+                w.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+                w.customContextMenuRequested.connect(
+                    lambda pos, _w=w: self._show_styled_text_menu(_w, pos))
+
+        # SVD 预览编辑器
+        if self.preview_manager and self.preview_manager.preview_widget:
+            pe = getattr(self.preview_manager.preview_widget, 'preview_edit', None)
+            if pe and isinstance(pe, (QPlainTextEdit, QTextEdit)):
+                pe.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+                pe.customContextMenuRequested.connect(
+                    lambda pos, _w=pe: self._show_styled_text_menu(_w, pos))
+
+        # 编辑对话框中的描述字段等（通过全局事件过滤处理 QPlainTextEdit/QTextEdit）
+        from ..utils.context_menu_filter import install_text_context_menu_filter
+        install_text_context_menu_filter(self)
+
     def update_interrupt_buttons_state(self):
         """更新中断按钮状态（根据表格选择）"""
         irq_table = self.layout_manager.get_widget('irq_table')
@@ -578,6 +622,106 @@ class MainWindowRefactored(QMainWindow):
         # 更新按钮状态
         edit_irq_btn.setEnabled(has_selection)
         delete_irq_btn.setEnabled(has_selection)
+
+    # ==================== 基本信息实时同步 ====================
+
+    def _connect_basic_info_signals(self):
+        """连接基本信息页控件的变更信号"""
+        # QLineEdit: textEdited 只在用户输入时触发（不含 setText）
+        for key in ('ic_name_edit', 'ic_desc_edit', 'version_edit',
+                     'cpu_name_edit', 'cpu_rev_edit',
+                     'company_name_edit', 'copyright_edit', 'author_edit'):
+            w = self.layout_manager.get_widget(key)
+            if w:
+                w.textEdited.connect(self._on_basic_info_edited)
+
+        # QComboBox
+        for key in ('svd_version_combo', 'endian_combo', 'license_combo'):
+            w = self.layout_manager.get_widget(key)
+            if w:
+                w.currentTextChanged.connect(self._on_basic_info_edited)
+
+        # ToggleSwitch / QCheckBox
+        for key in ('mpu_combo', 'fpu_combo'):
+            w = self.layout_manager.get_widget(key)
+            if w:
+                if hasattr(w, 'stateChanged'):
+                    w.stateChanged.connect(self._on_basic_info_edited)
+                elif hasattr(w, 'toggled'):
+                    w.toggled.connect(self._on_basic_info_edited)
+
+        # LabeledSlider / QSpinBox
+        w = self.layout_manager.get_widget('nvic_prio_spin')
+        if w:
+            w.valueChanged.connect(self._on_basic_info_edited)
+
+    def _on_basic_info_edited(self, _=None):
+        """基本信息被用户编辑时 → 回写到 state_manager.device_info → 刷新预览"""
+        if self._basic_info_updating:
+            return
+        di = self.state_manager.device_info
+        if not di:
+            return
+
+        # 读取控件值 → 回写 device_info
+        w = self.layout_manager.get_widget
+        _text = lambda k: w(k).text().strip() if w(k) else None
+        _check = lambda k: w(k).isChecked() if w(k) and hasattr(w(k), 'isChecked') else None
+        _combo = lambda k: w(k).currentText() if w(k) else None
+        _value = lambda k: w(k).value() if w(k) else None
+
+        name = _text('ic_name_edit')
+        if name is not None:
+            di.name = name
+        desc = _text('ic_desc_edit')
+        if desc is not None:
+            di.description = desc
+        ver = _text('version_edit')
+        if ver is not None:
+            di.version = ver
+        sv = _combo('svd_version_combo')
+        if sv is not None:
+            di.svd_version = sv
+        cpu_name = _text('cpu_name_edit')
+        if cpu_name is not None:
+            di.cpu.name = cpu_name
+        cpu_rev = _text('cpu_rev_edit')
+        if cpu_rev is not None:
+            di.cpu.revision = cpu_rev
+        endian = _combo('endian_combo')
+        if endian is not None:
+            di.cpu.endian = endian
+        mpu = _check('mpu_combo')
+        if mpu is not None:
+            di.cpu.mpu_present = mpu
+        fpu = _check('fpu_combo')
+        if fpu is not None:
+            di.cpu.fpu_present = fpu
+        nvic = _value('nvic_prio_spin')
+        if nvic is not None:
+            di.cpu.nvic_prio_bits = nvic
+        vendor = _text('company_name_edit')
+        if vendor is not None:
+            di.vendor = vendor
+        cp = _text('copyright_edit')
+        if cp is not None:
+            di.copyright = cp
+        author = _text('author_edit')
+        if author is not None:
+            di.author = author
+        lic = _combo('license_combo')
+        if lic is not None:
+            from ..i18n.i18n import t
+            di.license = "" if lic == t("license.do_not_display") else lic
+
+        # 标记修改
+        self.document_manager.mark_modified()
+
+        # 刷新预览
+        if hasattr(self, 'coordinator') and self.coordinator:
+            self.coordinator.emit_event("device_info_updated", di)
+        if self.preview_manager and self.preview_manager.preview_widget:
+            self.preview_manager.preview_widget.refresh_preview()
 
     def toggle_preview_window(self, checked: bool):
         """切换预览窗口显示/隐藏（与显示菜单的勾选状态同步）"""
@@ -1302,7 +1446,7 @@ class MainWindowRefactored(QMainWindow):
         self._save_current_document_state()
         
         parser = SVDParser()
-        device_info = parser.parse(file_path)
+        device_info = parser.parse_file(file_path)
         
         # 暂停通知，防止旧文档的树展开状态泄漏到新文档
         self.state_manager.pause_notifications()
@@ -1331,9 +1475,21 @@ class MainWindowRefactored(QMainWindow):
             # 恢复通知（此时树已正确重建，不会泄漏展开状态）
             self.state_manager.resume_notifications()
         
+        # 发射文件加载信号（触发实时预览刷新）
+        if hasattr(self, 'coordinator') and self.coordinator:
+            self.logger.debug("调用coordinator.emit_event(device_info_updated)")
+            self.coordinator.emit_event("device_info_updated", device_info)
+
         if hasattr(self.layout_manager, 'update_basic_info'):
             self.layout_manager.update_basic_info(device_info)
-        self.layout_manager.update_status(t("status.file_opened", name=os.path.basename(file_path)))
+        self.layout_manager.update_status(t("status.file_loaded", name=os.path.basename(file_path)))
+
+        # 注册到文档管理器（创建型号标签页）
+        try:
+            self.document_manager.open_document(
+                device_info, file_path=file_path)
+        except Exception as e:
+            self.logger.warning(f"注册文档到DocumentManager失败: {e}")
 
     def save_svd_file(self):
         """保存SVD文件"""
@@ -3135,7 +3291,7 @@ class MainWindowRefactored(QMainWindow):
         interrupt_name = irq_table.item(row, 0).text()
         
         # 创建右键菜单
-        menu = QMenu()
+        menu = QMenu(self)
         
         edit_action = menu.addAction(t("menu.edit_interrupt"))
         edit_action.setData("edit_interrupt")

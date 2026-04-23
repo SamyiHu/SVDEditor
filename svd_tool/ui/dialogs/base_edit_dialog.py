@@ -149,14 +149,21 @@ class BaseEditDialog(QDialog):
         QTimer.singleShot(0, self._adjust_height)
 
     def _adjust_height(self):
-        """根据表单内容自动调整对话框高度"""
+        """根据表单内容自动调整对话框高度，并居中于父窗口"""
         self._form_container.adjustSize()
         form_height = self._form_container.sizeHint().height()
         button_height = self._button_box.sizeHint().height()
         margins = self._main_layout.contentsMargins().top() + self._main_layout.contentsMargins().bottom()
         total = form_height + button_height + margins + 20
-        self.setMinimumHeight(min(total, 650))
-        self.resize(self.width(), min(total, 650))
+        h = min(total, 650)
+        self.setMinimumHeight(h)
+        self.resize(self.width(), h)
+        # 居中于父窗口
+        if self.parent():
+            parent_geo = self.parent().geometry()
+            x = parent_geo.center().x() - self.width() // 2
+            y = parent_geo.center().y() - h // 2
+            self.move(x, y)
 
     def setup_form(self):
         """子类重写此方法添加表单项"""
@@ -166,6 +173,21 @@ class BaseEditDialog(QDialog):
         """添加一行表单（标签 + 控件）"""
         label = QLabel(label_text)
         self._form_layout.addRow(label, widget)
+
+    # ==================== 冲突样式辅助方法 ====================
+
+    _CONFLICT_STYLE = "border: 2px solid #E53935; border-radius: 6px; background-color: #FFF0F0;"
+    _NORMAL_STYLE = ""
+
+    def _set_conflict_style(self, widget, conflict_msg: str):
+        """为控件设置冲突样式（红色边框 + tooltip）"""
+        widget.setStyleSheet(self._CONFLICT_STYLE)
+        widget.setToolTip(conflict_msg)
+
+    def _clear_conflict_style(self, widget):
+        """清除控件的冲突样式"""
+        widget.setStyleSheet(self._NORMAL_STYLE)
+        widget.setToolTip("")
 
     def _on_accept(self):
         """确定按钮点击处理"""

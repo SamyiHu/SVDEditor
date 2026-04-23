@@ -23,6 +23,7 @@
   "menu.edit.cut": "Cut",
   "menu.edit.copy": "Copy",
   "menu.edit.paste": "Paste",
+  "menu.edit.select_all": "Select All",
   "button.add": "Add",
   "button.edit": "Edit",
   "button.save": "Save",

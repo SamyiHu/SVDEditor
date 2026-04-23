@@ -26,13 +26,29 @@ class Field:
     xml_start_line: int = 0  # XML起始行号
     xml_end_line: int = 0  # XML结束行号
     enumerated_values: List[Dict[str, str]] = field(default_factory=list)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         data = asdict(self)
         # 只移除None值，保留空字符串（空字符串是有意义的默认值）
         return {k: v for k, v in data.items() if v is not None}
-    
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Field':
+        """从字典创建 Field 实例"""
+        return cls(
+            name=data.get("name", ""),
+            description=data.get("description", ""),
+            display_name=data.get("display_name", ""),
+            bit_offset=int(data.get("bit_offset", 0)),
+            bit_width=int(data.get("bit_width", 1)),
+            access=data.get("access"),
+            reset_value=data.get("reset_value", "0x0"),
+            xml_start_line=int(data.get("xml_start_line", 0)),
+            xml_end_line=int(data.get("xml_end_line", 0)),
+            enumerated_values=data.get("enumerated_values", []),
+        )
+
     def __deepcopy__(self, memo):
         """快速深拷贝（避免copy.deepcopy的通用开销）"""
         return Field(
@@ -66,14 +82,40 @@ class Register:
     xml_end_line: int = 0  # XML结束行号
 
 
-    
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         data = asdict(self)
         data['fields'] = {name: field.to_dict() for name, field in self.fields.items()}
         # 只移除None值，保留空字符串（空字符串是有意义的默认值）
         return {k: v for k, v in data.items() if v is not None}
-    
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Register':
+        """从字典创建 Register 实例"""
+        fields_data = data.get("fields", {})
+        fields = {}
+        if isinstance(fields_data, dict):
+            for fname, fdata in fields_data.items():
+                if isinstance(fdata, dict):
+                    fields[fname] = Field.from_dict(fdata)
+        elif isinstance(fields_data, list):
+            for fdata in fields_data:
+                if isinstance(fdata, dict):
+                    f = Field.from_dict(fdata)
+                    fields[f.name] = f
+        return cls(
+            name=data.get("name", ""),
+            offset=data.get("offset", "0x0"),
+            description=data.get("description", ""),
+            display_name=data.get("display_name", ""),
+            size=data.get("size", "0x20"),
+            access=data.get("access"),
+            reset_value=data.get("reset_value", "0x00000000"),
+            reset_mask=data.get("reset_mask", "0xFFFFFFFF"),
+            fields=fields,
+            derived_from=data.get("derived_from", ""),
+        )
+
     def __deepcopy__(self, memo):
         """快速深拷贝"""
         return Register(
@@ -119,6 +161,38 @@ class Cluster:
         data['registers'] = {name: reg.to_dict() for name, reg in self.registers.items()}
         data['clusters'] = {name: cl.to_dict() for name, cl in self.clusters.items()}
         return {k: v for k, v in data.items() if v is not None}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Cluster':
+        """从字典创建 Cluster 实例"""
+        regs_data = data.get("registers", {})
+        registers = {}
+        if isinstance(regs_data, dict):
+            for rname, rdata in regs_data.items():
+                if isinstance(rdata, dict):
+                    registers[rname] = Register.from_dict(rdata)
+        clusters_data = data.get("clusters", {})
+        clusters = {}
+        if isinstance(clusters_data, dict):
+            for cname, cdata in clusters_data.items():
+                if isinstance(cdata, dict):
+                    clusters[cname] = Cluster.from_dict(cdata)
+        return cls(
+            name=data.get("name", ""),
+            description=data.get("description", ""),
+            display_name=data.get("display_name", ""),
+            address_offset=data.get("address_offset", "0x0"),
+            size=data.get("size", "0x20"),
+            access=data.get("access"),
+            reset_value=data.get("reset_value", "0x00000000"),
+            reset_mask=data.get("reset_mask", "0xFFFFFFFF"),
+            registers=registers,
+            clusters=clusters,
+            dim=data.get("dim"),
+            dim_increment=data.get("dim_increment", "0x0"),
+            dim_index=data.get("dim_index", []),
+            derived_from=data.get("derived_from", ""),
+        )
 
     def __deepcopy__(self, memo):
         """快速深拷贝"""
@@ -176,7 +250,42 @@ class Peripheral:
         data['clusters'] = {name: cl.to_dict() for name, cl in self.clusters.items()}
         # 只移除None值，保留空字符串（空字符串是有意义的默认值）
         return {k: v for k, v in data.items() if v is not None}
-    
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Peripheral':
+        """从字典创建 Peripheral 实例"""
+        regs_data = data.get("registers", {})
+        registers = {}
+        if isinstance(regs_data, dict):
+            for rname, rdata in regs_data.items():
+                if isinstance(rdata, dict):
+                    registers[rname] = Register.from_dict(rdata)
+        elif isinstance(regs_data, list):
+            for rdata in regs_data:
+                if isinstance(rdata, dict):
+                    r = Register.from_dict(rdata)
+                    registers[r.name] = r
+        clusters_data = data.get("clusters", {})
+        clusters = {}
+        if isinstance(clusters_data, dict):
+            for cname, cdata in clusters_data.items():
+                if isinstance(cdata, dict):
+                    clusters[cname] = Cluster.from_dict(cdata)
+        default_addr_block = {"offset": "0x0", "size": "0x14", "usage": "registers"}
+        addr_block = data.get("address_block", default_addr_block) or default_addr_block
+        return cls(
+            name=data.get("name", ""),
+            base_address=data.get("base_address", "0x0"),
+            description=data.get("description", ""),
+            display_name=data.get("display_name", ""),
+            group_name=data.get("group_name", ""),
+            derived_from=data.get("derived_from", ""),
+            address_block=addr_block,
+            registers=registers,
+            clusters=clusters,
+            interrupts=data.get("interrupts", []),
+        )
+
     def __deepcopy__(self, memo):
         """快速深拷贝"""
         new_addr_block = dict(self.address_block) if self.address_block else {"offset": "0x0", "size": "0x14", "usage": "registers"}
@@ -211,13 +320,24 @@ class Interrupt:
     description: str = ""
     peripheral: str = ""  # 保留兼容性，指向第一个关联外设
     peripherals: List[str] = field(default_factory=list)  # 支持多外设共用中断
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         data = asdict(self)
         # 只移除None值，保留空字符串（空字符串是有意义的默认值）
         return {k: v for k, v in data.items() if v is not None}
-    
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Interrupt':
+        """从字典创建 Interrupt 实例"""
+        return cls(
+            name=data.get("name", ""),
+            value=int(data.get("value", 0)),
+            description=data.get("description", ""),
+            peripheral=data.get("peripheral", ""),
+            peripherals=data.get("peripherals", []),
+        )
+
     def __deepcopy__(self, memo):
         """快速深拷贝"""
         return Interrupt(
@@ -239,11 +359,24 @@ class CPUInfo:
     fpu_present: bool = False
     nvic_prio_bits: int = 4
     vendor_systick_config: bool = False
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return asdict(self)
-    
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'CPUInfo':
+        """从字典创建 CPUInfo 实例"""
+        return cls(
+            name=data.get("name", "CM0+"),
+            revision=data.get("revision", "r0p1"),
+            endian=data.get("endian", "little"),
+            mpu_present=bool(data.get("mpu_present", True)),
+            fpu_present=bool(data.get("fpu_present", False)),
+            nvic_prio_bits=int(data.get("nvic_prio_bits", 4)),
+            vendor_systick_config=bool(data.get("vendor_systick_config", False)),
+        )
+
     def __deepcopy__(self, memo):
         """快速深拷贝"""
         return CPUInfo(
@@ -276,7 +409,7 @@ class DeviceInfo:
     peripherals: Dict[str, Peripheral] = field(default_factory=dict)
     interrupts: Dict[str, Interrupt] = field(default_factory=dict)
     svd_version: str = "1.3"
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为完整字典"""
         data = asdict(self)
@@ -284,3 +417,50 @@ class DeviceInfo:
         data['peripherals'] = {name: periph.to_dict() for name, periph in self.peripherals.items()}
         data['interrupts'] = {name: irq.to_dict() for name, irq in self.interrupts.items()}
         return data
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'DeviceInfo':
+        """从字典创建 DeviceInfo 实例（完整反序列化）"""
+        cpu = CPUInfo.from_dict(data.get("cpu", {}))
+        # 解析外设
+        peripherals = {}
+        periph_data = data.get("peripherals", {})
+        if isinstance(periph_data, dict):
+            for pname, pdata in periph_data.items():
+                if isinstance(pdata, dict):
+                    peripherals[pname] = Peripheral.from_dict(pdata)
+        elif isinstance(periph_data, list):
+            for pdata in periph_data:
+                if isinstance(pdata, dict):
+                    p = Peripheral.from_dict(pdata)
+                    peripherals[p.name] = p
+        # 解析中断
+        interrupts = {}
+        irq_data = data.get("interrupts", {})
+        if isinstance(irq_data, dict):
+            for iname, idata in irq_data.items():
+                if isinstance(idata, dict):
+                    interrupts[iname] = Interrupt.from_dict(idata)
+        elif isinstance(irq_data, list):
+            for idata in irq_data:
+                if isinstance(idata, dict):
+                    irq = Interrupt.from_dict(idata)
+                    interrupts[irq.name] = irq
+        return cls(
+            name=data.get("name", ""),
+            version=data.get("version", "1.0"),
+            description=data.get("description", ""),
+            vendor=data.get("vendor", ""),
+            copyright=data.get("copyright", ""),
+            author=data.get("author", ""),
+            license=data.get("license", ""),
+            cpu=cpu,
+            address_unit_bits=int(data.get("address_unit_bits", 8)),
+            width=int(data.get("width", 32)),
+            size=data.get("size", "0x20"),
+            reset_value=data.get("reset_value", "0x0"),
+            reset_mask=data.get("reset_mask", "0xFFFFFFFF"),
+            peripherals=peripherals,
+            interrupts=interrupts,
+            svd_version=data.get("svd_version", "1.3"),
+        )

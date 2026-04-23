@@ -598,7 +598,7 @@ class PeripheralManager(QObject):
             return
         
         # 创建右键菜单
-        menu = main_window.tree_manager.create_context_menu(item)
+        menu = main_window.tree_manager.create_context_menu(item, parent=periph_tree)
         
         # 执行菜单动作
         action = menu.exec(periph_tree.mapToGlobal(pos))

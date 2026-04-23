@@ -12,6 +12,7 @@
   "menu.edit.cut": "剪切",
   "menu.edit.copy": "复制",
   "menu.edit.paste": "粘贴",
+  "menu.edit.select_all": "全选",
   "menu.view.expand_all": "展开所有",
   "menu.view.collapse_all": "折叠所有",
   "menu.view.language": "语言",
