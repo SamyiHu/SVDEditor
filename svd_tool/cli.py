@@ -30,6 +30,7 @@ if _PROJECT_ROOT not in sys.path:
 
 from svd_tool.core.svd_parser import SVDParser
 from svd_tool.core.svd_generator import SVDGenerator
+from svd_tool.core.data_model import Peripheral, Register, Field
 from svd_tool.core.svd_schema_validator import SVDSchemaValidator, Severity
 from svd_tool.core.svd_exporter import SVDExporter
 from svd_tool.core.svd_differ import SVDDiffer
@@ -41,13 +42,20 @@ from svd_tool.core.address_conflict_detector import AddressConflictDetector
 # ==================== 工具函数 ====================
 
 def _setup_logging(verbose: bool = False):
-    """配置日志"""
+    """配置日志和输出编码"""
     level = logging.DEBUG if verbose else logging.WARNING
     logging.basicConfig(
         level=level,
         format="[%(levelname)s] %(name)s: %(message)s",
         stream=sys.stderr,
     )
+    # Windows 终端默认 GBK 编码，确保中文和符号正常输出
+    if sys.platform == "win32":
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 
 def _load_svd(file_path: str):
@@ -691,6 +699,255 @@ def cmd_remove_peripheral(args):
     print(f"   剩余外设数: {len(device.peripherals)}")
 
 
+def _save_svd(device, input_path, output_arg):
+    """保存 SVD 文件，返回输出路径"""
+    output_path = output_arg
+    if not output_path:
+        base_name = os.path.splitext(input_path)[0]
+        output_path = base_name + "_updated.svd"
+    generator = SVDGenerator(device)
+    xml_str = generator.generate(pretty_print=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(xml_str)
+    return output_path
+
+
+def _get_peripheral(device, name):
+    """获取外设，不存在则报错退出"""
+    if name not in device.peripherals:
+        print(f"错误: 外设 '{name}' 不存在", file=sys.stderr)
+        sys.exit(1)
+    return device.peripherals[name]
+
+
+def _get_register(periph, name):
+    """获取寄存器，不存在则报错退出"""
+    if name not in periph.registers:
+        print(f"错误: 寄存器 '{name}' 在外设 '{periph.name}' 中不存在", file=sys.stderr)
+        sys.exit(1)
+    return periph.registers[name]
+
+
+# ==================== update-peripheral ====================
+
+def cmd_update_peripheral(args):
+    """更新外设属性"""
+    device, _ = _load_svd(args.input)
+    periph = _get_peripheral(device, args.name)
+
+    changed = []
+    if args.base_address is not None:
+        periph.base_address = args.base_address; changed.append("base_address")
+    if args.description is not None:
+        periph.description = args.description; changed.append("description")
+    if args.display_name is not None:
+        periph.display_name = args.display_name; changed.append("display_name")
+    if args.group is not None:
+        periph.group_name = args.group; changed.append("group_name")
+    if args.offset is not None:
+        periph.address_block["offset"] = args.offset; changed.append("address_block.offset")
+    if args.size is not None:
+        periph.address_block["size"] = args.size; changed.append("address_block.size")
+
+    if not changed:
+        print("提示: 未指定任何要修改的字段", file=sys.stderr); return
+
+    output_path = _save_svd(device, args.input, args.output)
+    print(f"✅ 已更新外设 '{args.name}': {', '.join(changed)}")
+    print(f"   输出到: {output_path}")
+
+
+# ==================== add-register ====================
+
+def cmd_add_register(args):
+    """向指定外设添加寄存器"""
+    device, _ = _load_svd(args.input)
+    periph = _get_peripheral(device, args.peripheral)
+
+    registers = []
+    if args.data:
+        with open(args.data, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            registers = [Register.from_dict(d) for d in data]
+        else:
+            registers = [Register.from_dict(data)]
+    else:
+        if not args.name or not args.offset:
+            print("错误: 需要 -d JSON文件 或 --name/--offset 参数", file=sys.stderr); sys.exit(1)
+        registers = [Register(name=args.name, offset=args.offset,
+                              description=args.desc or "", size=args.size or "0x20",
+                              access=args.access, reset_value=args.reset_value or "0x00000000")]
+
+    added = []
+    for reg in registers:
+        if reg.name in periph.registers:
+            print(f"警告: 寄存器 '{reg.name}' 已存在，跳过")
+            continue
+        periph.registers[reg.name] = reg
+        added.append(reg.name)
+
+    if not added:
+        print("错误: 没有可添加的寄存器", file=sys.stderr); sys.exit(1)
+
+    output_path = _save_svd(device, args.input, args.output)
+    print(f"✅ 已添加 {len(added)} 个寄存器: {', '.join(added)}")
+    print(f"   输出到: {output_path}")
+
+
+# ==================== update-register ====================
+
+def cmd_update_register(args):
+    """更新寄存器属性"""
+    device, _ = _load_svd(args.input)
+    periph = _get_peripheral(device, args.peripheral)
+    reg = _get_register(periph, args.name)
+
+    changed = []
+    if args.offset is not None:
+        reg.offset = args.offset; changed.append("offset")
+    if args.description is not None:
+        reg.description = args.description; changed.append("description")
+    if args.display_name is not None:
+        reg.display_name = args.display_name; changed.append("display_name")
+    if args.size is not None:
+        reg.size = args.size; changed.append("size")
+    if args.access is not None:
+        reg.access = args.access; changed.append("access")
+    if args.reset_value is not None:
+        reg.reset_value = args.reset_value; changed.append("reset_value")
+
+    if not changed:
+        print("提示: 未指定任何要修改的字段", file=sys.stderr); return
+
+    output_path = _save_svd(device, args.input, args.output)
+    print(f"✅ 已更新寄存器 '{args.name}' ({args.peripheral}): {', '.join(changed)}")
+    print(f"   输出到: {output_path}")
+
+
+# ==================== remove-register ====================
+
+def cmd_remove_register(args):
+    """从指定外设移除寄存器"""
+    device, _ = _load_svd(args.input)
+    periph = _get_peripheral(device, args.peripheral)
+
+    reg_names = [n.strip() for n in args.names.split(",") if n.strip()]
+
+    missing = [n for n in reg_names if n not in periph.registers]
+    if missing:
+        print(f"警告: 寄存器不存在: {', '.join(missing)}")
+
+    removed = [n for n in reg_names if n in periph.registers]
+    if not removed:
+        print("错误: 没有可移除的寄存器", file=sys.stderr); sys.exit(1)
+
+    for name in removed:
+        del periph.registers[name]
+
+    output_path = _save_svd(device, args.input, args.output)
+    print(f"✅ 已移除 {len(removed)} 个寄存器: {', '.join(removed)}")
+    print(f"   输出到: {output_path}")
+
+
+# ==================== add-field ====================
+
+def cmd_add_field(args):
+    """向指定寄存器添加位域"""
+    device, _ = _load_svd(args.input)
+    periph = _get_peripheral(device, args.peripheral)
+    reg = _get_register(periph, args.register)
+
+    fields = []
+    if args.data:
+        with open(args.data, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            fields = [Field.from_dict(d) for d in data]
+        else:
+            fields = [Field.from_dict(data)]
+    else:
+        if not args.name or args.bit_offset is None or args.bit_width is None:
+            print("错误: 需要 -d JSON文件 或 --name/--bit-offset/--bit-width 参数", file=sys.stderr); sys.exit(1)
+        fields = [Field(name=args.name, bit_offset=args.bit_offset, bit_width=args.bit_width,
+                        description=args.desc or "", access=args.access, reset_value=args.reset_value or "0x0")]
+
+    added = []
+    for field in fields:
+        if field.name in reg.fields:
+            print(f"警告: 位域 '{field.name}' 已存在，跳过")
+            continue
+        reg.fields[field.name] = field
+        added.append(field.name)
+
+    if not added:
+        print("错误: 没有可添加的位域", file=sys.stderr); sys.exit(1)
+
+    output_path = _save_svd(device, args.input, args.output)
+    print(f"✅ 已添加 {len(added)} 个位域: {', '.join(added)}")
+    print(f"   输出到: {output_path}")
+
+
+# ==================== update-field ====================
+
+def cmd_update_field(args):
+    """更新位域属性"""
+    device, _ = _load_svd(args.input)
+    periph = _get_peripheral(device, args.peripheral)
+    reg = _get_register(periph, args.register)
+
+    if args.name not in reg.fields:
+        print(f"错误: 位域 '{args.name}' 在寄存器 '{args.register}' 中不存在", file=sys.stderr); sys.exit(1)
+    field = reg.fields[args.name]
+
+    changed = []
+    if args.bit_offset is not None:
+        field.bit_offset = args.bit_offset; changed.append("bit_offset")
+    if args.bit_width is not None:
+        field.bit_width = args.bit_width; changed.append("bit_width")
+    if args.description is not None:
+        field.description = args.description; changed.append("description")
+    if args.display_name is not None:
+        field.display_name = args.display_name; changed.append("display_name")
+    if args.access is not None:
+        field.access = args.access; changed.append("access")
+    if args.reset_value is not None:
+        field.reset_value = args.reset_value; changed.append("reset_value")
+
+    if not changed:
+        print("提示: 未指定任何要修改的字段", file=sys.stderr); return
+
+    output_path = _save_svd(device, args.input, args.output)
+    print(f"✅ 已更新位域 '{args.name}' ({args.peripheral}/{args.register}): {', '.join(changed)}")
+    print(f"   输出到: {output_path}")
+
+
+# ==================== remove-field ====================
+
+def cmd_remove_field(args):
+    """从指定寄存器移除位域"""
+    device, _ = _load_svd(args.input)
+    periph = _get_peripheral(device, args.peripheral)
+    reg = _get_register(periph, args.register)
+
+    field_names = [n.strip() for n in args.names.split(",") if n.strip()]
+
+    missing = [n for n in field_names if n not in reg.fields]
+    if missing:
+        print(f"警告: 位域不存在: {', '.join(missing)}")
+
+    removed = [n for n in field_names if n in reg.fields]
+    if not removed:
+        print("错误: 没有可移除的位域", file=sys.stderr); sys.exit(1)
+
+    for name in removed:
+        del reg.fields[name]
+
+    output_path = _save_svd(device, args.input, args.output)
+    print(f"✅ 已移除 {len(removed)} 个位域: {', '.join(removed)}")
+    print(f"   输出到: {output_path}")
+
+
 # ==================== 参数解析 ====================
 
 def build_parser() -> argparse.ArgumentParser:
@@ -894,6 +1151,115 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_remove.add_argument("-o", "--output", help="输出 SVD 文件路径（默认: <input>_updated.svd）")
 
+    # ---------- update-peripheral ----------
+    p_up = subparsers.add_parser(
+        "update-peripheral",
+        help="更新外设属性",
+        description="修改指定外设的基地址、描述等属性（只改传入的字段）",
+    )
+    p_up.add_argument("input", help="输入 SVD 文件路径")
+    p_up.add_argument("-n", "--name", required=True, help="要修改的外设名")
+    p_up.add_argument("--base-address", help="新的基地址")
+    p_up.add_argument("--description", help="描述")
+    p_up.add_argument("--display-name", help="显示名称")
+    p_up.add_argument("--group", help="组名")
+    p_up.add_argument("--offset", help="地址块偏移")
+    p_up.add_argument("--size", help="地址块大小")
+    p_up.add_argument("-o", "--output", help="输出 SVD 文件路径（默认: <input>_updated.svd）")
+
+    # ---------- add-register ----------
+    p_ar = subparsers.add_parser(
+        "add-register",
+        help="向指定外设添加寄存器",
+        description="从 JSON 文件或命令行参数添加寄存器到指定外设",
+    )
+    p_ar.add_argument("input", help="输入 SVD 文件路径")
+    p_ar.add_argument("-p", "--peripheral", required=True, help="目标外设名")
+    p_ar.add_argument("-d", "--data", help="寄存器数据 JSON 文件路径（单个或列表）")
+    p_ar.add_argument("--name", help="寄存器名（直接参数模式）")
+    p_ar.add_argument("--offset", help="偏移地址（直接参数模式）")
+    p_ar.add_argument("--desc", help="描述")
+    p_ar.add_argument("--size", help="大小（默认 0x20）")
+    p_ar.add_argument("--access", help="访问权限")
+    p_ar.add_argument("--reset-value", help="复位值")
+    p_ar.add_argument("-o", "--output", help="输出 SVD 文件路径（默认: <input>_updated.svd）")
+
+    # ---------- update-register ----------
+    p_ur = subparsers.add_parser(
+        "update-register",
+        help="更新寄存器属性",
+        description="修改指定寄存器的偏移、大小等属性（只改传入的字段）",
+    )
+    p_ur.add_argument("input", help="输入 SVD 文件路径")
+    p_ur.add_argument("-p", "--peripheral", required=True, help="目标外设名")
+    p_ur.add_argument("-n", "--name", required=True, help="要修改的寄存器名")
+    p_ur.add_argument("--offset", help="偏移地址")
+    p_ur.add_argument("--description", help="描述")
+    p_ur.add_argument("--display-name", help="显示名称")
+    p_ur.add_argument("--size", help="大小")
+    p_ur.add_argument("--access", help="访问权限")
+    p_ur.add_argument("--reset-value", help="复位值")
+    p_ur.add_argument("-o", "--output", help="输出 SVD 文件路径（默认: <input>_updated.svd）")
+
+    # ---------- remove-register ----------
+    p_rr = subparsers.add_parser(
+        "remove-register",
+        help="从指定外设移除寄存器",
+        description="从指定外设中移除寄存器及其位域",
+    )
+    p_rr.add_argument("input", help="输入 SVD 文件路径")
+    p_rr.add_argument("-p", "--peripheral", required=True, help="目标外设名")
+    p_rr.add_argument("--names", required=True, help="要移除的寄存器名称，逗号分隔")
+    p_rr.add_argument("-o", "--output", help="输出 SVD 文件路径（默认: <input>_updated.svd）")
+
+    # ---------- add-field ----------
+    p_af = subparsers.add_parser(
+        "add-field",
+        help="向指定寄存器添加位域",
+        description="从 JSON 文件或命令行参数添加位域到指定寄存器",
+    )
+    p_af.add_argument("input", help="输入 SVD 文件路径")
+    p_af.add_argument("-p", "--peripheral", required=True, help="目标外设名")
+    p_af.add_argument("-r", "--register", required=True, help="目标寄存器名")
+    p_af.add_argument("-d", "--data", help="位域数据 JSON 文件路径（单个或列表）")
+    p_af.add_argument("--name", help="位域名（直接参数模式）")
+    p_af.add_argument("--bit-offset", type=int, help="起始位（直接参数模式）")
+    p_af.add_argument("--bit-width", type=int, help="位宽（直接参数模式）")
+    p_af.add_argument("--desc", help="描述")
+    p_af.add_argument("--access", help="访问权限")
+    p_af.add_argument("--reset-value", help="复位值")
+    p_af.add_argument("-o", "--output", help="输出 SVD 文件路径（默认: <input>_updated.svd）")
+
+    # ---------- update-field ----------
+    p_uf = subparsers.add_parser(
+        "update-field",
+        help="更新位域属性",
+        description="修改指定位域的位偏移、位宽等属性（只改传入的字段）",
+    )
+    p_uf.add_argument("input", help="输入 SVD 文件路径")
+    p_uf.add_argument("-p", "--peripheral", required=True, help="目标外设名")
+    p_uf.add_argument("-r", "--register", required=True, help="目标寄存器名")
+    p_uf.add_argument("-n", "--name", required=True, help="要修改的位域名")
+    p_uf.add_argument("--bit-offset", type=int, help="起始位")
+    p_uf.add_argument("--bit-width", type=int, help="位宽")
+    p_uf.add_argument("--description", help="描述")
+    p_uf.add_argument("--display-name", help="显示名称")
+    p_uf.add_argument("--access", help="访问权限")
+    p_uf.add_argument("--reset-value", help="复位值")
+    p_uf.add_argument("-o", "--output", help="输出 SVD 文件路径（默认: <input>_updated.svd）")
+
+    # ---------- remove-field ----------
+    p_rf = subparsers.add_parser(
+        "remove-field",
+        help="从指定寄存器移除位域",
+        description="从指定寄存器中移除位域",
+    )
+    p_rf.add_argument("input", help="输入 SVD 文件路径")
+    p_rf.add_argument("-p", "--peripheral", required=True, help="目标外设名")
+    p_rf.add_argument("-r", "--register", required=True, help="目标寄存器名")
+    p_rf.add_argument("--names", required=True, help="要移除的位域名称，逗号分隔")
+    p_rf.add_argument("-o", "--output", help="输出 SVD 文件路径（默认: <input>_updated.svd）")
+
     return main_parser
 
 
@@ -921,6 +1287,13 @@ def run_cli(argv=None):
         "create": cmd_create,
         "add-peripheral": cmd_add_peripheral,
         "remove-peripheral": cmd_remove_peripheral,
+        "update-peripheral": cmd_update_peripheral,
+        "add-register": cmd_add_register,
+        "update-register": cmd_update_register,
+        "remove-register": cmd_remove_register,
+        "add-field": cmd_add_field,
+        "update-field": cmd_update_field,
+        "remove-field": cmd_remove_field,
     }
 
     handler = cmd_map.get(args.command)
