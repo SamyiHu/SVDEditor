@@ -47,7 +47,14 @@
 | `extract` | Extract specific peripherals into a new SVD file |
 | `create` | **Create new SVD from JSON data** (e.g. from AIfull_link) |
 | `add-peripheral` | Add peripherals from JSON to existing SVD |
+| `update-peripheral` | Update peripheral properties (base address, description, etc.) |
 | `remove-peripheral` | Remove peripherals from SVD by name |
+| `add-register` | Add registers to a peripheral (from JSON or CLI args) |
+| `update-register` | Update register properties (offset, size, access, etc.) |
+| `remove-register` | Remove registers from a peripheral by name |
+| `add-field` | Add bitfields to a register (from JSON or CLI args) |
+| `update-field` | Update bitfield properties (bit offset, bit width, access, etc.) |
+| `remove-field` | Remove bitfields from a register by name |
 
 ### Output & Export
 - **SVD Generation**: Well-formatted, indented SVD/XML output
@@ -128,6 +135,30 @@ python run.py add-peripheral chip.svd --data peripheral.json -o updated.svd
 # Remove peripherals
 python run.py remove-peripheral chip.svd --name GPIOC,GPIOD -o updated.svd
 
+# Update peripheral properties
+python run.py update-peripheral chip.svd -n GPIOA --base-address 0x48010000 -o updated.svd
+
+# Add register (from CLI args)
+python run.py add-register chip.svd -p GPIOA --name IDR --offset 0x10 --desc "Input data" -o updated.svd
+
+# Add register (from JSON)
+python run.py add-register chip.svd -p GPIOA --data registers.json -o updated.svd
+
+# Update register properties
+python run.py update-register chip.svd -p GPIOA -n MODER --offset 0x08 --size 0x20 -o updated.svd
+
+# Remove registers
+python run.py remove-register chip.svd -p GPIOA --names OTYPER,OSPEEDR -o updated.svd
+
+# Add bitfield (from CLI args)
+python run.py add-field chip.svd -p GPIOA -r MODER --name MODE7 --bit-offset 14 --bit-width 2 -o updated.svd
+
+# Update bitfield properties
+python run.py update-field chip.svd -p GPIOA -r MODER -n MODE0 --bit-width 1 --access read-write -o updated.svd
+
+# Remove bitfields
+python run.py remove-field chip.svd -p GPIOA -r MODER --names MODE0,MODE1 -o updated.svd
+
 # Open GUI with a specific file
 python run.py --gui --file chip.svd
 ```
@@ -151,7 +182,7 @@ python run.py --gui --file chip.svd
 SVDEditor/
 ├── run.py                          # Entry point (GUI + CLI)
 ├── svd_tool/
-│   ├── cli.py                      # CLI module (12 commands)
+│   ├── cli.py                      # CLI module (19 commands)
 │   ├── main.py                     # GUI entry
 │   ├── core/
 │   │   ├── data_model.py           # Device, Peripheral, Register, Field

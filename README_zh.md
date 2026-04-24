@@ -35,7 +35,14 @@
 | `extract` | 从 SVD 中提取指定外设到新文件 |
 | `create` | **从 JSON 数据创建新的 SVD 文件**（如 AIfull_link 导出的寄存器数据） |
 | `add-peripheral` | 从 JSON 向已有 SVD 添加外设 |
+| `update-peripheral` | 更新外设属性（基地址、描述等） |
 | `remove-peripheral` | 按名称从 SVD 中移除外设 |
+| `add-register` | 向指定外设添加寄存器（JSON 或命令行参数） |
+| `update-register` | 更新寄存器属性（偏移、大小、访问权限等） |
+| `remove-register` | 按名称从外设中移除寄存器 |
+| `add-field` | 向指定寄存器添加位域（JSON 或命令行参数） |
+| `update-field` | 更新位域属性（位偏移、位宽、访问权限等） |
+| `remove-field` | 按名称从寄存器中移除位域 |
 
 ### 输出与导出
 - **SVD 生成**：格式规范、缩进整齐的 SVD/XML 输出
@@ -116,6 +123,30 @@ python run.py add-peripheral chip.svd --data peripheral.json -o updated.svd
 # 移除外设
 python run.py remove-peripheral chip.svd --name GPIOC,GPIOD -o updated.svd
 
+# 更新外设属性
+python run.py update-peripheral chip.svd -n GPIOA --base-address 0x48010000 -o updated.svd
+
+# 添加寄存器（命令行参数）
+python run.py add-register chip.svd -p GPIOA --name IDR --offset 0x10 --desc "Input data" -o updated.svd
+
+# 添加寄存器（JSON 文件）
+python run.py add-register chip.svd -p GPIOA --data registers.json -o updated.svd
+
+# 更新寄存器属性
+python run.py update-register chip.svd -p GPIOA -n MODER --offset 0x08 --size 0x20 -o updated.svd
+
+# 移除寄存器
+python run.py remove-register chip.svd -p GPIOA --names OTYPER,OSPEEDR -o updated.svd
+
+# 添加位域（命令行参数）
+python run.py add-field chip.svd -p GPIOA -r MODER --name MODE7 --bit-offset 14 --bit-width 2 -o updated.svd
+
+# 更新位域属性
+python run.py update-field chip.svd -p GPIOA -r MODER -n MODE0 --bit-width 1 --access read-write -o updated.svd
+
+# 移除位域
+python run.py remove-field chip.svd -p GPIOA -r MODER --names MODE0,MODE1 -o updated.svd
+
 # 使用 GUI 打开指定文件
 python run.py --gui --file chip.svd
 ```
@@ -140,7 +171,7 @@ python run.py --gui --file chip.svd
 SVDEditor/
 ├── run.py                          # 入口（GUI + CLI）
 ├── svd_tool/
-│   ├── cli.py                      # CLI 模块（12 个命令）
+│   ├── cli.py                      # CLI 模块（19 个命令）
 │   ├── main.py                     # GUI 入口
 │   ├── core/
 │   │   ├── data_model.py           # 数据模型
