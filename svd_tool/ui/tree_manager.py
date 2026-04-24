@@ -436,11 +436,21 @@ class TreeManager:
             self.placeholder_item = None
             self.placeholder_tree = None
     
-    def create_context_menu(self, item: QTreeWidgetItem, parent=None) -> QMenu:
-        """创建右键菜单"""
+    def create_context_menu(self, item_or_type, item_name=None, parent=None) -> QMenu:
+        """创建右键菜单
+
+        Args:
+            item_or_type: 可以是 QTreeWidgetItem（旧方式），也可以是 node_type 字符串
+            item_name: 节点名称（当 item_or_type 为字符串时使用）
+            parent: 父控件
+        """
         menu = QMenu(parent)
-        
-        item_type = self.get_item_type(item)
+
+        # 兼容两种调用方式
+        if isinstance(item_or_type, str):
+            item_type = item_or_type
+        else:
+            item_type = self.get_item_type(item_or_type)
         
         if item_type == NODE_TYPES["PERIPHERAL"]:
             action = menu.addAction(t("menu.edit_peripheral"))

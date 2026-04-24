@@ -135,9 +135,6 @@ class MainWindowRefactored(QMainWindow):
         self.init_data()
         self.setup_signals()
         
-        # 启用拖放功能
-        self.enable_tree_drag_drop()
-        
         # 应用样式
         self.apply_styles()
         self.logger.debug(f"__init__完成，窗口大小: {self.size()}")
@@ -222,18 +219,21 @@ class MainWindowRefactored(QMainWindow):
         # 保存树展开状态
         periph_tree = self.layout_manager.get_widget('periph_tree')
         if periph_tree:
-            expanded_periphs = {}
-            expanded_regs = {}
-            for i in range(periph_tree.topLevelItemCount()):
-                periph_item = periph_tree.topLevelItem(i)
-                periph_name = periph_item.text(0)
-                expanded_periphs[periph_name] = periph_item.isExpanded()
-                for j in range(periph_item.childCount()):
-                    reg_item = periph_item.child(j)
-                    reg_key = f"{periph_name}/{reg_item.text(0)}"
-                    expanded_regs[reg_key] = reg_item.isExpanded()
-            doc.tree_expanded_periphs = expanded_periphs
-            doc.tree_expanded_regs = expanded_regs
+            from .model.device_tree_model import DeviceTreeModel
+            model = periph_tree.model()
+            if isinstance(model, DeviceTreeModel):
+                expanded_paths = model.get_expanded_paths(periph_tree)
+                expanded_periphs = {}
+                expanded_regs = {}
+                for path in expanded_paths:
+                    parts = path.split("/")
+                    if len(parts) == 1:
+                        expanded_periphs[parts[0]] = True
+                    elif len(parts) == 2:
+                        expanded_periphs[parts[0]] = True
+                        expanded_regs[path] = True
+                doc.tree_expanded_periphs = expanded_periphs
+                doc.tree_expanded_regs = expanded_regs
         
         # 保存当前标签页索引
         tab_widget = self.layout_manager.get_widget('tab_widget')
@@ -292,18 +292,15 @@ class MainWindowRefactored(QMainWindow):
             # 恢复树展开状态
             periph_tree = self.layout_manager.get_widget('periph_tree')
             if periph_tree:
-                periph_tree.blockSignals(True)
-                for i in range(periph_tree.topLevelItemCount()):
-                    periph_item = periph_tree.topLevelItem(i)
-                    periph_name = periph_item.text(0)
-                    if doc.tree_expanded_periphs.get(periph_name, False):
-                        periph_item.setExpanded(True)
-                    for j in range(periph_item.childCount()):
-                        reg_item = periph_item.child(j)
-                        reg_key = f"{periph_name}/{reg_item.text(0)}"
-                        if doc.tree_expanded_regs.get(reg_key, False):
-                            reg_item.setExpanded(True)
-                periph_tree.blockSignals(False)
+                from .model.device_tree_model import DeviceTreeModel
+                model = periph_tree.model()
+                if isinstance(model, DeviceTreeModel):
+                    # 从旧格式还原展开路径
+                    paths = list(doc.tree_expanded_periphs.keys())
+                    for reg_key in doc.tree_expanded_regs:
+                        if reg_key not in paths:
+                            paths.append(reg_key)
+                    model.restore_expanded(periph_tree, paths)
             
             # 恢复选择
             if doc.selection:
@@ -474,8 +471,8 @@ class MainWindowRefactored(QMainWindow):
                 self.peripheral_manager.handle_tree_context_menu
             )
             # 连接树折叠/展开信号到预览同步
-            periph_tree.itemCollapsed.connect(self._on_tree_item_collapsed)
-            periph_tree.itemExpanded.connect(self._on_tree_item_expanded)
+            periph_tree.collapsed.connect(self._on_tree_item_collapsed)
+            periph_tree.expanded.connect(self._on_tree_item_expanded)
         
         # 连接可视化控件信号
         visualization_widget = self.layout_manager.get_widget('visualization_widget')
@@ -934,35 +931,7 @@ class MainWindowRefactored(QMainWindow):
         
         # 更新树控件中的选择
         if field and peripheral and register:
-            periph_tree = self.layout_manager.get_widget('periph_tree')
-            if periph_tree:
-                # 紧凑模式下树中没有位域节点，只选中寄存器
-                compact = self.peripheral_manager.is_compact_tree()
-                
-                # 查找外设项
-                for i in range(periph_tree.topLevelItemCount()):
-                    periph_item = periph_tree.topLevelItem(i)
-                    if periph_item.text(0) == peripheral:
-                        periph_item.setExpanded(True)
-                        # 查找寄存器项
-                        for j in range(periph_item.childCount()):
-                            reg_item = periph_item.child(j)
-                            if reg_item.text(0) == register:
-                                if compact:
-                                    # 紧凑模式：选中寄存器即可
-                                    periph_tree.setCurrentItem(reg_item)
-                                    periph_tree.scrollToItem(reg_item)
-                                else:
-                                    # 完整模式：展开并选到位域
-                                    reg_item.setExpanded(True)
-                                    for k in range(reg_item.childCount()):
-                                        field_item = reg_item.child(k)
-                                        if field_item.text(0) == field.name:
-                                            periph_tree.setCurrentItem(field_item)
-                                            periph_tree.scrollToItem(field_item)
-                                            break
-                                break
-                        break
+            self.peripheral_manager.select_field(peripheral, register, field.name)
             
             # 同步高亮位域表格中对应的行
             self._highlight_field_in_table(field_name)
@@ -1031,10 +1000,20 @@ class MainWindowRefactored(QMainWindow):
         """紧凑模式复选框/开关状态变化 → 重建树"""
         checked = bool(state)
         self.logger.info(f"紧凑模式: {'启用' if checked else '禁用'}")
-        
-        # 重建树（保留展开状态）
-        self.peripheral_manager.update_peripheral_tree(preserve_expanded=True)
-        
+
+        # 紧凑模式变化需要完整重建（register 的 _has_children_hint 会变化）
+        periph_tree = self.layout_manager.get_widget('periph_tree')
+        if periph_tree:
+            model = periph_tree.model()
+            from .model.device_tree_model import DeviceTreeModel
+            if isinstance(model, DeviceTreeModel):
+                # 先保存展开状态（在 set_compact_mode 重置之前）
+                expanded_paths = model.get_expanded_paths(periph_tree)
+                if model.set_compact_mode(checked):
+                    # 模式变化 → 恢复展开状态
+                    if expanded_paths:
+                        model.restore_expanded(periph_tree, expanded_paths)
+
         # 更新状态栏
         status = t("status.compact_mode_on") if checked else t("status.compact_mode_off")
         self.layout_manager.update_status(status)
@@ -1141,70 +1120,91 @@ class MainWindowRefactored(QMainWindow):
         periph_tree = self.layout_manager.get_widget('periph_tree')
         if not periph_tree:
             return
-        
-        selected = periph_tree.selectedItems()
+
+        from .model.device_tree_model import DeviceTreeModel
+        model = periph_tree.model()
+        if not isinstance(model, DeviceTreeModel):
+            return
+
+        selected = periph_tree.selectionModel().selectedIndexes()
         if not selected:
-            self.show_message(t("message.warning", default="提示"), 
+            self.show_message(t("message.warning", default="提示"),
                               t("msg.select_item_first", default="请先选择要删除的项目"), "info")
             return
-        
+
         # 多选批量删除
         if len(selected) > 1:
             self._batch_delete_selected(selected)
             return
-        
+
         # 单选删除
-        item = selected[0]
-        item_type = self.tree_manager.get_item_type(item)
-        item_name = self.tree_manager.get_item_name(item)
-        
+        index = selected[0]
+        item_type = model.data(index, DeviceTreeModel.NodeTypeRole)
+        item_name = model.data(index, DeviceTreeModel.NodeNameRole)
+
         if item_type == "field":
-            # 获取外设和寄存器名
-            reg_item = item.parent()
-            periph_item = reg_item.parent() if reg_item else None
-            if reg_item and periph_item:
+            periph_name = model.get_peripheral_name(index)
+            reg_name = model.get_register_name(index)
+            if periph_name and reg_name:
                 self.state_manager.set_selection(
-                    peripheral=self.tree_manager.get_item_name(periph_item),
-                    register=self.tree_manager.get_item_name(reg_item),
-                    field=item_name
-                )
+                    peripheral=periph_name, register=reg_name, field=item_name)
             self.delete_field(item_name)
         elif item_type == "register":
-            periph_item = item.parent()
-            if periph_item:
+            periph_name = model.get_peripheral_name(index)
+            if periph_name:
                 self.state_manager.set_selection(
-                    peripheral=self.tree_manager.get_item_name(periph_item),
-                    register=item_name
-                )
+                    peripheral=periph_name, register=item_name)
             self.delete_register(item_name)
         elif item_type == "peripheral":
             self.peripheral_manager.delete_selected_peripheral()
-    
+
     def _batch_delete_selected(self, items: list):
         """批量删除选中的项目"""
+        from .model.device_tree_model import DeviceTreeModel
         # ===== 第一步：先收集所有待删除项的信息（在树被重建之前） =====
         to_delete_periphs = []
         to_delete_regs = []  # (periph, reg)
         to_delete_fields = []  # (periph, reg, field)
-        
+
+        periph_tree = self.layout_manager.get_widget('periph_tree')
+        model = periph_tree.model() if periph_tree else None
+
         for item in items:
-            item_type = item.data(0, Qt.ItemDataRole.UserRole)
-            item_name = item.data(0, Qt.ItemDataRole.UserRole + 1)
-            
-            if item_type == "peripheral":
-                to_delete_periphs.append(item_name)
-            elif item_type == "register":
-                periph_item = item.parent()
-                if periph_item:
-                    periph_name = periph_item.data(0, Qt.ItemDataRole.UserRole + 1)
-                    to_delete_regs.append((periph_name, item_name))
-            elif item_type == "field":
-                reg_item = item.parent()
-                periph_item = reg_item.parent() if reg_item else None
-                if reg_item and periph_item:
-                    periph_name = periph_item.data(0, Qt.ItemDataRole.UserRole + 1)
-                    reg_name = reg_item.data(0, Qt.ItemDataRole.UserRole + 1)
-                    to_delete_fields.append((periph_name, reg_name, item_name))
+            if isinstance(model, DeviceTreeModel):
+                # item is QModelIndex
+                item_type = model.data(item, DeviceTreeModel.NodeTypeRole)
+                item_name = model.data(item, DeviceTreeModel.NodeNameRole)
+
+                if item_type == "peripheral":
+                    to_delete_periphs.append(item_name)
+                elif item_type == "register":
+                    periph_name = model.get_peripheral_name(item)
+                    if periph_name:
+                        to_delete_regs.append((periph_name, item_name))
+                elif item_type == "field":
+                    periph_name = model.get_peripheral_name(item)
+                    reg_name = model.get_register_name(item)
+                    if periph_name and reg_name:
+                        to_delete_fields.append((periph_name, reg_name, item_name))
+            else:
+                # 兼容旧 QTreeWidgetItem
+                item_type = item.data(0, Qt.ItemDataRole.UserRole)
+                item_name = item.data(0, Qt.ItemDataRole.UserRole + 1)
+
+                if item_type == "peripheral":
+                    to_delete_periphs.append(item_name)
+                elif item_type == "register":
+                    periph_item = item.parent()
+                    if periph_item:
+                        periph_name = periph_item.data(0, Qt.ItemDataRole.UserRole + 1)
+                        to_delete_regs.append((periph_name, item_name))
+                elif item_type == "field":
+                    reg_item = item.parent()
+                    periph_item = reg_item.parent() if reg_item else None
+                    if reg_item and periph_item:
+                        periph_name = periph_item.data(0, Qt.ItemDataRole.UserRole + 1)
+                        reg_name = reg_item.data(0, Qt.ItemDataRole.UserRole + 1)
+                        to_delete_fields.append((periph_name, reg_name, item_name))
         
         total = len(to_delete_periphs) + len(to_delete_regs) + len(to_delete_fields)
         if total == 0:
@@ -1311,23 +1311,7 @@ class MainWindowRefactored(QMainWindow):
         
         # 更新树控件中的选择
         if register and peripheral:
-            # 在树中选中对应的寄存器
-            periph_tree = self.layout_manager.get_widget('periph_tree')
-            if periph_tree:
-                # 查找外设项
-                for i in range(periph_tree.topLevelItemCount()):
-                    periph_item = periph_tree.topLevelItem(i)
-                    if periph_item.text(0) == peripheral:
-                        # 展开外设项
-                        periph_item.setExpanded(True)
-                        # 查找寄存器项
-                        for j in range(periph_item.childCount()):
-                            reg_item = periph_item.child(j)
-                            if reg_item.text(0) == register.name:
-                                # 选中寄存器项
-                                periph_tree.setCurrentItem(reg_item)
-                                break
-                        break
+            self.peripheral_manager.select_register(peripheral, register.name)
     
     def on_jump_to_peripheral(self, peripheral_name: str):
         """跳转到外设事件处理（用于继承外设的跳转）"""
@@ -1843,394 +1827,36 @@ class MainWindowRefactored(QMainWindow):
             QMessageBox.critical(self, t("msg.save_error"), t("msg.file_save_failed_detail", error=str(e)))
     
     # ===================== 树折叠/展开同步预览 =====================
-    def _on_tree_item_collapsed(self, item: QTreeWidgetItem):
+    def _on_tree_item_collapsed(self, index):
         """树节点折叠时同步折叠预览"""
-        item_name = item.text(0)
+        periph_tree = self.layout_manager.get_widget('periph_tree')
+        if not periph_tree:
+            return
+        model = periph_tree.model()
+        from .model.device_tree_model import DeviceTreeModel
+        if isinstance(model, DeviceTreeModel):
+            item_name = model.data(index, DeviceTreeModel.NodeNameRole)
+        else:
+            return
         self.logger.debug(f"树节点折叠: {item_name}")
         if self.preview_manager and self.preview_manager.preview_widget:
             self.preview_manager.preview_widget.sync_fold_from_tree(item_name, is_expanded=False)
-    
-    def _on_tree_item_expanded(self, item: QTreeWidgetItem):
+
+    def _on_tree_item_expanded(self, index):
         """树节点展开时同步展开预览"""
-        item_name = item.text(0)
+        periph_tree = self.layout_manager.get_widget('periph_tree')
+        if not periph_tree:
+            return
+        model = periph_tree.model()
+        from .model.device_tree_model import DeviceTreeModel
+        if isinstance(model, DeviceTreeModel):
+            item_name = model.data(index, DeviceTreeModel.NodeNameRole)
+        else:
+            return
         self.logger.debug(f"树节点展开: {item_name}")
         if self.preview_manager and self.preview_manager.preview_widget:
             self.preview_manager.preview_widget.sync_fold_from_tree(item_name, is_expanded=True)
-    
-    # ===================== 其他方法 =====================
-    def enable_tree_drag_drop(self):
-        """启用树拖放功能"""
-        periph_tree = self.layout_manager.get_widget('periph_tree')
-        if periph_tree:
-            periph_tree.setDragEnabled(True)
-            periph_tree.setAcceptDrops(True)
-            periph_tree.setDropIndicatorShown(True)  # 启用默认drop indicator
-            periph_tree.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
-            
-            # 设置自定义拖放事件处理
-            periph_tree.dragEnterEvent = self.custom_drag_enter_event
-            periph_tree.dragMoveEvent = self.custom_drag_move_event
-            periph_tree.dropEvent = self.custom_drop_event
-    
-    def custom_drag_enter_event(self, event):
-        """自定义拖拽进入事件 - 允许外设之间和位域之间的拖放"""
-        periph_tree = self.layout_manager.get_widget('periph_tree')
-        if not periph_tree:
-            event.ignore()
-            return
-        
-        source_item = periph_tree.currentItem()
-        if not source_item:
-            event.ignore()
-            return
-        
-        source_type = self.tree_manager.get_item_type(source_item)
-        # 允许外设和位域拖放
-        if source_type not in ("peripheral", "field"):
-            event.ignore()
-            return
-        
-        event.accept()
-    
-    def custom_drag_move_event(self, event):
-        """自定义拖拽移动事件 - 实时验证拖放目标"""
-        periph_tree = self.layout_manager.get_widget('periph_tree')
-        if not periph_tree:
-            event.ignore()
-            return
-        
-        source_item = periph_tree.currentItem()
-        if not source_item:
-            event.ignore()
-            return
-        
-        source_type = self.tree_manager.get_item_type(source_item)
-        
-        # 外设拖放验证
-        if source_type == "peripheral":
-            target_index = periph_tree.indexAt(event.position().toPoint())
-            if not target_index.isValid():
-                event.accept()
-                return
-            target_item = periph_tree.itemFromIndex(target_index)
-            if not target_item:
-                event.ignore()
-                return
-            target_type = self.tree_manager.get_item_type(target_item)
-            if target_type != "peripheral":
-                event.ignore()
-                return
-            event.accept()
-        
-        # 位域拖放验证：只允许在同一寄存器内拖放
-        elif source_type == "field":
-            target_index = periph_tree.indexAt(event.position().toPoint())
-            if not target_index.isValid():
-                event.ignore()
-                return
-            target_item = periph_tree.itemFromIndex(target_index)
-            if not target_item:
-                event.ignore()
-                return
-            target_type = self.tree_manager.get_item_type(target_item)
-            # 目标必须是位域或寄存器（允许放在寄存器的空白区域）
-            if target_type not in ("field", "register"):
-                event.ignore()
-                return
-            # 如果目标是位域，检查是否同一寄存器
-            if target_type == "field":
-                source_parent = source_item.parent()
-                target_parent = target_item.parent()
-                if source_parent is not target_parent:
-                    event.ignore()
-                    return
-            elif target_type == "register":
-                # 拖到寄存器上，检查是否是源位域的父寄存器
-                source_parent = source_item.parent()
-                if source_parent is not target_item:
-                    event.ignore()
-                    return
-            event.accept()
-        
-        else:
-            event.ignore()
-    
-    def custom_drop_event(self, event):
-        """自定义拖放事件处理 - 支持外设之间和位域之间的拖放"""
-        periph_tree = self.layout_manager.get_widget('periph_tree')
-        if not periph_tree:
-            event.ignore()
-            return
-        
-        source_item = periph_tree.currentItem()
-        if not source_item:
-            event.ignore()
-            return
-        
-        source_type = self.tree_manager.get_item_type(source_item)
-        source_name = self.tree_manager.get_item_name(source_item)
-        
-        # ===== 位域拖放处理 =====
-        if source_type == "field":
-            self._handle_field_drop(event, periph_tree, source_item, source_name)
-            return
-        
-        # ===== 外设拖放处理 =====
-        if source_type != "peripheral":
-            event.ignore()
-            return
-        
-        # 获取目标位置
-        target_index = periph_tree.indexAt(event.position().toPoint())
-        if target_index.isValid():
-            target_item = periph_tree.itemFromIndex(target_index)
-            if target_item:
-                target_type = self.tree_manager.get_item_type(target_item)
-                if target_type != "peripheral":
-                    event.ignore()
-                    return
-                target_name = self.tree_manager.get_item_name(target_item)
-        else:
-            event.ignore()
-            return
-        
-        if source_name == target_name:
-            event.ignore()
-            return
-        
-        # 保存拖放前的外设顺序（用于撤销）
-        old_order = list(self.state_manager.device_info.peripherals.keys())
-        
-        # 保存展开状态
-        expanded_paths = self.peripheral_manager._get_expanded_items(periph_tree)
-        
-        # 执行拖放（使用Qt默认行为移动树节点）
-        from PyQt6.QtWidgets import QTreeWidget
-        QTreeWidget.dropEvent(periph_tree, event)
-        
-        # 拖放后验证并修正树结构
-        self._validate_and_fix_tree_structure_after_drop(source_name)
-        
-        # 恢复展开状态
-        periph_tree_block = periph_tree.blockSignals(True)
-        for i in range(periph_tree.topLevelItemCount()):
-            item = periph_tree.topLevelItem(i)
-            if item and item.text(0) in expanded_paths:
-                item.setExpanded(True)
-            for j in range(item.childCount() if item else 0):
-                child = item.child(j)
-                child_path = f"{item.text(0)}/{child.text(0)}" if item else ""
-                if child and child_path in expanded_paths:
-                    child.setExpanded(True)
-        periph_tree.blockSignals(periph_tree_block)
-        
-        # 记录拖放操作到命令历史（支持撤销）
-        new_order = list(self.state_manager.device_info.peripherals.keys())
-        if old_order != new_order:
-            captured_old_order = old_order[:]
-            captured_new_order = new_order[:]
-            state_mgr = self.state_manager
-            
-            def execute_reorder():
-                peripherals = state_mgr.device_info.peripherals
-                reordered = {name: peripherals[name] for name in captured_new_order if name in peripherals}
-                state_mgr.device_info.peripherals = reordered
-                state_mgr._notify_state_change()
-                return True
-            
-            def undo_reorder():
-                peripherals = state_mgr.device_info.peripherals
-                reordered = {name: peripherals[name] for name in captured_old_order if name in peripherals}
-                state_mgr.device_info.peripherals = reordered
-                state_mgr._notify_state_change()
-                return True
-            
-            from ..core.command_history import Command
-            command = Command(
-                execute=execute_reorder,
-                undo=undo_reorder,
-                description=f"拖放调整外设顺序: {source_name}"
-            )
-            state_mgr.command_history.history.append(command)
-            state_mgr.command_history.current_index = len(state_mgr.command_history.history) - 1
-            state_mgr.command_history.redo_stack.clear()
-    
-    def _handle_field_drop(self, event, periph_tree, source_item, source_name):
-        """处理位域拖放事件"""
-        target_index = periph_tree.indexAt(event.position().toPoint())
-        if not target_index.isValid():
-            event.ignore()
-            return
-        
-        target_item = periph_tree.itemFromIndex(target_index)
-        if not target_item:
-            event.ignore()
-            return
-        
-        target_type = self.tree_manager.get_item_type(target_item)
-        
-        # 确定目标位域和父寄存器
-        reg_item = source_item.parent()
-        if not reg_item:
-            event.ignore()
-            return
-        periph_item = reg_item.parent()
-        if not periph_item:
-            event.ignore()
-            return
-        
-        periph_name = self.tree_manager.get_item_name(periph_item)
-        reg_name = self.tree_manager.get_item_name(reg_item)
-        
-        # 确定目标位域名称和目标位置
-        target_field_name = None
-        if target_type == "field":
-            target_parent = target_item.parent()
-            if target_parent is not reg_item:
-                event.ignore()
-                return
-            target_field_name = self.tree_manager.get_item_name(target_item)
-        elif target_type == "register":
-            if target_item is not reg_item:
-                event.ignore()
-                return
-            # 拖到寄存器末尾
-        else:
-            event.ignore()
-            return
-        
-        # 获取当前位域顺序
-        register = self.state_manager.device_info.peripherals.get(periph_name, {}).registers.get(reg_name)
-        if not register:
-            event.ignore()
-            return
-        
-        old_field_names = list(register.fields.keys())
-        if source_name not in old_field_names:
-            event.ignore()
-            return
-        
-        # 执行Qt默认的拖放（移动树节点）
-        from PyQt6.QtWidgets import QTreeWidget
-        QTreeWidget.dropEvent(periph_tree, event)
-        
-        # 从树中读取新的位域顺序
-        new_field_names = []
-        for k in range(reg_item.childCount()):
-            child = reg_item.child(k)
-            child_type = self.tree_manager.get_item_type(child)
-            child_name = self.tree_manager.get_item_name(child)
-            if child_type == "field" and child_name in old_field_names:
-                new_field_names.append(child_name)
-        
-        # 如果顺序没变，不记录
-        if new_field_names == old_field_names or not new_field_names:
-            return
-        
-        # 记录到命令历史
-        captured_old = old_field_names[:]
-        captured_new = new_field_names[:]
-        captured_periph = periph_name
-        captured_reg = reg_name
-        state_mgr = self.state_manager
-        
-        def execute_field_reorder():
-            reg = state_mgr.device_info.peripherals.get(captured_periph, {}).registers.get(captured_reg)
-            if reg is None:
-                return False
-            old_fields = reg.fields
-            reg.fields = {name: old_fields[name] for name in captured_new if name in old_fields}
-            state_mgr._notify_state_change()
-            return True
-        
-        def undo_field_reorder():
-            reg = state_mgr.device_info.peripherals.get(captured_periph, {}).registers.get(captured_reg)
-            if reg is None:
-                return False
-            old_fields = reg.fields
-            reg.fields = {name: old_fields[name] for name in captured_old if name in old_fields}
-            state_mgr._notify_state_change()
-            return True
-        
-        from ..core.command_history import Command
-        command = Command(
-            execute=execute_field_reorder,
-            undo=undo_field_reorder,
-            description=f"拖放调整位域顺序: {source_name}"
-        )
-        state_mgr.command_history.history.append(command)
-        state_mgr.command_history.current_index = len(state_mgr.command_history.history) - 1
-        state_mgr.command_history.redo_stack.clear()
-        
-        self.layout_manager.update_status(t("status.field_reordered", name=source_name))
-    
-    def _validate_and_fix_tree_structure_after_drop(self, moved_periph_name):
-        """拖放后验证并修正树结构"""
-        try:
-            # 获取树控件
-            periph_tree = self.layout_manager.get_widget('periph_tree')
-            if not periph_tree:
-                return
-                
-            # 检查树结构是否有效
-            valid = True
-            for i in range(periph_tree.topLevelItemCount()):
-                item = periph_tree.topLevelItem(i)
-                if item is None:
-                    continue
-                item_type = self.tree_manager.get_item_type(item)
-                
-                # 确保所有顶级项目都是外设
-                if item_type != "peripheral":
-                    valid = False
-                    break
-                
-                # 检查外设下的项目是否有效
-                for j in range(item.childCount()):
-                    child = item.child(j)
-                    if child is None:
-                        continue
-                    child_type = self.tree_manager.get_item_type(child)
-                    if child_type != "register":
-                        valid = False
-                        break
-                    
-                    # 检查寄存器下的项目是否有效
-                    for k in range(child.childCount()):
-                        grandchild = child.child(k)
-                        if grandchild is None:
-                            continue
-                        grandchild_type = self.tree_manager.get_item_type(grandchild)
-                        if grandchild_type != "field":
-                            valid = False
-                            break
-                    
-                    if not valid:
-                        break
-                
-                if not valid:
-                    break
-            
-            if not valid:
-                # 如果结构无效，恢复UI
-                self.peripheral_manager.update_peripheral_tree()
-                from PyQt6.QtWidgets import QMessageBox
-                QMessageBox.warning(self, t("msg.drag_drop_error"), t("msg.drag_drop_invalid_structure"))
-            else:
-                # 更新数据模型
-                self.update_data_model_from_tree()
-                # 更新状态栏
-                self.layout_manager.update_status(t("status.periph_reordered", name=moved_periph_name))
-                
-                # 延迟重新选中项目
-                from PyQt6.QtCore import QTimer
-                QTimer.singleShot(50, lambda: self.peripheral_manager._select_peripheral_in_tree(moved_periph_name))
-        
-        except Exception as e:
-            self.logger.error(f"拖放后验证出错: {e}")
-            # 出错时恢复
-            self.peripheral_manager.update_peripheral_tree()
-    
+
     def apply_styles(self):
         """应用样式"""
         from ..config.styles import get_current_stylesheet
@@ -2314,20 +1940,18 @@ class MainWindowRefactored(QMainWindow):
                 periph_tree = self.layout_manager.get_widget('periph_tree')
                 if not periph_tree:
                     return
-                current_item = periph_tree.currentItem()
-                if not current_item:
+                from .model.device_tree_model import DeviceTreeModel
+                model = periph_tree.model()
+                if not isinstance(model, DeviceTreeModel):
                     return
-                item_type = self.tree_manager.get_item_type(current_item)
+                current_index = periph_tree.currentIndex()
+                if not current_index.isValid():
+                    return
+                item_type = model.data(current_index, DeviceTreeModel.NodeTypeRole)
                 if item_type != "field":
                     return
-                reg_item = current_item.parent()
-                if not reg_item:
-                    return
-                periph_item = reg_item.parent()
-                if not periph_item:
-                    return
-                periph_name = self.tree_manager.get_item_name(periph_item)
-                reg_name = self.tree_manager.get_item_name(reg_item)
+                periph_name = model.get_peripheral_name(current_index)
+                reg_name = model.get_register_name(current_index)
             
             peripheral = self.state_manager.device_info.peripherals.get(periph_name)
             if not peripheral:
@@ -2415,23 +2039,18 @@ class MainWindowRefactored(QMainWindow):
                 periph_tree = self.layout_manager.get_widget('periph_tree')
                 if not periph_tree:
                     return
-                current_item = periph_tree.currentItem()
-                if not current_item:
+                from .model.device_tree_model import DeviceTreeModel
+                tree_model = periph_tree.model()
+                if not isinstance(tree_model, DeviceTreeModel):
                     return
-                item_type = self.tree_manager.get_item_type(current_item)
-                if item_type == "field":
-                    reg_item = current_item.parent()
-                elif item_type == "register":
-                    reg_item = current_item
-                else:
+                current_index = periph_tree.currentIndex()
+                if not current_index.isValid():
                     return
-                if not reg_item:
+                item_type = tree_model.data(current_index, DeviceTreeModel.NodeTypeRole)
+                if item_type not in ("field", "register"):
                     return
-                periph_item = reg_item.parent()
-                if not periph_item:
-                    return
-                periph_name = self.tree_manager.get_item_name(periph_item)
-                reg_name = self.tree_manager.get_item_name(reg_item)
+                periph_name = tree_model.get_peripheral_name(current_index)
+                reg_name = tree_model.get_register_name(current_index)
             
             peripheral = self.state_manager.device_info.peripherals.get(periph_name)
             if not peripheral:
@@ -3762,98 +3381,8 @@ class MainWindowRefactored(QMainWindow):
         self.device_info_manager.update_device_info_from_ui()
 
     def update_data_model_from_tree(self):
-        """从树控件更新数据模型"""
-        self.logger.info("更新数据模型以反映树结构调整...")
-        
-        try:
-            # 获取树控件
-            periph_tree = self.layout_manager.get_widget('periph_tree')
-            if not periph_tree:
-                return
-            
-            # 临时保存原始数据，以防恢复需要
-            device_info = self.state_manager.device_info
-            original_peripherals = device_info.peripherals.copy()
-            
-            # 创建新的外设字典，按照树中的顺序
-            new_peripherals = {}
-            
-            for i in range(periph_tree.topLevelItemCount()):
-                periph_item = periph_tree.topLevelItem(i)
-                if periph_item is None:
-                    continue
-                periph_name = self.tree_manager.get_item_name(periph_item)
-                periph_type = self.tree_manager.get_item_type(periph_item)
-                
-                # 验证项目类型
-                if periph_type != "peripheral":
-                    self.logger.warning(f"发现非外设项目在顶级: {periph_name}")
-                    continue
-                    
-                if periph_name in original_peripherals:
-                    peripheral = original_peripherals[periph_name]
-                    
-                    # 更新寄存器的顺序
-                    new_registers = {}
-                    for j in range(periph_item.childCount()):
-                        reg_item = periph_item.child(j)
-                        if reg_item is None:
-                            continue
-                        reg_name = self.tree_manager.get_item_name(reg_item)
-                        reg_type = self.tree_manager.get_item_type(reg_item)
-                        
-                        # 验证项目类型
-                        if reg_type != "register":
-                            self.logger.warning(f"在外设 {periph_name} 中发现非寄存器项目: {reg_name}")
-                            continue
-                            
-                        if reg_name in peripheral.registers:
-                            register = peripheral.registers[reg_name]
-                            
-                            # 更新位域的顺序
-                            new_fields = {}
-                            for k in range(reg_item.childCount()):
-                                field_item = reg_item.child(k)
-                                if field_item is None:
-                                    continue
-                                field_name = self.tree_manager.get_item_name(field_item)
-                                field_type = self.tree_manager.get_item_type(field_item)
-                                
-                                # 验证项目类型
-                                if field_type != "field":
-                                    self.logger.warning(f"在寄存器 {reg_name} 中发现非位域项目: {field_name}")
-                                    continue
-                                    
-                                if field_name in register.fields:
-                                    new_fields[field_name] = register.fields[field_name]
-                                else:
-                                    self.logger.warning(f"位域 {field_name} 不在寄存器 {reg_name} 中")
-                            
-                            register.fields = new_fields
-                            new_registers[reg_name] = register
-                        else:
-                            self.logger.warning(f"寄存器 {reg_name} 不在外设 {periph_name} 中")
-                    
-                    peripheral.registers = new_registers
-                    new_peripherals[periph_name] = peripheral
-                else:
-                    self.logger.warning(f"外设 {periph_name} 不在数据模型中")
-            
-            # 更新设备信息
-            device_info.peripherals = new_peripherals
-            
-            # 更新状态栏
-            self.layout_manager.update_status(t("status.periph_order_updated"))
-            
-            # 触发数据变化通知
-            self.state_manager._notify_state_change()
-            
-            self.logger.info("数据模型更新完成")
-            
-        except Exception as e:
-            self.logger.error(f"更新数据模型时出错: {str(e)}")
-            import traceback
-            traceback.print_exc()
+        """从树控件更新数据模型（已由 DeviceTreeModel 直接维护，无需手动同步）"""
+        pass
 
     # ===================== 地址冲突实时检测 =====================
     def _setup_conflict_detection(self):

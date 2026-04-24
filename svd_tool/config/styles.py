@@ -479,6 +479,60 @@ class StyleScheme:
             background-color: transparent;
         }}
 
+        /* ========== QTreeView (periph_tree) ========== */
+        QTreeView {{
+            border: 1px solid {c.border_light};
+            border-radius: {s.radius_md};
+            background-color: {c.white};
+            font-family: "{f.default_family}", "{f.fallback_family}";
+            font-size: {f.default_size}pt;
+            outline: 0;
+            alternate-background-color: {c.table_even};
+        }}
+
+        QTreeView::item {{
+            padding: 3px 4px;
+            border-radius: {s.radius_sm};
+        }}
+
+        QTreeView::item:hover {{
+            background-color: {c.hover};
+        }}
+
+        QTreeView::item:selected {{
+            background-color: {c.selected};
+            color: {c.text_primary};
+            border: none;
+        }}
+
+        QTreeView::item:selected:active {{
+            background-color: {c.selected_active};
+        }}
+
+        QTreeView::branch:has-children:!has-siblings:closed,
+        QTreeView::branch:closed:has-children:has-siblings {{
+            border-image: none;
+        }}
+
+        QTreeView::branch:open:has-children:!has-siblings,
+        QTreeView::branch:open:has-children:has-siblings {{
+            border-image: none;
+        }}
+
+        QTreeView::branch:has-children:!has-siblings:closed:hover,
+        QTreeView::branch:closed:has-children:has-siblings:hover {{
+            background-color: {c.hover};
+        }}
+
+        QTreeView::branch:open:has-children:!has-siblings:hover,
+        QTreeView::branch:open:has-children:has-siblings:hover {{
+            background-color: {c.hover};
+        }}
+
+        QTreeView::branch:selected {{
+            background-color: transparent;
+        }}
+
         /* ========== 表格控件 ========== */
         QTableWidget {{
             border: 1px solid {c.border_light};

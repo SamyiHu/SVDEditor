@@ -14,10 +14,12 @@ from PyQt6.QtWidgets import (
     QListWidgetItem, QComboBox, QLineEdit, QSizePolicy, QGroupBox,
     QFormLayout, QFrame
 )
-from PyQt6.QtCore import QObject, pyqtSignal, Qt
+from PyQt6.QtCore import QObject, pyqtSignal, Qt, QModelIndex
 from PyQt6.QtGui import QBrush, QColor, QIcon
 from ...i18n.i18n import t
 from ...config.styles import get_style_scheme
+from ..widgets.device_tree_view import DeviceTreeView
+from ..model.device_tree_model import DeviceTreeModel
 
 
 class SearchManager(QObject):
@@ -53,18 +55,66 @@ class SearchManager(QObject):
             return self.coordinator.get_widget(widget_name)
         return None
     
-    def search_in_tree(self, tree: QTreeWidget, search_text: str, tree_type: str):
-        """在树中搜索"""
+    def search_in_tree(self, tree, search_text: str, tree_type: str):
+        """在树中搜索（兼容 QTreeWidget 和 DeviceTreeView）"""
         if not tree or not search_text:
             return
-        
+
         search_text = search_text.lower()
-        # 不清除结果，由 perform_search 统一管理
-        
-        # 递归搜索所有项
+
+        # 检测是否为 model-based DeviceTreeView
+        if isinstance(tree, DeviceTreeView):
+            model = tree.model()
+            if isinstance(model, DeviceTreeModel):
+                self._search_model_tree(tree, model, search_text, tree_type)
+                return
+
+        # 传统 QTreeWidget 路径
         for i in range(tree.topLevelItemCount()):
             item = tree.topLevelItem(i)
             self._search_tree_item(item, search_text, tree_type)
+
+    def _search_model_tree(self, tree, model, search_text: str, tree_type: str):
+        """在 DeviceTreeModel 中搜索"""
+        # 确保所有节点已加载
+        for i in range(model.rowCount()):
+            periph_idx = model.index(i, 0)
+            model.ensure_fetched(periph_idx)
+            node_type = model.data(periph_idx, DeviceTreeModel.NodeTypeRole)
+            node_name = model.data(periph_idx, DeviceTreeModel.NodeNameRole)
+
+            if tree_type == 'peripheral' and search_text in node_name.lower():
+                self.search_results.append({
+                    'type': 'periph',
+                    'model_index': periph_idx,
+                    'text': node_name,
+                })
+
+            # 搜索寄存器
+            if tree_type in ('register', 'field', 'periph'):
+                for j in range(model.rowCount(periph_idx)):
+                    reg_idx = model.index(j, 0, periph_idx)
+                    model.ensure_fetched(reg_idx)
+                    reg_name = model.data(reg_idx, DeviceTreeModel.NodeNameRole)
+
+                    if tree_type == 'register' and search_text in reg_name.lower():
+                        self.search_results.append({
+                            'type': 'periph',
+                            'model_index': reg_idx,
+                            'text': reg_name,
+                        })
+
+                    # 搜索位域
+                    if tree_type == 'field':
+                        for k in range(model.rowCount(reg_idx)):
+                            field_idx = model.index(k, 0, reg_idx)
+                            field_name = model.data(field_idx, DeviceTreeModel.NodeNameRole)
+                            if search_text in field_name.lower():
+                                self.search_results.append({
+                                    'type': 'periph',
+                                    'model_index': field_idx,
+                                    'text': field_name,
+                                })
     
     def _search_tree_item(self, item: QTreeWidgetItem, search_text: str, tree_type: str):
         """递归搜索树项"""
@@ -111,8 +161,13 @@ class SearchManager(QObject):
         # 清除外设树高亮
         periph_tree = self.get_widget('periph_tree')
         if periph_tree:
-            self._clear_tree_item_highlights(periph_tree.invisibleRootItem())
-            periph_tree.clearSelection()  # 清除选中状态
+            # DeviceTreeView/DeviceTreeModel imported at top
+            if isinstance(periph_tree, DeviceTreeView):
+                # model-based 树无需逐项清除背景，重置 model 即可
+                periph_tree.clearSelection()
+            else:
+                self._clear_tree_item_highlights(periph_tree.invisibleRootItem())
+                periph_tree.clearSelection()
         
         # 清除中断表格高亮
         irq_table = self.get_widget('irq_table')
@@ -165,27 +220,46 @@ class SearchManager(QObject):
         """高亮当前搜索结果"""
         if not self.search_results or self.current_search_index < 0:
             return
-        
+
         result = self.search_results[self.current_search_index]
-        
+
         if result['type'] == 'periph':
-            # 高亮树项
-            item = result['item']
-            # 使用更明显的颜色，并设置所有列
-            for col in range(item.columnCount()):
-                item.setBackground(col, QBrush(QColor(255, 200, 100)))  # 橙黄色背景
-            
-            # 展开父项并滚动到该项
             tree = self.get_widget('periph_tree')
-            if tree:
-                tree.expandItem(item.parent() if item.parent() else item)
-                tree.scrollToItem(item)
-                tree.setCurrentItem(item)  # 选中该项
-                
-                # 切换到外设标签页
-                tab_widget = self.get_widget('tab_widget')
-                if tab_widget:
-                    tab_widget.setCurrentIndex(1)  # 外设标签页索引
+
+            # 检测是否为 model-based
+            if 'model_index' in result and tree:
+                # DeviceTreeView/DeviceTreeModel imported at top
+                # DeviceTreeModel imported at top
+                if isinstance(tree, DeviceTreeView):
+                    model = tree.model()
+                    if isinstance(model, DeviceTreeModel):
+                        idx = result['model_index']
+                        # 确保父节点展开
+                        parent = model.parent(idx)
+                        if parent.isValid():
+                            tree.setExpanded(parent, True)
+                        tree.setCurrentIndex(idx)
+                        tree.scrollTo(idx)
+                        tab_widget = self.get_widget('tab_widget')
+                        if tab_widget:
+                            tab_widget.setCurrentIndex(1)
+                        self._update_search_count()
+                        return
+
+            # 传统 QTreeWidgetItem 路径
+            item = result.get('item')
+            if item:
+                for col in range(item.columnCount()):
+                    item.setBackground(col, QBrush(QColor(255, 200, 100)))
+
+                if tree:
+                    tree.expandItem(item.parent() if item.parent() else item)
+                    tree.scrollToItem(item)
+                    tree.setCurrentItem(item)
+
+                    tab_widget = self.get_widget('tab_widget')
+                    if tab_widget:
+                        tab_widget.setCurrentIndex(1)
         
         elif result['type'] == 'irq':
             # 高亮表格行
@@ -806,30 +880,41 @@ class SearchManager(QObject):
                 if periph:
                     periph_tree = self.get_widget('periph_tree')
                     if periph_tree:
-                        for i in range(periph_tree.topLevelItemCount()):
-                            pi = periph_tree.topLevelItem(i)
-                            if pi.text(0) == periph:
-                                pi.setExpanded(True)
-                                if reg:
-                                    for j in range(pi.childCount()):
-                                        ri = pi.child(j)
-                                        if ri.text(0) == reg:
-                                            ri.setExpanded(True)
-                                            if field:
-                                                for k in range(ri.childCount()):
-                                                    fi = ri.child(k)
-                                                    if fi.text(0) == field:
-                                                        periph_tree.setCurrentItem(fi)
-                                                        periph_tree.scrollToItem(fi)
-                                                        break
-                                            else:
-                                                periph_tree.setCurrentItem(ri)
-                                                periph_tree.scrollToItem(ri)
-                                            break
-                                else:
-                                    periph_tree.setCurrentItem(pi)
-                                    periph_tree.scrollToItem(pi)
-                                break
+                        # 使用 peripheral_manager 的选择方法
+                        # DeviceTreeView/DeviceTreeModel imported at top
+                        # DeviceTreeModel imported at top
+                        if isinstance(periph_tree, DeviceTreeView):
+                            if field and reg:
+                                periph_mgr.select_field(periph, reg, field)
+                            elif reg:
+                                periph_mgr.select_register(periph, reg)
+                            else:
+                                periph_mgr.select_peripheral(periph)
+                        else:
+                            for i in range(periph_tree.topLevelItemCount()):
+                                pi = periph_tree.topLevelItem(i)
+                                if pi.text(0) == periph:
+                                    pi.setExpanded(True)
+                                    if reg:
+                                        for j in range(pi.childCount()):
+                                            ri = pi.child(j)
+                                            if ri.text(0) == reg:
+                                                ri.setExpanded(True)
+                                                if field:
+                                                    for k in range(ri.childCount()):
+                                                        fi = ri.child(k)
+                                                        if fi.text(0) == field:
+                                                            periph_tree.setCurrentItem(fi)
+                                                            periph_tree.scrollToItem(fi)
+                                                            break
+                                                else:
+                                                    periph_tree.setCurrentItem(ri)
+                                                    periph_tree.scrollToItem(ri)
+                                                break
+                                    else:
+                                        periph_tree.setCurrentItem(pi)
+                                        periph_tree.scrollToItem(pi)
+                                    break
                     tab_widget = self.get_widget('tab_widget')
                     if tab_widget:
                         tab_widget.setCurrentIndex(1)

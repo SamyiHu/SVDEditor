@@ -19,6 +19,7 @@ from ...config.styles import get_style_scheme
 from ...config.tree_branch_style import apply_tree_branch_style
 from ..widgets.toggle_switch import ToggleSwitch
 from ..widgets.labeled_slider import LabeledSlider
+from ..widgets.device_tree_view import DeviceTreeView
 
 
 class TabBuilder:
@@ -370,20 +371,7 @@ class TabBuilder:
         periph_toolbar.addStretch()
         left_layout.addLayout(periph_toolbar)
 
-        periph_tree = QTreeWidget()
-        periph_tree.setHeaderLabels([
-            t("label.name_column"), t("label.offset_column"),
-            t("label.description_column"), t("label.access_column"),
-            t("label.reset_value_column")
-        ])
-        periph_tree.setColumnWidth(0, 180)
-        periph_tree.setColumnWidth(1, 100)
-        periph_tree.setColumnWidth(2, 200)
-        periph_tree.setColumnWidth(3, 80)
-        periph_tree.setColumnWidth(4, 80)
-        periph_tree.setAlternatingRowColors(True)
-        periph_tree.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
-        periph_tree.setSelectionMode(QTreeWidget.SelectionMode.ExtendedSelection)
+        periph_tree = DeviceTreeView()
         # 应用自定义分支箭头样式
         apply_tree_branch_style(periph_tree)
         left_layout.addWidget(periph_tree)

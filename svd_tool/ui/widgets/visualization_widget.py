@@ -73,16 +73,28 @@ class VisualizationWidget(QWidget):
             logger.debug(f"Tree widget available, trying to find peripheral: {source_peripheral_name}")
             # 查找外设项
             found = False
-            for i in range(self.tree_widget.topLevelItemCount()):
-                item = self.tree_widget.topLevelItem(i)
-                item_text = item.text(0)
-                logger.debug(f"Checking item {i}: {item_text}")
-                if item_text == source_peripheral_name:
-                    self.tree_widget.setCurrentItem(item)
-                    self.tree_widget.scrollToItem(item)
-                    logger.debug(f"Tree widget selection updated to: {source_peripheral_name}")
-                    found = True
-                    break
+            from ..widgets.device_tree_view import DeviceTreeView
+            from ..model.device_tree_model import DeviceTreeModel
+            if isinstance(self.tree_widget, DeviceTreeView):
+                model = self.tree_widget.model()
+                if isinstance(model, DeviceTreeModel):
+                    idx = model.find_index_by_path(source_peripheral_name)
+                    if idx.isValid():
+                        self.tree_widget.setCurrentIndex(idx)
+                        self.tree_widget.scrollTo(idx)
+                        logger.debug(f"Tree widget selection updated to: {source_peripheral_name}")
+                        found = True
+            else:
+                for i in range(self.tree_widget.topLevelItemCount()):
+                    item = self.tree_widget.topLevelItem(i)
+                    item_text = item.text(0)
+                    logger.debug(f"Checking item {i}: {item_text}")
+                    if item_text == source_peripheral_name:
+                        self.tree_widget.setCurrentItem(item)
+                        self.tree_widget.scrollToItem(item)
+                        logger.debug(f"Tree widget selection updated to: {source_peripheral_name}")
+                        found = True
+                        break
             if not found:
                 logger.debug(f"Peripheral {source_peripheral_name} not found in tree widget")
         else:

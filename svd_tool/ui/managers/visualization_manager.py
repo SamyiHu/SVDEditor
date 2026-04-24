@@ -111,69 +111,37 @@ class VisualizationManager:
         
         # 更新树控件中的选择
         if field and peripheral and register:
-            # 在树中选中对应的位域
             periph_tree = self.get_widget('periph_tree')
             if periph_tree:
-                # 查找外设项
-                for i in range(periph_tree.topLevelItemCount()):
-                    periph_item = periph_tree.topLevelItem(i)
-                    if periph_item.text(0) == peripheral:
-                        # 展开外设项
-                        periph_item.setExpanded(True)
-                        # 查找寄存器项
-                        for j in range(periph_item.childCount()):
-                            reg_item = periph_item.child(j)
-                            if reg_item.text(0) == register:
-                                # 展开寄存器项显示位域
-                                reg_item.setExpanded(True)
-                                # 查找位域项
-                                for k in range(reg_item.childCount()):
-                                    field_item = reg_item.child(k)
-                                    if field_item.text(0) == field.name:
-                                        # 选中位域项
-                                        periph_tree.setCurrentItem(field_item)
-                                        # 确保位域项可见
-                                        periph_tree.scrollToItem(field_item)
-                                        break
-                                break
-                        break
-    
+                # 使用 peripheral_manager 的选择方法（兼容新旧 API）
+                main_window = self.main_window
+                if main_window and hasattr(main_window, 'peripheral_manager'):
+                    main_window.peripheral_manager.select_field(peripheral, register, field.name)
+
     def on_register_clicked(self, register):
         """寄存器点击事件处理"""
         # 获取当前选择
         state_manager = self.get_state_manager()
         if not state_manager:
             return
-        
+
         selection = state_manager.get_selection()
         peripheral = selection.get('peripheral')
-        
+
         if not peripheral:
             return
-        
+
         # 设置选择
         state_manager.set_selection(
             peripheral=peripheral,
             register=register.name if register else None,
             field=None
         )
-        
+
         # 更新树控件中的选择
         if register and peripheral:
-            # 在树中选中对应的寄存器
             periph_tree = self.get_widget('periph_tree')
             if periph_tree:
-                # 查找外设项
-                for i in range(periph_tree.topLevelItemCount()):
-                    periph_item = periph_tree.topLevelItem(i)
-                    if periph_item.text(0) == peripheral:
-                        # 展开外设项
-                        periph_item.setExpanded(True)
-                        # 查找寄存器项
-                        for j in range(periph_item.childCount()):
-                            reg_item = periph_item.child(j)
-                            if reg_item.text(0) == register.name:
-                                # 选中寄存器项
-                                periph_tree.setCurrentItem(reg_item)
-                                break
-                        break
+                main_window = self.main_window
+                if main_window and hasattr(main_window, 'peripheral_manager'):
+                    main_window.peripheral_manager.select_register(peripheral, register.name)
