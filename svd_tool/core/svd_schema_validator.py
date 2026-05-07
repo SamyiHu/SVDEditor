@@ -21,6 +21,7 @@ from typing import List, Dict, Any, Tuple, Optional
 from enum import Enum
 
 from .data_model import DeviceInfo, Peripheral, Register, Field, Interrupt, CPUInfo
+from .validation_utils import parse_hex, parse_int, get_peripheral_address_range
 
 logger = logging.getLogger("SVDSchemaValidator")
 
@@ -96,36 +97,6 @@ class SVDSchemaValidator:
     def _add_info(self, category: str, message: str, location: str = "", suggestion: str = ""):
         self.results.append(ValidationItem(Severity.INFO, category, message, location, suggestion))
 
-    @staticmethod
-    def _parse_hex(value) -> Optional[int]:
-        """解析十六进制或十进制数值字符串，失败返回 None
-        
-        SVD 文件中的数值可能是:
-        - 十六进制: "0x20", "0x00000000"
-        - 十进制: "32", "8"
-        """
-        if value is None:
-            return None
-        try:
-            s = str(value).strip()
-            if not s:
-                return None
-            s_lower = s.lower()
-            if s_lower.startswith("0x"):
-                return int(s_lower, 16)
-            # 尝试十进制解析
-            return int(s)
-        except (ValueError, AttributeError):
-            return None
-
-    @staticmethod
-    def _parse_int(value) -> Optional[int]:
-        """解析整数值，失败返回 None"""
-        try:
-            return int(value)
-        except (ValueError, TypeError):
-            return None
-
     # ==================== 设备级验证 ====================
 
     def validate_device(self, device: DeviceInfo):
@@ -146,7 +117,7 @@ class SVDSchemaValidator:
         self._validate_cpu(device.cpu)
 
         # size 和 resetValue 一致性
-        default_size = self._parse_hex(device.size)
+        default_size = parse_hex(device.size)
         if default_size is not None:
             valid_sizes = self.VALID_SIZE_VALUES.keys()
             if default_size not in valid_sizes:
@@ -206,7 +177,7 @@ class SVDSchemaValidator:
         # 收集所有外设地址范围，检查重叠
         periph_ranges: List[Tuple[str, int, int]] = []  # (name, base_addr, end_addr)
         for name, periph in device.peripherals.items():
-            base_addr = self._parse_hex(periph.base_address)
+            base_addr = parse_hex(periph.base_address)
             if base_addr is None:
                 self._add_error("外设地址",
                                f"外设 '{name}' 的基地址 '{periph.base_address}' 不是有效的十六进制数",
@@ -215,8 +186,8 @@ class SVDSchemaValidator:
 
             # 计算地址范围
             addr_block = periph.address_block
-            block_offset = self._parse_hex(addr_block.get("offset", "0x0")) or 0
-            block_size = self._parse_hex(addr_block.get("size", "0x0")) or 0
+            block_offset = parse_hex(addr_block.get("offset", "0x0")) or 0
+            block_size = parse_hex(addr_block.get("size", "0x0")) or 0
             start = base_addr + block_offset
             end = start + block_size - 1 if block_size > 0 else start
             periph_ranges.append((name, start, end))
@@ -261,7 +232,7 @@ class SVDSchemaValidator:
         """验证外设内所有寄存器"""
         # 检查寄存器偏移地址重复
         offset_map: Dict[str, List[str]] = {}  # offset -> [reg_names]
-        reg_size = self._parse_hex(periph.registers[next(iter(periph.registers))].size) if periph.registers else 32
+        reg_size = parse_hex(periph.registers[next(iter(periph.registers))].size) if periph.registers else 32
 
         for reg_name, reg in periph.registers.items():
             # 必需字段检查
@@ -271,7 +242,7 @@ class SVDSchemaValidator:
                                f"peripheral.{periph_name}.register.{reg_name}")
 
             # 偏移地址验证
-            offset = self._parse_hex(reg.offset)
+            offset = parse_hex(reg.offset)
             if offset is None:
                 self._add_error("寄存器偏移",
                                f"寄存器 '{periph_name}.{reg_name}' 的偏移地址 '{reg.offset}' 不是有效的十六进制数",
@@ -283,7 +254,7 @@ class SVDSchemaValidator:
                 offset_map[offset_key].append(reg_name)
 
             # size 验证
-            reg_size_val = self._parse_hex(reg.size)
+            reg_size_val = parse_hex(reg.size)
             if reg_size_val is not None:
                 if reg_size_val not in self.VALID_SIZE_VALUES:
                     self._add_error("寄存器大小",
@@ -300,7 +271,7 @@ class SVDSchemaValidator:
 
             # resetValue 与 size 一致性
             if reg_size_val is not None:
-                reset_val = self._parse_hex(reg.reset_value)
+                reset_val = parse_hex(reg.reset_value)
                 if reset_val is not None:
                     max_val = (1 << reg_size_val) - 1
                     if reset_val > max_val:
@@ -325,7 +296,7 @@ class SVDSchemaValidator:
 
     def _validate_fields(self, periph_name: str, reg_name: str, reg: Register):
         """验证寄存器内所有位域"""
-        reg_size = self._parse_hex(reg.size)
+        reg_size = parse_hex(reg.size)
         if reg_size is None:
             reg_size = 32  # 默认32位
 
@@ -343,8 +314,8 @@ class SVDSchemaValidator:
                 continue
 
             # 位偏移和位宽验证
-            bit_offset = self._parse_int(fld.bit_offset)
-            bit_width = self._parse_int(fld.bit_width)
+            bit_offset = parse_int(fld.bit_offset)
+            bit_width = parse_int(fld.bit_width)
 
             if bit_offset is None:
                 self._add_error("位域偏移",
@@ -391,7 +362,7 @@ class SVDSchemaValidator:
                                location)
 
             # resetValue 范围检查
-            reset_val = self._parse_hex(fld.reset_value)
+            reset_val = parse_hex(fld.reset_value)
             if reset_val is not None and bit_width > 0:
                 max_val = (1 << bit_width) - 1
                 if reset_val > max_val:
@@ -404,8 +375,8 @@ class SVDSchemaValidator:
         if reg.fields and reg_size <= 64:  # 只对合理大小的寄存器检查
             covered_bits = set()
             for fld in reg.fields.values():
-                bit_offset = self._parse_int(fld.bit_offset) or 0
-                bit_width = self._parse_int(fld.bit_width) or 0
+                bit_offset = parse_int(fld.bit_offset) or 0
+                bit_width = parse_int(fld.bit_width) or 0
                 for bit in range(bit_offset, bit_offset + bit_width):
                     covered_bits.add(bit)
 
@@ -431,7 +402,7 @@ class SVDSchemaValidator:
                                "interrupts")
                 continue
 
-            irq_val = self._parse_int(irq.value)
+            irq_val = parse_int(irq.value)
             if irq_val is None:
                 self._add_error("中断号",
                                f"中断 '{irq.name}' 的中断号无效: {irq.value}",
@@ -552,12 +523,12 @@ class SVDSchemaValidator:
         Returns:
             冲突描述字符串，无冲突返回 None
         """
-        base = SVDSchemaValidator._parse_hex(new_base_addr)
+        base = parse_hex(new_base_addr)
         if base is None:
             return None  # 无效地址由其他验证处理
 
-        block_offset = SVDSchemaValidator._parse_hex(new_addr_block.get("offset", "0x0")) or 0
-        block_size = SVDSchemaValidator._parse_hex(new_addr_block.get("size", "0x0")) or 0
+        block_offset = parse_hex(new_addr_block.get("offset", "0x0")) or 0
+        block_size = parse_hex(new_addr_block.get("size", "0x0")) or 0
         new_start = base + block_offset
         new_end = new_start + block_size - 1 if block_size > 0 else new_start
 
@@ -565,13 +536,13 @@ class SVDSchemaValidator:
             if name == exclude_name:
                 continue
 
-            exist_base = SVDSchemaValidator._parse_hex(periph.base_address)
+            exist_base = parse_hex(periph.base_address)
             if exist_base is None:
                 continue
 
             exist_block = periph.address_block
-            exist_offset = SVDSchemaValidator._parse_hex(exist_block.get("offset", "0x0")) or 0
-            exist_size = SVDSchemaValidator._parse_hex(exist_block.get("size", "0x0")) or 0
+            exist_offset = parse_hex(exist_block.get("offset", "0x0")) or 0
+            exist_size = parse_hex(exist_block.get("size", "0x0")) or 0
             exist_start = exist_base + exist_offset
             exist_end = exist_start + exist_size - 1 if exist_size > 0 else exist_start
 
@@ -601,7 +572,7 @@ class SVDSchemaValidator:
         Returns:
             冲突描述字符串，无冲突返回 None
         """
-        offset = SVDSchemaValidator._parse_hex(new_offset)
+        offset = parse_hex(new_offset)
         if offset is None:
             return None
 
@@ -609,7 +580,7 @@ class SVDSchemaValidator:
             if name == exclude_name:
                 continue
 
-            exist_offset = SVDSchemaValidator._parse_hex(reg.offset)
+            exist_offset = parse_hex(reg.offset)
             if exist_offset is None:
                 continue
 

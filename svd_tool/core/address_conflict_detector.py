@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from .data_model import DeviceInfo, Peripheral, Register, Field
+from .validation_utils import parse_hex, get_peripheral_address_range
 
 logger = logging.getLogger("AddressConflictDetector")
 
@@ -168,32 +169,9 @@ class AddressConflictDetector:
 
     # ==================== 外设级冲突检测 ====================
 
-    @staticmethod
-    def _parse_hex(value) -> Optional[int]:
-        """解析十六进制或十进制数值"""
-        if value is None:
-            return None
-        try:
-            s = str(value).strip()
-            if not s:
-                return None
-            if s.lower().startswith("0x"):
-                return int(s, 16)
-            return int(s)
-        except (ValueError, AttributeError):
-            return None
-
     def _get_periph_range(self, periph: Peripheral) -> Tuple[Optional[int], Optional[int]]:
         """获取外设地址范围 (start, end)"""
-        base = self._parse_hex(periph.base_address)
-        if base is None:
-            return None, None
-        block = periph.address_block
-        block_offset = self._parse_hex(block.get('offset', '0x0')) or 0
-        block_size = self._parse_hex(block.get('size', '0x0')) or 0
-        start = base + block_offset
-        end = start + block_size - 1 if block_size > 0 else start
-        return start, end
+        return get_peripheral_address_range(periph)
 
     def _detect_peripheral_conflicts(self, device: DeviceInfo):
         """检测所有外设地址重叠"""
@@ -222,7 +200,7 @@ class AddressConflictDetector:
         # 检查基地址完全相同
         base_map: Dict[int, List[str]] = {}
         for name, periph in device.peripherals.items():
-            base = self._parse_hex(periph.base_address)
+            base = parse_hex(periph.base_address)
             if base is not None:
                 if base not in base_map:
                     base_map[base] = []
@@ -273,7 +251,7 @@ class AddressConflictDetector:
         offset_map: Dict[int, List[str]] = {}  # offset -> [reg_names]
 
         for rname, reg in periph.registers.items():
-            offset = self._parse_hex(reg.offset)
+            offset = parse_hex(reg.offset)
             if offset is not None:
                 if offset not in offset_map:
                     offset_map[offset] = []

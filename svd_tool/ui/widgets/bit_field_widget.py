@@ -289,6 +289,9 @@ class BitFieldWidget(QWidget):
                 return 'small'
             else:
                 return 'abbrev'
+        elif field_width >= 8:
+            # 极窄位域：至少显示首字母
+            return 'abbrev'
         else:
             return 'none'
     

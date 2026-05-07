@@ -4,43 +4,7 @@
 """
 import re
 from typing import Any, Dict, List, Optional
-from xml.etree import ElementTree as ET
 from xml.dom import minidom
-from typing import Union
-from PyQt6.QtWidgets import QMessageBox
-
-
-def show_message(parent, title: str, text: str, icon: str = 'info') -> None:
-    """
-    统一显示消息对话框。
-
-    icon: 'info'|'warning'|'critical'|'about'
-    """
-    icon_map = {
-        'info': QMessageBox.Icon.Information,
-        'information': QMessageBox.Icon.Information,
-        'warning': QMessageBox.Icon.Warning,
-        'critical': QMessageBox.Icon.Critical,
-    }
-
-    if icon == 'about':
-        QMessageBox.about(parent, title, text)
-        return
-
-    qicon = icon_map.get(icon, QMessageBox.Icon.Information)
-    dlg = QMessageBox(parent)
-    dlg.setWindowTitle(title)
-    dlg.setText(text)
-    dlg.setIcon(qicon)
-    dlg.exec()
-
-
-def ask_question(parent, title: str, text: str, buttons: Union[QMessageBox.StandardButton, int] = QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, default: Union[QMessageBox.StandardButton, None] = None):
-    """
-    统一显示带选项的询问对话框，返回用户选择的 StandardButton。
-    """
-    reply = QMessageBox.question(parent, title, text, buttons, default if default is not None else QMessageBox.StandardButton.No)
-    return reply
 
 
 def pretty_xml(xml_string: str, indent: str = "  ") -> str:
@@ -116,36 +80,6 @@ def format_hex(value: Any, prefix: str = "0x") -> str:
             return f"{prefix}{int_value:X}"
         except (ValueError, TypeError):
             return str(value)
-
-
-def parse_hex(value: str) -> int:
-    """
-    解析十六进制字符串
-    
-    Args:
-        value: 十六进制字符串
-    
-    Returns:
-        整数值
-    """
-    if not value:
-        return 0
-    
-    # 移除空白字符
-    value = value.strip()
-    
-    # 移除可能的0x前缀
-    if value.startswith(("0x", "0X")):
-        value = value[2:]
-    
-    try:
-        return int(value, 16)
-    except ValueError:
-        # 如果不是十六进制，尝试十进制
-        try:
-            return int(value)
-        except ValueError:
-            return 0
 
 
 def validate_c_name(name: str) -> bool:

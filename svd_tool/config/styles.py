@@ -40,6 +40,7 @@ class ColorScheme:
     selected: str = "#E8F0FE"
     selected_border: str = "#4A90D9"
     selected_active: str = "#D0E2F7"
+    selected_text: str = "#1A1A1A"
     hover: str = "#F0F2F5"
 
     # ===== 文字颜色 =====
@@ -581,6 +582,7 @@ class StyleScheme:
             border-radius: {s.radius_md};
             background-color: {c.white};
             selection-background-color: {c.selected};
+            selection-color: {c.selected_text};
             padding: 4px;
         }}
 
@@ -594,6 +596,7 @@ class StyleScheme:
             padding: {s.input_padding};
             background-color: {c.white};
             selection-background-color: {c.selected};
+            selection-color: {c.selected_text};
         }}
 
         QLineEdit:focus {{
@@ -1115,6 +1118,7 @@ class DarkColorScheme(ColorScheme):
     selected: str = "#264F78"
     selected_border: str = "#5B9BD5"
     selected_active: str = "#1F4E85"
+    selected_text: str = "#FFFFFF"
     hover: str = "#2A2D2E"
 
     # ===== 文字颜色 =====

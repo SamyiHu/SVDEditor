@@ -2,41 +2,24 @@
 """
 分块SVD解析器 - 支持记录XML位置和按需解析
 """
-import re
 from typing import Dict, Any, Optional, List, Tuple
 from xml.dom import minidom
 from xml.parsers.expat import ExpatError
 import warnings
 
-from .data_model import DeviceInfo, Peripheral, Register, Field, Interrupt, CPUInfo
+from .data_model import DeviceInfo, Peripheral, Register, Field, Interrupt
 from .validators import Validator, ValidationError
 from .block_manager import BlockManager, BlockType, BlockInfo
-from ..utils.logger import Logger
+from .base_svd_parser import BaseSVDParser
 
 
-class ChunkedSVDParser:
+class ChunkedSVDParser(BaseSVDParser):
     """分块SVD文件解析器 - 支持记录XML位置和按需解析"""
-    
+
     def __init__(self):
-        self.device_info = DeviceInfo()
-        self.warnings: List[str] = []
-        self.logger = Logger("chunked_svd_parser")
-        
-        # XML行号跟踪
-        self.current_line = 0
-        
+        super().__init__(logger_name="chunked_svd_parser")
         # 块位置映射 {block_key: (start_line, end_line)}
         self.block_positions: Dict[str, Tuple[int, int]] = {}
-        
-        # 解析统计
-        self.stats = {
-            "peripherals": 0,
-            "registers": 0,
-            "fields": 0,
-            "interrupts": 0,
-            "errors": 0
-        }
-        
         # 块管理器（在解析完成后创建）
         self.block_manager: Optional[BlockManager] = None
     
@@ -182,142 +165,7 @@ class ChunkedSVDParser:
         
         # 如果没有位置信息，返回0
         return 0
-    
-    def _parse_comments(self, dom: minidom.Document):
-        """解析XML注释中的版权、作者、许可证信息"""
-        for child in dom.childNodes:
-            if child.nodeType == child.COMMENT_NODE:
-                comment_text = child.data.strip()
-                
-                # 解析版权信息
-                copyright_match = re.search(r'Copyright\s*\(c\)\s*\d{4}[^.\n]*\.?', comment_text, re.IGNORECASE)
-                if copyright_match:
-                    self.device_info.copyright = copyright_match.group(0).strip()
-                
-                # 解析作者信息
-                author_match = re.search(r'Author:\s*(.+?)(?:\n|$)', comment_text, re.IGNORECASE)
-                if author_match:
-                    self.device_info.author = author_match.group(1).strip()
-                
-                # 解析许可证信息
-                license_match = re.search(r'License:\s*(.+?)(?:\n|$)', comment_text, re.IGNORECASE)
-                if license_match:
-                    self.device_info.license = license_match.group(1).strip()
-    
-    def _parse_device_info(self, device_node):
-        """解析设备信息"""
-        # 设备名称
-        name_nodes = device_node.getElementsByTagName("name")
-        if name_nodes and name_nodes[0].firstChild:
-            self.device_info.name = name_nodes[0].firstChild.data.strip()
-        
-        # 设备版本
-        version_nodes = device_node.getElementsByTagName("version")
-        if version_nodes and version_nodes[0].firstChild:
-            self.device_info.version = version_nodes[0].firstChild.data.strip()
-        
-        # 设备描述
-        desc_nodes = device_node.getElementsByTagName("description")
-        if desc_nodes and desc_nodes[0].firstChild:
-            self.device_info.description = desc_nodes[0].firstChild.data.strip()
-        
-        # SVD版本
-        if device_node.hasAttribute("schemaVersion"):
-            self.device_info.svd_version = device_node.getAttribute("schemaVersion")
-        else:
-            self.warnings.append("未找到SVD版本信息，使用默认版本1.3")
-            self.device_info.svd_version = "1.3"
-        
-        # 厂商名称
-        vendor_nodes = device_node.getElementsByTagName("vendor")
-        if vendor_nodes and vendor_nodes[0].firstChild:
-            self.device_info.vendor = vendor_nodes[0].firstChild.data.strip()
-        
-        self.logger.debug(f"设备信息: {self.device_info.name} v{self.device_info.version}")
-    
-    def _parse_cpu_info(self, device_node):
-        """解析CPU信息"""
-        cpu_nodes = device_node.getElementsByTagName("cpu")
-        if not cpu_nodes:
-            self.warnings.append("未找到CPU信息，使用默认值")
-            return
-        
-        cpu_node = cpu_nodes[0]
-        
-        # CPU名称
-        name_nodes = cpu_node.getElementsByTagName("name")
-        if name_nodes and name_nodes[0].firstChild:
-            self.device_info.cpu.name = name_nodes[0].firstChild.data.strip()
-        
-        # CPU版本
-        revision_nodes = cpu_node.getElementsByTagName("revision")
-        if revision_nodes and revision_nodes[0].firstChild:
-            self.device_info.cpu.revision = revision_nodes[0].firstChild.data.strip()
-        
-        # 字节序
-        endian_nodes = cpu_node.getElementsByTagName("endian")
-        if endian_nodes and endian_nodes[0].firstChild:
-            self.device_info.cpu.endian = endian_nodes[0].firstChild.data.strip()
-        
-        # MPU
-        mpu_nodes = cpu_node.getElementsByTagName("mpuPresent")
-        if mpu_nodes and mpu_nodes[0].firstChild:
-            self.device_info.cpu.mpu_present = mpu_nodes[0].firstChild.data.strip().lower() == "true"
-        
-        # FPU
-        fpu_nodes = cpu_node.getElementsByTagName("fpuPresent")
-        if fpu_nodes and fpu_nodes[0].firstChild:
-            self.device_info.cpu.fpu_present = fpu_nodes[0].firstChild.data.strip().lower() == "true"
-        
-        # NVIC优先级位数
-        nvic_nodes = cpu_node.getElementsByTagName("nvicPrioBits")
-        if nvic_nodes and nvic_nodes[0].firstChild:
-            try:
-                self.device_info.cpu.nvic_prio_bits = int(nvic_nodes[0].firstChild.data.strip())
-            except ValueError:
-                self.warnings.append(f"NVIC优先级位数解析失败: {nvic_nodes[0].firstChild.data}")
-                self.device_info.cpu.nvic_prio_bits = 4
-        
-        # Vendor Systick配置
-        systick_nodes = cpu_node.getElementsByTagName("vendorSystickConfig")
-        if systick_nodes and systick_nodes[0].firstChild:
-            self.device_info.cpu.vendor_systick_config = systick_nodes[0].firstChild.data.strip().lower() == "true"
-        
-        self.logger.debug(f"CPU信息: {self.device_info.cpu.name} {self.device_info.cpu.revision}")
-    
-    def _parse_standard_fields(self, device_node):
-        """解析标准字段"""
-        # 地址单元位数
-        addr_unit_nodes = device_node.getElementsByTagName("addressUnitBits")
-        if addr_unit_nodes and addr_unit_nodes[0].firstChild:
-            try:
-                self.device_info.address_unit_bits = int(addr_unit_nodes[0].firstChild.data.strip())
-            except ValueError:
-                self.warnings.append(f"地址单元位数解析失败: {addr_unit_nodes[0].firstChild.data}")
-        
-        # 数据宽度
-        width_nodes = device_node.getElementsByTagName("width")
-        if width_nodes and width_nodes[0].firstChild:
-            try:
-                self.device_info.width = int(width_nodes[0].firstChild.data.strip())
-            except ValueError:
-                self.warnings.append(f"数据宽度解析失败: {width_nodes[0].firstChild.data}")
-        
-        # 大小
-        size_nodes = device_node.getElementsByTagName("size")
-        if size_nodes and size_nodes[0].firstChild:
-            self.device_info.size = size_nodes[0].firstChild.data.strip()
-        
-        # 复位值
-        reset_value_nodes = device_node.getElementsByTagName("resetValue")
-        if reset_value_nodes and reset_value_nodes[0].firstChild:
-            self.device_info.reset_value = reset_value_nodes[0].firstChild.data.strip()
-        
-        # 复位掩码
-        reset_mask_nodes = device_node.getElementsByTagName("resetMask")
-        if reset_mask_nodes and reset_mask_nodes[0].firstChild:
-            self.device_info.reset_mask = reset_mask_nodes[0].firstChild.data.strip()
-    
+
     def _parse_peripherals(self, device_node, file_lines: List[str]):
         """解析所有外设"""
         peripherals_node = device_node.getElementsByTagName("peripherals")
@@ -632,28 +480,7 @@ class ChunkedSVDParser:
             except Exception as e:
                 error_msg = f"外设 {peripheral.name} 解析中断失败: {str(e)}"
                 self.warnings.append(error_msg)
-    
-    def _collect_interrupts_to_device(self):
-        """收集所有中断到设备信息（支持多外设共用同一中断）"""
-        for periph_name, peripheral in self.device_info.peripherals.items():
-            for interrupt in peripheral.interrupts:
-                irq_name = interrupt.get("name", "")
-                if irq_name:
-                    if irq_name in self.device_info.interrupts:
-                        # 已存在同名中断，添加外设到 peripherals 列表
-                        existing = self.device_info.interrupts[irq_name]
-                        if periph_name not in existing.peripherals:
-                            existing.peripherals.append(periph_name)
-                    else:
-                        # 创建新的中断对象
-                        self.device_info.interrupts[irq_name] = Interrupt(
-                            name=irq_name,
-                            value=interrupt.get("value", 0),
-                            description=interrupt.get("description", ""),
-                            peripheral=periph_name,
-                            peripherals=[periph_name]
-                        )
-    
+
     def _set_block_positions(self):
         """设置块位置信息到块管理器"""
         if not self.block_manager:
@@ -676,7 +503,3 @@ class ChunkedSVDParser:
             (起始行号, 结束行号)，如果不存在则返回None
         """
         return self.block_positions.get(block_key)
-    
-    def get_statistics(self) -> Dict[str, int]:
-        """获取解析统计信息"""
-        return self.stats.copy()
