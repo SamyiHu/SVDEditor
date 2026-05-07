@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QTreeWidgetItem, QLabel, QFileDialog, QGroupBox,
     QSplitter, QMessageBox, QHeaderView, QComboBox,
     QWidget, QTextEdit, QStyledItemDelegate, QApplication,
-    QFrame
+    QFrame, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QBrush, QFont
@@ -79,13 +79,15 @@ class SVDDiffMergeDialog(QDialog):
 
     merge_completed = pyqtSignal(DeviceInfo)
 
-    def __init__(self, parent=None, current_device: DeviceInfo = None):
+    def __init__(self, parent=None, current_device: DeviceInfo = None, document_manager=None):
         super().__init__(parent)
         self.setWindowTitle(t("diff_merge.title"))
         self.setMinimumSize(1050, 700)
         self.resize(1100, 750)
         self.current_device = current_device
         self.source_device: Optional[DeviceInfo] = None
+        self.document_manager = document_manager
+        self._open_docs = {}  # display_name -> (doc_id, DeviceInfo)
         self.merger = SVDMerger()
         self.merge_items: list = []
         self._setup_ui()
@@ -156,6 +158,27 @@ class SVDDiffMergeDialog(QDialog):
         self.file_label = QLabel(t("diff_merge.no_file_selected"))
         self.file_label.setStyleSheet(f"color: {_c.text_disabled}; font-size: 10pt; border: none;")
         import_row.addWidget(self.file_label, 1)
+
+        # 已打开文档下拉框
+        self._open_doc_combo = QComboBox()
+        self._open_doc_combo.setFixedWidth(180)
+        self._open_doc_combo.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self._open_doc_combo.currentIndexChanged.connect(self._on_open_doc_selected)
+        import_row.addWidget(self._open_doc_combo)
+
+        # 填充已打开文档列表（blockSignals 避免添加时触发 currentIndexChanged）
+        if self.document_manager:
+            self._open_doc_combo.blockSignals(True)
+            active_id = self.document_manager.active_doc_id
+            for doc_id, doc in self.document_manager.get_all_documents().items():
+                if doc_id != active_id:
+                    display = doc.display_name or doc.device_info.name or "未命名"
+                    self._open_docs[display] = (doc_id, doc.device_info)
+                    n_p = len(doc.device_info.peripherals)
+                    n_r = sum(len(p.registers) for p in doc.device_info.peripherals.values())
+                    self._open_doc_combo.addItem(f"{display} ({n_p} 外设)")
+            self._open_doc_combo.blockSignals(False)
+
         browse_btn = QPushButton(t("diff_merge.browse"))
         browse_btn.setFixedWidth(70)
         browse_btn.clicked.connect(self._browse_file)
@@ -294,7 +317,29 @@ class SVDDiffMergeDialog(QDialog):
 
         layout.addLayout(btn_layout)
 
+        # 所有 UI 就绪后自动选中第一个已打开文档
+        if self._open_doc_combo.count() > 0:
+            self._open_doc_combo.setCurrentIndex(0)
+            self._on_open_doc_selected(0)
+
     # ==================== 文件选择 ====================
+
+    def _on_open_doc_selected(self, index):
+        """从下拉框选择已打开的文档"""
+        if index < 0:
+            return
+        display_name = self._open_doc_combo.itemText(index).split(" (")[0]
+        entry = self._open_docs.get(display_name)
+        if not entry:
+            return
+        _, device = entry
+        self.source_device = device
+        n_p = len(device.peripherals)
+        n_r = sum(len(p.registers) for p in device.peripherals.values())
+        _c = get_style_scheme().colors
+        self.file_label.setText(f"{device.name or display_name} ({n_p} {t('label.total_peripherals')}, {n_r} {t('label.total_registers')})")
+        self.file_label.setStyleSheet(f"color: {_c.text_primary}; font-size: 10pt; border: none;")
+        self.analyze_btn.setEnabled(self.current_device is not None)
 
     def _browse_file(self):
         """浏览选择导入文件"""
@@ -308,6 +353,7 @@ class SVDDiffMergeDialog(QDialog):
         try:
             parser = SVDParser()
             self.source_device = parser.parse_file(file_path)
+            self._open_doc_combo.setCurrentIndex(-1)  # 清空下拉框选择
 
             name = self.source_device.name or os.path.basename(file_path)
             n_p = len(self.source_device.peripherals)

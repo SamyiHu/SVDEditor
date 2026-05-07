@@ -129,9 +129,30 @@ class MainWindowRefactored(QMainWindow):
         
         # 初始化多文档管理器
         self.document_manager = DocumentManager(self)
-        
+
+        # 初始化 AI 助手（可选依赖，未安装时不影响其他功能）
+        self.ai_assistant = None
+        try:
+            from ..ai_assistant import create_ai_assistant
+            self.ai_assistant = create_ai_assistant(self.coordinator, self)
+            # 延迟初始化 UI（在 init_ui 之后）
+        except ImportError:
+            pass
+        except Exception as e:
+            self.logger.warning(f"AI 助手初始化失败（非致命）: {e}")
+
         self.init_ui()
         self.logger.debug(f"init_ui完成，窗口大小: {self.size()}")
+
+        # 初始化 AI 助手 UI（必须在 init_ui 之后，因为需要主窗口已创建）
+        if self.ai_assistant is not None:
+            try:
+                self.ai_assistant.initialize()
+            except Exception as e:
+                self.logger.warning(f"AI 助手 UI 初始化失败（非致命）: {e}")
+                self.ai_assistant = None
+
+        self.init_data()
         self.init_data()
         self.setup_signals()
         
@@ -1562,6 +1583,23 @@ class MainWindowRefactored(QMainWindow):
         self.layout_manager.update_status(desc)
         self.logger.info(desc)
 
+    def show_svd_diff(self):
+        """显示 SVD 差异比较对话框（纯对比，非模态）"""
+        from .dialogs.svd_diff_dialog import SVDDiffDialog
+        if not self.state_manager.device_info:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, t("message.info"), t("msg.open_or_create_first"))
+            return
+
+        self._diff_dialog = SVDDiffDialog(
+            self, self.state_manager.device_info,
+            document_manager=self.document_manager
+        )
+        self._diff_dialog.setWindowFlags(
+            self._diff_dialog.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint
+        )
+        self._diff_dialog.show()
+
     def show_svd_diff_merge(self):
         """显示 SVD 比较与合并对话框（非模态）"""
         from .dialogs.svd_diff_merge_dialog import SVDDiffMergeDialog
@@ -1571,7 +1609,10 @@ class MainWindowRefactored(QMainWindow):
             return
 
         # 保存引用防止被垃圾回收
-        self._diff_merge_dialog = SVDDiffMergeDialog(self, self.state_manager.device_info)
+        self._diff_merge_dialog = SVDDiffMergeDialog(
+            self, self.state_manager.device_info,
+            document_manager=self.document_manager
+        )
         self._diff_merge_dialog.merge_completed.connect(self._on_merge_completed)
         self._diff_merge_dialog.finished.connect(lambda: self._cleanup_diff_merge_dialog())
         self._diff_merge_dialog.setWindowFlags(
@@ -3121,6 +3162,16 @@ class MainWindowRefactored(QMainWindow):
     def toggle_left_panel(self):
         """切换左侧面板显示/隐藏"""
         self.layout_manager.toggle_left_panel()
+
+    def toggle_ai_assistant(self, checked: bool):
+        """切换 AI 助手面板显示/隐藏"""
+        if self.ai_assistant:
+            self.ai_assistant.toggle_panel()
+
+    def show_ai_assistant_settings(self):
+        """显示 AI 助手设置"""
+        if self.ai_assistant:
+            self.ai_assistant.show_settings()
     
     def toggle_bit_field_visibility(self, checked: bool):
         """切换位域图显示/隐藏"""

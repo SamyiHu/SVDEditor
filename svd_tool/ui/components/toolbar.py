@@ -58,3 +58,30 @@ class ToolBarBuilder:
         redo_action.triggered.connect(self.main_window.redo)
 
         self.toolbar.addSeparator()
+
+        # AI 助手按钮
+        if hasattr(self.main_window, 'ai_assistant') and self.main_window.ai_assistant:
+            ai_btn = QToolButton()
+            ai_btn.setText("AI")
+            ai_btn.setToolTip(t("menu.view.ai_assistant", default="AI 助手"))
+            ai_btn.clicked.connect(self.main_window.toggle_ai_assistant)
+            ai_btn.setStyleSheet("""
+                QToolButton {
+                    background-color: #4A90D9;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 2px 8px;
+                    font-weight: bold;
+                    font-size: 10pt;
+                    min-height: 20px;
+                }
+                QToolButton:hover {
+                    background-color: #3A7BC8;
+                }
+                QToolButton:pressed {
+                    background-color: #2E6AB5;
+                }
+            """)
+            self.toolbar.addWidget(ai_btn)
+            self.toolbar.addSeparator()

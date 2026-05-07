@@ -251,6 +251,17 @@ class MenuBarBuilder:
             lambda checked: setattr(self.main_window, 'auto_save_error', checked)
         )
         view_menu.addAction(self.main_window.toggle_auto_save_action)
+
+        # AI 助手面板切换
+        if hasattr(self.main_window, 'ai_assistant') and self.main_window.ai_assistant:
+            view_menu.addSeparator()
+            self.main_window.toggle_ai_assistant_action = QAction(
+                t("menu.view.ai_assistant", default="AI 助手"), self.parent)
+            self.main_window.toggle_ai_assistant_action.setCheckable(True)
+            self.main_window.toggle_ai_assistant_action.setChecked(False)
+            self.main_window.toggle_ai_assistant_action.setShortcut(QKeySequence("Ctrl+Shift+A"))
+            self.main_window.toggle_ai_assistant_action.triggered.connect(self.main_window.toggle_ai_assistant)
+            view_menu.addAction(self.main_window.toggle_ai_assistant_action)
     
     def _create_tools_menu(self):
         """创建工具菜单"""
@@ -302,10 +313,16 @@ class MenuBarBuilder:
         
         tools_menu.addSeparator()
 
+        # SVD 比较
+        diff_action = QAction(t("menu.tools.svd_diff", default="SVD 比较"), self.parent)
+        diff_action.triggered.connect(self.main_window.show_svd_diff)
+        diff_action.setShortcut(QKeySequence("Ctrl+D"))
+        tools_menu.addAction(diff_action)
+
         # SVD 比较与合并
         diff_merge_action = QAction(t("menu.tools.svd_diff_merge"), self.parent)
         diff_merge_action.triggered.connect(self.main_window.show_svd_diff_merge)
-        diff_merge_action.setShortcut(QKeySequence("Ctrl+D"))
+        diff_merge_action.setShortcut(QKeySequence("Ctrl+Shift+D"))
         tools_menu.addAction(diff_merge_action)
 
 
@@ -325,6 +342,14 @@ class MenuBarBuilder:
             t("menu.tools.chain_rules"), self.parent)
         chain_edit_action.triggered.connect(self.main_window.show_chain_rules_dialog)
         tools_menu.addAction(chain_edit_action)
+
+        # AI 助手设置
+        if hasattr(self.main_window, 'ai_assistant') and self.main_window.ai_assistant:
+            tools_menu.addSeparator()
+            ai_settings_action = QAction(
+                t("menu.tools.ai_settings", default="AI 助手设置..."), self.parent)
+            ai_settings_action.triggered.connect(self.main_window.show_ai_assistant_settings)
+            tools_menu.addAction(ai_settings_action)
     
     def _close_current_document(self):
         """关闭当前文档"""

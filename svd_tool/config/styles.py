@@ -215,6 +215,13 @@ class ColorScheme:
     # ===== 搜索结果中断颜色 =====
     search_interrupt_color: str = "#9254DE"
 
+    # ===== AI 助手颜色 =====
+    ai_user_bubble: str = "#E8F0FE"
+    ai_assistant_bubble: str = "#FFFFFF"
+    ai_action_success_bg: str = "#F0FFF0"
+    ai_action_failed_bg: str = "#FFF0F0"
+    ai_streaming_dot: str = "#4A90D9"
+
 
 @dataclass
 class FontScheme:
@@ -1282,6 +1289,13 @@ class DarkColorScheme(ColorScheme):
 
     # ===== 搜索结果中断颜色 =====
     search_interrupt_color: str = "#B07CD8"
+
+    # ===== AI 助手颜色 =====
+    ai_user_bubble: str = "#2A3A52"
+    ai_assistant_bubble: str = "#252526"
+    ai_action_success_bg: str = "#1A3D1A"
+    ai_action_failed_bg: str = "#3D1A1A"
+    ai_streaming_dot: str = "#5B9BD5"
 
 
 def create_dark_style_scheme() -> StyleScheme:
