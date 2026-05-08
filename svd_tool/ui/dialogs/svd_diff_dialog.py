@@ -7,7 +7,7 @@ from typing import Optional, Dict, Tuple, List
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-    QTreeWidget, QTreeWidgetItem, QLabel, QFileDialog, QCheckBox,
+    QTreeWidget, QTreeWidgetItem, QLabel, QFileDialog,
     QMessageBox, QComboBox, QFrame, QSizePolicy, QHeaderView, QSplitter
 )
 from PyQt6.QtCore import Qt
@@ -18,6 +18,7 @@ from ...core.svd_differ import SVDDiffer, DiffType, DiffItem
 from ...core.data_model import DeviceInfo
 from ...config.styles import get_style_scheme
 from ...i18n.i18n import t
+from ..widgets.toggle_switch import ToggleSwitch
 
 
 class SVDDiffDialog(QDialog):
@@ -70,11 +71,11 @@ class SVDDiffDialog(QDialog):
         file_bar.addWidget(curr_frame, 1)
 
         # 过滤
-        self.chk_description = QCheckBox("忽略描述")
+        self.chk_description = ToggleSwitch("忽略描述")
         self.chk_description.stateChanged.connect(self._re_diff)
         file_bar.addWidget(self.chk_description)
 
-        self.chk_reset_value = QCheckBox("忽略复位值")
+        self.chk_reset_value = ToggleSwitch("忽略复位值")
         self.chk_reset_value.stateChanged.connect(self._re_diff)
         file_bar.addWidget(self.chk_reset_value)
 

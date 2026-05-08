@@ -93,10 +93,16 @@ class AIChatPanel(QDockWidget):
         # 应用样式
         self._apply_styles()
 
-        # 显示欢迎消息
-        self.append_system_message(
+        # 显示欢迎消息（以 AI 气泡样式呈现）
+        self._show_welcome()
+
+    def _show_welcome(self):
+        """显示欢迎消息气泡"""
+        bubble = AssistantBubble()
+        bubble.set_content(
             t("ai.welcome", default="你好！我可以帮你查看、修改和验证 SVD 数据。请随时提问。")
         )
+        self._insert_bubble(bubble)
 
     def _create_toolbar(self) -> QWidget:
         """创建顶部工具栏"""
@@ -305,9 +311,15 @@ class AIChatPanel(QDockWidget):
             self._current_assistant_bubble = None
 
     def update_streaming_text(self, chunk: str):
-        """更新流式文本"""
+        """更新流式文本（追加模式）"""
         if self._current_assistant_bubble:
             self._current_assistant_bubble.append_text(chunk)
+            self._scroll_to_bottom()
+
+    def set_streaming_text(self, text: str):
+        """设置流式文本（替换模式，用于过滤后的文本）"""
+        if self._current_assistant_bubble:
+            self._current_assistant_bubble.set_content(text)
             self._scroll_to_bottom()
 
     def finalize_assistant_message(self, display_text: str):
@@ -329,9 +341,7 @@ class AIChatPanel(QDockWidget):
                 item.widget().deleteLater()
 
         # 显示欢迎消息
-        self.append_system_message(
-            t("ai.welcome", default="你好！我可以帮你查看、修改和验证 SVD 数据。请随时提问。")
-        )
+        self._show_welcome()
 
     def update_model_label(self):
         """更新模型标签"""

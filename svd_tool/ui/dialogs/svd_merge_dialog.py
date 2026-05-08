@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QTreeWidget,
     QTreeWidgetItem, QLabel, QFileDialog, QGroupBox,
     QSplitter, QMessageBox, QHeaderView, QComboBox, QProgressBar,
-    QCheckBox, QWidget, QTextEdit, QStyledItemDelegate, QApplication
+    QWidget, QTextEdit, QStyledItemDelegate, QApplication
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QBrush, QFont
@@ -17,6 +17,7 @@ from ...core.svd_merger import (
     SVDMerger, MergeAction, MergeConflictLevel, MergeItem
 )
 from ...core.data_model import DeviceInfo
+from ..widgets.toggle_switch import ToggleSwitch
 
 
 # 颜色定义
@@ -149,12 +150,12 @@ class SVDMergeDialog(QDialog):
         self.option_group = QGroupBox("步骤 2：选择合并策略")
         opt_layout = QHBoxLayout(self.option_group)
 
-        self.chk_auto_accept_new = QCheckBox("自动接受所有新增项")
+        self.chk_auto_accept_new = ToggleSwitch("自动接受所有新增项")
         self.chk_auto_accept_new.setChecked(True)
         self.chk_auto_accept_new.setToolTip("新增的外设/寄存器/位域默认使用导入文件的版本")
         opt_layout.addWidget(self.chk_auto_accept_new)
 
-        self.chk_ignore_desc = QCheckBox("忽略描述差异")
+        self.chk_ignore_desc = ToggleSwitch("忽略描述差异")
         opt_layout.addWidget(self.chk_ignore_desc)
 
         opt_layout.addStretch()
@@ -177,7 +178,7 @@ class SVDMergeDialog(QDialog):
         # diff_only 模式下也显示忽略描述选项
         if self._diff_only:
             diff_opt_layout = QHBoxLayout()
-            self.chk_ignore_desc_diff = QCheckBox("忽略描述差异")
+            self.chk_ignore_desc_diff = ToggleSwitch("忽略描述差异")
             self.chk_ignore_desc_diff.stateChanged.connect(self._re_analyze_if_has_data)
             diff_opt_layout.addWidget(self.chk_ignore_desc_diff)
             diff_opt_layout.addStretch()

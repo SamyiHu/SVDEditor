@@ -4,15 +4,40 @@ AI 助手配置对话框
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
     QFormLayout, QLineEdit, QComboBox,
-    QCheckBox, QPushButton, QLabel, QPlainTextEdit,
+    QPushButton, QLabel, QPlainTextEdit,
     QDialogButtonBox
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QDoubleValidator, QIntValidator
 
 from ...config.styles import get_style_scheme
 from ..config import AIConfig
 from ...i18n.i18n import t
+from ...ui.widgets.toggle_switch import ToggleSwitch
+
+
+class _TestConnectionWorker(QThread):
+    """后台线程执行 API 连接测试"""
+    finished = pyqtSignal(bool, str)  # (success, message)
+
+    def __init__(self, config: AIConfig):
+        super().__init__()
+        self.config = config
+
+    def run(self):
+        try:
+            from ..backend import create_backend
+            backend = create_backend(self.config.api_type)
+            messages = [{"role": "user", "content": "Hi"}]
+            response = backend.chat(messages, self.config)
+            if response:
+                self.finished.emit(True, t("ai.settings.test_success", default="连接成功"))
+            else:
+                self.finished.emit(False, t("ai.settings.test_fail", default="连接失败：空响应"))
+        except ImportError as e:
+            self.finished.emit(False, f"缺少依赖: {e}")
+        except Exception as e:
+            self.finished.emit(False, f"失败: {str(e)[:60]}")
 
 
 class AISettingsDialog(QDialog):
@@ -98,13 +123,11 @@ class AISettingsDialog(QDialog):
 
         # 测试连接按钮
         test_layout = QHBoxLayout()
-        test_layout.addStretch()
+        test_layout.setSpacing(8)
         self._test_btn = QPushButton(t("ai.settings.test_connection", default="测试连接"))
         self._test_btn.clicked.connect(self._test_connection)
         test_layout.addWidget(self._test_btn)
-
-        self._test_result_label = QLabel("")
-        test_layout.addWidget(self._test_result_label)
+        test_layout.addStretch()
 
         form.addRow("", test_layout)
 
@@ -139,7 +162,7 @@ class AISettingsDialog(QDialog):
         form.addRow("Max Tokens:", self._max_tokens_edit)
 
         # 流式
-        self._streaming_check = QCheckBox(t("ai.settings.streaming", default="启用流式响应"))
+        self._streaming_check = ToggleSwitch(t("ai.settings.streaming", default="启用流式响应"))
         form.addRow("", self._streaming_check)
 
         return group
@@ -255,46 +278,77 @@ class AISettingsDialog(QDialog):
             self._toggle_key_btn.setText(t("ai.settings.show_key", default="显示"))
 
     def _test_connection(self):
-        """测试 API 连接"""
+        """测试 API 连接（异步，不阻塞 UI）"""
         config = self.get_config()
         if not config.api_key:
-            self._test_result_label.setText("请输入 API Key")
-            self._test_result_label.setStyleSheet("color: red;")
+            self._show_btn_result(False, t("ai.settings.hint_api_key", default="请输入 API Key"))
             return
 
+        scheme = get_style_scheme()
+        c = scheme.colors
         self._test_btn.setEnabled(False)
-        self._test_result_label.setText("测试中...")
-        self._test_result_label.setStyleSheet("color: gray;")
+        self._test_btn.setStyleSheet(f"""
+            QPushButton {{
+                border: 1px solid {c.border};
+                border-radius: {scheme.sizes.radius_sm};
+                padding: 4px 12px;
+                background-color: {c.surface};
+                color: {c.text_secondary};
+                min-height: 26px;
+            }}
+        """)
+        self._test_btn.setText(t("ai.settings.testing", default="测试中..."))
 
-        try:
-            from ..backend import create_backend
-            backend = create_backend(config.api_type)
+        self._test_worker = _TestConnectionWorker(config)
+        self._test_worker.finished.connect(self._on_test_finished)
+        self._test_worker.start()
 
-            # 发送最小请求
-            messages = [
-                {"role": "user", "content": "Hi"}
-            ]
-            response = backend.chat(messages, config)
+    def _on_test_finished(self, success: bool, message: str):
+        """测试完成回调"""
+        self._show_btn_result(success, message)
 
-            if response:
-                self._test_result_label.setText(
-                    t("ai.settings.test_success", default="连接成功")
-                )
-                scheme = get_style_scheme()
-                self._test_result_label.setStyleSheet(f"color: {scheme.colors.success};")
-            else:
-                self._test_result_label.setText(
-                    t("ai.settings.test_fail", default="连接失败：空响应")
-                )
-                self._test_result_label.setStyleSheet("color: red;")
-        except ImportError as e:
-            self._test_result_label.setText(f"缺少依赖: {e}")
-            self._test_result_label.setStyleSheet("color: red;")
-        except Exception as e:
-            self._test_result_label.setText(f"失败: {str(e)[:80]}")
-            self._test_result_label.setStyleSheet("color: red;")
-        finally:
-            self._test_btn.setEnabled(True)
+    def _show_btn_result(self, success: bool, message: str):
+        """按钮自身变色显示结果，3 秒后恢复"""
+        scheme = get_style_scheme()
+        c = scheme.colors
+        r = scheme.sizes.radius_sm
+        self._test_btn.setEnabled(False)
+        if success:
+            self._test_btn.setStyleSheet(f"""
+                QPushButton {{
+                    border: 1px solid rgba(82, 196, 26, 0.40);
+                    border-radius: {r};
+                    padding: 4px 12px;
+                    background-color: rgba(82, 196, 26, 0.12);
+                    color: {c.success};
+                    min-height: 26px;
+                    font-weight: bold;
+                }}
+            """)
+            self._test_btn.setText(f"✓ {message}")
+        else:
+            self._test_btn.setStyleSheet(f"""
+                QPushButton {{
+                    border: 1px solid rgba(255, 77, 79, 0.35);
+                    border-radius: {r};
+                    padding: 4px 12px;
+                    background-color: rgba(255, 77, 79, 0.10);
+                    color: {c.error};
+                    min-height: 26px;
+                    font-weight: bold;
+                }}
+            """)
+            self._test_btn.setText(f"✗ {message}")
+
+        # 3 秒后恢复原始状态
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(3000, self._reset_test_btn)
+
+    def _reset_test_btn(self):
+        """恢复测试按钮初始样式"""
+        self._test_btn.setEnabled(True)
+        self._test_btn.setText(t("ai.settings.test_connection", default="测试连接"))
+        self._test_btn.setStyleSheet("")  # 清除自定义样式，回退到全局样式
 
     def _apply_styles(self):
         """应用对话框样式"""
@@ -355,9 +409,6 @@ class AISettingsDialog(QDialog):
                 background-color: {c.white};
             }}
             QLabel {{
-                color: {c.text_primary};
-            }}
-            QCheckBox {{
                 color: {c.text_primary};
             }}
         """)

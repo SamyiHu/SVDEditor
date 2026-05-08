@@ -162,6 +162,9 @@ class AIAssistantController(QObject):
         # 构建完整消息列表
         messages = self._build_messages()
 
+        # 初始化流式缓冲区
+        self._streaming_buffer = ""
+
         # 启动工作线程
         self._worker = _StreamingWorker(
             self.backend,
@@ -203,9 +206,13 @@ class AIAssistantController(QObject):
         return messages
 
     def _on_chunk_received(self, chunk: str):
-        """流式接收到一个文本块"""
+        """流式接收到一个文本块 — 累积并过滤 JSON 后显示"""
+        if not hasattr(self, '_streaming_buffer'):
+            self._streaming_buffer = ""
+        self._streaming_buffer += chunk
         if self.panel:
-            self.panel.update_streaming_text(chunk)
+            clean = self._clean_streaming_text(self._streaming_buffer)
+            self.panel.set_streaming_text(clean)
 
     def _on_stream_finished(self, full_response: str):
         """流式响应完成"""
@@ -244,6 +251,20 @@ class AIAssistantController(QObject):
         if self.panel:
             self.panel.set_streaming(False)
             self.panel.append_system_message(f"错误: {error_msg}")
+
+    def _clean_streaming_text(self, text: str) -> str:
+        """实时去除流式文本中的 JSON 内容，仅保留用户可读的自然语言部分"""
+        import re
+
+        # 1. 移除已闭合的 ```json...``` 或 ```...``` 代码块
+        cleaned = re.sub(r'```(?:json)?\s*\n.*?```', '', text, flags=re.DOTALL)
+
+        # 2. 如果存在未闭合的 ``` 代码块开头（流式过程中），截断之
+        unclosed = re.search(r'```(?:json)?\s*\n.*$', cleaned, re.DOTALL)
+        if unclosed:
+            cleaned = cleaned[:unclosed.start()]
+
+        return cleaned.strip()
 
     def _extract_display_text(self, full_response: str, action_data: Optional[dict]) -> str:
         """从 AI 响应中提取用户可见的干净文本（不含 JSON）

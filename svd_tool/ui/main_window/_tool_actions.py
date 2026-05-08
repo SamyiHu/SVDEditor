@@ -2,6 +2,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QMessageBox, QTableWidget, QTableWidgetItem, QHeaderView
 from ...i18n.i18n import t
 from ...core.address_conflict_detector import ConflictType, ConflictSeverity
+from ..managers.batch_operations_manager import BatchOperationsManager
 
 
 class ToolActionsMixin:
