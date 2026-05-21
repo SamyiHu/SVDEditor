@@ -7,8 +7,8 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QGridLayout, QApplication, QGraphicsDropShadowEffect
 )
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QColor, QIcon, QCursor, QPainter, QPen, QLinearGradient
+from PyQt6.QtCore import Qt, pyqtSignal, QUrl
+from PyQt6.QtGui import QFont, QColor, QIcon, QCursor, QPainter, QPen, QLinearGradient, QDragEnterEvent, QDropEvent
 
 from ...i18n.i18n import t
 
@@ -20,11 +20,13 @@ class WelcomePage(QWidget):
     new_file_requested = pyqtSignal()
     open_file_requested = pyqtSignal()
     open_recent_requested = pyqtSignal(str)  # 文件路径
+    files_dropped = pyqtSignal(list)  # 拖拽打开的文件路径列表
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self._recent_files = []
         self._content = None
+        self.setAcceptDrops(True)
         self._setup_ui()
     
     def _setup_ui(self):
@@ -318,7 +320,7 @@ class WelcomePage(QWidget):
         """绘制背景"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
+
         from ...config.styles import is_dark_mode, get_style_scheme
         if is_dark_mode():
             bg_color = QColor(get_style_scheme().colors.welcome_bg_dark)
@@ -326,5 +328,27 @@ class WelcomePage(QWidget):
         else:
             bg_color = QColor(get_style_scheme().colors.welcome_bg_light)
             painter.fillRect(self.rect(), bg_color)
-        
+
         painter.end()
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        """拖拽进入事件 — 接受 SVD/XML 文件"""
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.isLocalFile():
+                    path = url.toLocalFile().lower()
+                    if path.endswith(('.svd', '.xml')):
+                        event.acceptProposedAction()
+                        return
+
+    def dropEvent(self, event: QDropEvent):
+        """拖拽放下事件 — 打开拖入的 SVD/XML 文件"""
+        file_paths = []
+        for url in event.mimeData().urls():
+            if url.isLocalFile():
+                path = url.toLocalFile()
+                if path.lower().endswith(('.svd', '.xml')):
+                    file_paths.append(path)
+        if file_paths:
+            event.acceptProposedAction()
+            self.files_dropped.emit(file_paths)

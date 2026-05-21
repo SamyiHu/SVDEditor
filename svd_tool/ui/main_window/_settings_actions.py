@@ -11,6 +11,14 @@ from ...i18n.i18n import t
 
 class SettingsActionsMixin:
 
+    def toggle_skip_derived_registers(self, checked: bool):
+        """切换继承外设不写入寄存器"""
+        self.skip_derived_registers = checked
+        self.state_manager.skip_derived_registers = checked
+        self.layout_manager.update_status(
+            f"继承外设写入模式: {'跳过寄存器' if checked else '写入全部'}"
+        )
+
     def toggle_dark_mode(self, checked: bool):
         """切换深色模式"""
         from ...config.styles import set_dark_mode, get_current_stylesheet
@@ -137,6 +145,12 @@ class SettingsActionsMixin:
         self.layout_manager.create_basic_info_tab(tab_widget)
         self.layout_manager.create_peripheral_tab(tab_widget)
         self.layout_manager.create_interrupt_tab(tab_widget)
+        self.layout_manager.create_preview_tab(tab_widget)
+
+        # 重新设置预览管理器
+        main_splitter = self.layout_manager.get_widget('main_splitter')
+        if main_splitter and self.preview_manager:
+            self.preview_manager.setup_preview_modes(tab_widget, main_splitter)
 
         # 重新连接UI信号（重要：重新创建标签页后必须重新连接信号）
         self.peripheral_manager.connect_ui_signals()

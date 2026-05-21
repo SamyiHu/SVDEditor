@@ -307,8 +307,7 @@ class AIChatPanel(QDockWidget):
             self._current_assistant_bubble = AssistantBubble()
             self._current_assistant_bubble.set_content("")
             self._insert_bubble(self._current_assistant_bubble)
-        else:
-            self._current_assistant_bubble = None
+        # 注意：不在这里清空 _current_assistant_bubble，由 finalize_assistant_message 负责
 
     def update_streaming_text(self, chunk: str):
         """更新流式文本（追加模式）"""
@@ -329,7 +328,12 @@ class AIChatPanel(QDockWidget):
             display_text: 已经过滤掉 JSON 的纯文本，可直接显示
         """
         if self._current_assistant_bubble:
-            self._current_assistant_bubble.set_content(display_text)
+            if display_text and display_text.strip():
+                self._current_assistant_bubble.set_content(display_text)
+            else:
+                # 空消息：从布局中移除气泡，避免显示空白
+                self._messages_layout.removeWidget(self._current_assistant_bubble)
+                self._current_assistant_bubble.deleteLater()
             self._current_assistant_bubble = None
 
     def clear_chat(self):

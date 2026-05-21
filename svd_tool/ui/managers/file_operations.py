@@ -137,7 +137,7 @@ class FileOperations(QObject):
                 return
 
             # 生成SVD
-            generator = SVDGenerator(self.state_manager.device_info)
+            generator = SVDGenerator(self.state_manager.device_info, skip_derived_registers=getattr(self.state_manager, 'skip_derived_registers', True))
             svd_xml = generator.generate()
 
             # 保存文件
@@ -207,10 +207,17 @@ class FileOperations(QObject):
     }
 
     def validate_svd(self):
-        """独立的 SVD 验证功能（菜单触发），去重后显示合并结果"""
+        """独立的 SVD 验证功能（菜单触发），去重后显示合并结果（支持多文档）"""
         try:
             # 从UI更新设备信息
             self.update_device_info_from_ui()
+
+            # 检查是否有多个文档
+            main_win = self.layout_manager.main_window
+            dm = getattr(main_win, 'document_manager', None)
+            if dm and dm.document_count > 1:
+                self._validate_all_documents(dm)
+                return
 
             # ===== 1. 执行 CMSIS-SVD Schema 验证 =====
             validator = SVDSchemaValidator()
@@ -330,6 +337,105 @@ class FileOperations(QObject):
                 f"验证过程出错: {str(e)}"
             )
 
+    def _validate_all_documents(self, document_manager):
+        """验证所有已打开的文档（遍历切换，复用单文档验证逻辑）"""
+        from ...core.svd_schema_validator import SVDSchemaValidator
+        from ...core.address_conflict_detector import AddressConflictDetector, ConflictType
+
+        main_win = self.layout_manager.main_window
+
+        # 保存当前文档状态
+        if hasattr(main_win, '_save_current_document_state'):
+            main_win._save_current_document_state()
+        original_doc_id = document_manager.active_doc_id
+
+        all_results = []
+        total_errors = 0
+        total_warnings = 0
+
+        for doc_id, doc in document_manager.get_all_documents().items():
+            try:
+                # 切换到目标文档，复用现有验证逻辑
+                document_manager.switch_to(doc_id)
+                if hasattr(main_win, '_restore_document_state'):
+                    main_win._restore_document_state(doc)
+
+                validator = SVDSchemaValidator()
+                validator.validate_all(doc.device_info)
+                schema_items = [r for r in validator.results if r.category not in self._ADDRESS_CONFLICT_CATEGORIES]
+                doc_errors = sum(1 for r in schema_items if r.severity.value == "error")
+                doc_warnings = sum(1 for r in schema_items if r.severity.value == "warning")
+
+                # 地址冲突检测
+                conflict_count = 0
+                conflict_details = []
+                if hasattr(main_win, 'conflict_detector') and main_win.conflict_detector:
+                    detector = AddressConflictDetector()
+                    conflicts = detector.detect_all(doc.device_info)
+                    conflict_count = len(conflicts)
+                    doc_errors += sum(1 for c in conflicts if c.severity.value == "error")
+                    for c in conflicts[:10]:
+                        icon = "ERROR" if c.severity.value == "error" else "WARN"
+                        conflict_details.append(f"  [{icon}] {c.message}" + (f" -> {c.detail}" if c.detail else ""))
+
+                # 构建该文档的详情文本
+                detail_lines = []
+                errors = [r for r in schema_items if r.severity.value == "error"]
+                warnings = [r for r in schema_items if r.severity.value == "warning"]
+                for r in errors[:15]:
+                    loc = f" [{r.location}]" if r.location else ""
+                    detail_lines.append(f"  [ERROR] {r.category}{loc}: {r.message}")
+                    if r.suggestion:
+                        detail_lines.append(f"          -> 建议: {r.suggestion}")
+                for r in warnings[:10]:
+                    loc = f" [{r.location}]" if r.location else ""
+                    detail_lines.append(f"  [WARN]  {r.category}{loc}: {r.message}")
+                if conflict_details:
+                    detail_lines.append(f"  [地址冲突] ({conflict_count} 个)")
+                    detail_lines.extend(conflict_details)
+                if len(errors) > 15:
+                    detail_lines.append(f"  ... 还有 {len(errors) - 15} 个错误")
+
+                total_errors += doc_errors
+                total_warnings += doc_warnings
+                all_results.append({
+                    "name": doc.display_name, "errors": doc_errors, "warnings": doc_warnings,
+                    "conflicts": conflict_count, "detail": "\n".join(detail_lines),
+                })
+            except Exception as e:
+                all_results.append({"name": doc.display_name, "errors": 1, "warnings": 0, "conflicts": 0, "detail": f"  验证出错: {e}"})
+                total_errors += 1
+
+        # 切回原文档
+        if original_doc_id and original_doc_id in document_manager.get_all_documents():
+            document_manager.switch_to(original_doc_id)
+            original_doc = document_manager.get_document(original_doc_id)
+            if original_doc and hasattr(main_win, '_restore_document_state'):
+                main_win._restore_document_state(original_doc)
+
+        # 构建汇总结果
+        result_lines = [f"多文档验证结果（共 {len(all_results)} 个文档）", "=" * 60]
+        for r in all_results:
+            icon = "PASS" if r["errors"] == 0 else "FAIL"
+            line = f"\n[{icon}] {r['name']}: {r['errors']} 错误, {r['warnings']} 警告"
+            if r["conflicts"] > 0:
+                line += f", {r['conflicts']} 地址冲突"
+            result_lines.append(line)
+            result_lines.append("-" * 50)
+            if r["detail"]:
+                result_lines.append(r["detail"])
+            elif r["errors"] == 0:
+                result_lines.append("  验证通过，无问题")
+
+        result_text = "\n".join(result_lines)
+
+        if total_errors == 0 and total_warnings == 0:
+            QMessageBox.information(main_win, "多文档验证通过", f"所有 {len(all_results)} 个文档验证通过，未发现问题。")
+        else:
+            self._show_validation_result_dialog(total_errors, total_warnings, 0, 0, result_text)
+
+        self.layout_manager.update_status(f"多文档验证完成: {total_errors} 错误, {total_warnings} 警告")
+
     def _show_validation_result_dialog(self, errors, warnings, infos,
                                         conflict_count, detail_text):
         """显示验证结果汇总对话框"""
@@ -398,7 +504,7 @@ class FileOperations(QObject):
                 return
 
             # 生成SVD
-            generator = SVDGenerator(self.state_manager.device_info)
+            generator = SVDGenerator(self.state_manager.device_info, skip_derived_registers=getattr(self.state_manager, 'skip_derived_registers', True))
             svd_xml = generator.generate()
 
             # 更新预览
@@ -426,7 +532,7 @@ class FileOperations(QObject):
             self.update_device_info_from_ui()
             self.logger.debug("update_device_info_from_ui 完成")
  
-            generator = SVDGenerator(self.state_manager.device_info)
+            generator = SVDGenerator(self.state_manager.device_info, skip_derived_registers=getattr(self.state_manager, 'skip_derived_registers', True))
             svd_xml = generator.generate()
             self.logger.debug(f"SVD生成完成，长度={len(svd_xml)}")
  
@@ -479,7 +585,7 @@ class FileOperations(QObject):
                 success = exporter.export_html(file_path)
             else:
                 # 默认 SVD 格式
-                generator = SVDGenerator(self.state_manager.device_info)
+                generator = SVDGenerator(self.state_manager.device_info, skip_derived_registers=getattr(self.state_manager, 'skip_derived_registers', True))
                 svd_xml = generator.generate()
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(svd_xml)

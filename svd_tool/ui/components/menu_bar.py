@@ -336,6 +336,16 @@ class MenuBarBuilder:
         self.main_window.toggle_chain_action.triggered.connect(
             lambda checked: setattr(self.main_window.chain_rules_engine, 'enabled', checked))
         tools_menu.addAction(self.main_window.toggle_chain_action)
+
+        # 继承外设不写入寄存器开关
+        self.main_window.skip_derived_action = QAction(
+            t("menu.tools.skip_derived_registers"), self.parent)
+        self.main_window.skip_derived_action.setCheckable(True)
+        self.main_window.skip_derived_action.setChecked(True)
+        self.main_window.skip_derived_action.setToolTip(t("menu.tools.skip_derived_registers_tip"))
+        self.main_window.skip_derived_action.triggered.connect(
+            self.main_window.toggle_skip_derived_registers)
+        tools_menu.addAction(self.main_window.skip_derived_action)
         
         # 连锁规则编辑
         chain_edit_action = QAction(

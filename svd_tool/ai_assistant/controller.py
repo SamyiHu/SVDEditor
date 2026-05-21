@@ -131,7 +131,7 @@ class AIAssistantController(QObject):
             self.logger.info("AI 配置已更新")
 
     def send_message(self, text: str):
-        """发送用户消息
+        """发送用户消息（从 UI 输入）
 
         Args:
             text: 用户输入的文本
@@ -157,6 +157,18 @@ class AIAssistantController(QObject):
         # 在面板显示用户消息
         if self.panel:
             self.panel.append_user_message(text)
+
+        # 发送消息（内部逻辑）
+        self._send_message_internal()
+
+    def _send_message_internal(self):
+        """内部发送消息（不添加用户历史和气泡，用于 continuation）"""
+        if not self.backend:
+            self._init_backend()
+            if not self.backend:
+                return
+
+        if self.panel:
             self.panel.set_streaming(True)
 
         # 构建完整消息列表
@@ -183,18 +195,37 @@ class AIAssistantController(QObject):
         state_manager = self.coordinator.get_component("state_manager")
         device_info = state_manager.device_info if state_manager else None
 
-        # 获取其他已打开的文档名称
+        # 获取其他已打开的文档信息（含 doc_id 和 file_path，供 AI 跨文档操作）
         open_documents = None
         if hasattr(self.main_window, 'document_manager'):
             dm = self.main_window.document_manager
             active_id = dm.active_doc_id
-            open_documents = [
-                doc.display_name or doc.device_info.name or "未命名"
-                for doc_id, doc in dm.get_all_documents().items()
-                if doc_id != active_id
-            ]
-            if not open_documents:
-                open_documents = None
+            all_docs = dm.get_all_documents()
+            # 当前活跃文档的信息
+            active_doc = all_docs.get(active_id) if active_id else None
+            active_doc_info = None
+            if active_doc:
+                active_doc_info = {
+                    "doc_id": active_id,
+                    "name": active_doc.display_name,
+                    "file_path": active_doc.file_path or "",
+                    "modified": active_doc.modified,
+                }
+            # 其他文档列表
+            other_docs = []
+            for doc_id, doc in all_docs.items():
+                if doc_id != active_id:
+                    other_docs.append({
+                        "doc_id": doc_id,
+                        "name": doc.display_name or doc.device_info.name or "未命名",
+                        "file_path": doc.file_path or "",
+                        "modified": doc.modified,
+                    })
+            if other_docs or active_doc_info:
+                open_documents = {
+                    "active": active_doc_info,
+                    "others": other_docs,
+                }
 
         system_prompt = self.prompt_builder.build_system_prompt(device_info, open_documents)
         if self.config.system_prompt_extra:
@@ -216,9 +247,6 @@ class AIAssistantController(QObject):
 
     def _on_stream_finished(self, full_response: str):
         """流式响应完成"""
-        if self.panel:
-            self.panel.set_streaming(False)
-
         # 解析 AI 响应，提取动作和显示文本
         action_data = self._extract_json(full_response)
         display_text = self._extract_display_text(full_response, action_data)
@@ -242,13 +270,15 @@ class AIAssistantController(QObject):
         # 添加到历史（保存原始响应）
         self.chat_history.add_message("assistant", full_response, actions_taken)
 
-        # 更新面板显示（干净的文本，不含 JSON）
+        # 先确定化消息（更新或移除气泡），再恢复输入
         if self.panel:
             self.panel.finalize_assistant_message(display_text)
+            self.panel.set_streaming(False)
 
     def _on_error(self, error_msg: str):
         """请求出错"""
         if self.panel:
+            self.panel.finalize_assistant_message("")
             self.panel.set_streaming(False)
             self.panel.append_system_message(f"错误: {error_msg}")
 
@@ -294,10 +324,12 @@ class AIAssistantController(QObject):
         return full_response.strip()
 
     def _schedule_continuation(self, continuation_prompt: str):
-        """调度多步骤任务的下一步"""
+        """调度多步骤任务的下一步（不显示用户气泡，直接内部续发）"""
         from PyQt6.QtCore import QTimer
         prompt = continuation_prompt or "继续执行任务"
-        QTimer.singleShot(500, lambda: self.send_message(prompt))
+        # 将 continuation_prompt 作为用户消息加入历史（供 API 上下文），但不显示气泡
+        self.chat_history.add_message("user", prompt)
+        QTimer.singleShot(500, self._send_message_internal)
 
     def _extract_json(self, text: str) -> Optional[dict]:
         """从文本中提取 JSON（支持 markdown 代码块和残缺 JSON 修复）"""

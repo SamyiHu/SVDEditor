@@ -22,6 +22,7 @@ from enum import Enum
 
 from .data_model import DeviceInfo, Peripheral, Register, Field, Interrupt, CPUInfo
 from .validation_utils import parse_hex, parse_int, get_peripheral_address_range
+from ..i18n.i18n import t
 
 logger = logging.getLogger("SVDSchemaValidator")
 
@@ -103,15 +104,15 @@ class SVDSchemaValidator:
         """验证设备级信息"""
         # 必需字段
         if not device.name or not device.name.strip():
-            self._add_error("设备信息", "设备名称(name)不能为空", "device.name",
-                           "请在基础信息标签页填写芯片型号名称")
+            self._add_error(t("val.cat.device_info"), t("val.device_name_empty"), "device.name",
+                           t("placeholder.ic_model"))
         elif not device.name.replace('_', '').isalnum():
-            self._add_warning("设备信息", f"设备名称 '{device.name}' 包含特殊字符，建议只使用字母、数字和下划线",
+            self._add_warning(t("val.cat.device_info"), t("val.device_name_special", name=device.name),
                              "device.name")
 
         if not device.version or not device.version.strip():
-            self._add_warning("设备信息", "版本号(version)未设置", "device.version",
-                             "建议设置版本号，如 '1.0' 或 'V0.1'")
+            self._add_warning(t("val.cat.device_info"), t("val.version_not_set"), "device.version",
+                             t("val.version_suggest"))
 
         # CPU 信息验证
         self._validate_cpu(device.cpu)
@@ -121,28 +122,28 @@ class SVDSchemaValidator:
         if default_size is not None:
             valid_sizes = self.VALID_SIZE_VALUES.keys()
             if default_size not in valid_sizes:
-                self._add_error("设备信息",
-                               f"默认寄存器大小 {device.size} 不合法，CMSIS-SVD 规范要求: 8(0x08), 16(0x10), 32(0x20), 64(0x40)",
+                self._add_error(t("val.cat.device_info"),
+                               t("val.size_invalid", size=device.size),
                                "device.size")
 
     def _validate_cpu(self, cpu: CPUInfo):
         """验证 CPU 信息"""
         if not cpu.name or not cpu.name.strip():
-            self._add_error("CPU信息", "CPU 名称不能为空", "cpu.name")
+            self._add_error(t("val.cat.cpu_info"), t("val.cpu_name_empty"), "cpu.name")
         elif cpu.name not in self.VALID_CPU_NAMES:
-            self._add_warning("CPU信息",
-                             f"CPU 名称 '{cpu.name}' 不在标准 CMSIS CPU 列表中",
+            self._add_warning(t("val.cat.cpu_info"),
+                             t("val.cpu_name_not_standard", name=cpu.name),
                              "cpu.name",
-                             "标准值: CM0, CM0+, CM3, CM4, CM4_FP, CM7 等")
+                             t("val.cpu_name_standard_values"))
 
         if cpu.endian not in self.VALID_ENDIAN_VALUES:
-            self._add_error("CPU信息",
-                           f"端序(endian) '{cpu.endian}' 不合法，应为: little, big, selectable",
+            self._add_error(t("val.cat.cpu_info"),
+                           t("val.endian_invalid", endian=cpu.endian),
                            "cpu.endian")
 
         if cpu.nvic_prio_bits < 1 or cpu.nvic_prio_bits > 8:
-            self._add_warning("CPU信息",
-                             f"NVIC 优先级位数 {cpu.nvic_prio_bits} 超出常规范围(1-8)",
+            self._add_warning(t("val.cat.cpu_info"),
+                             t("val.nvic_prio_range", bits=cpu.nvic_prio_bits),
                              "cpu.nvicPrioBits")
 
     # ==================== 外设级验证 ====================
@@ -150,7 +151,7 @@ class SVDSchemaValidator:
     def validate_peripherals(self, device: DeviceInfo):
         """验证所有外设"""
         if not device.peripherals:
-            self._add_warning("外设", "设备没有任何外设定义", "device.peripherals")
+            self._add_warning(t("val.cat.peripheral"), t("val.no_peripherals"), "device.peripherals")
             return
 
         periph_names = list(device.peripherals.keys())
@@ -160,8 +161,8 @@ class SVDSchemaValidator:
         for name in periph_names:
             lower = name.lower()
             if lower in name_lower_map:
-                self._add_error("外设名称",
-                               f"外设名称 '{name}' 与 '{name_lower_map[lower]}' 大小写不同但可能冲突",
+                self._add_error(t("val.cat.periph_name"),
+                               t("val.periph_name_case_conflict", name=name, other=name_lower_map[lower]),
                                f"peripheral.{name}")
             name_lower_map[lower] = name
 
@@ -169,18 +170,18 @@ class SVDSchemaValidator:
         for name, periph in device.peripherals.items():
             if periph.derived_from:
                 if periph.derived_from not in device.peripherals:
-                    self._add_error("继承引用",
-                                   f"外设 '{name}' 的 derivedFrom='{periph.derived_from}' 不存在",
+                    self._add_error(t("val.cat.derived_ref"),
+                                   t("val.derived_not_exist", name=name, derived=periph.derived_from),
                                    f"peripheral.{name}.derivedFrom",
-                                   f"请确认 '{periph.derived_from}' 外设已定义")
+                                   t("val.derived_confirm", derived=periph.derived_from))
 
         # 收集所有外设地址范围，检查重叠
         periph_ranges: List[Tuple[str, int, int]] = []  # (name, base_addr, end_addr)
         for name, periph in device.peripherals.items():
             base_addr = parse_hex(periph.base_address)
             if base_addr is None:
-                self._add_error("外设地址",
-                               f"外设 '{name}' 的基地址 '{periph.base_address}' 不是有效的十六进制数",
+                self._add_error(t("val.cat.periph_addr"),
+                               t("val.base_addr_invalid", name=name, addr=periph.base_address),
                                f"peripheral.{name}.baseAddress")
                 continue
 
@@ -202,26 +203,25 @@ class SVDSchemaValidator:
                 name_j, start_j, end_j = periph_ranges[j]
                 # 重叠条件：start_i <= end_j and start_j <= end_i
                 if start_i <= end_j and start_j <= end_i:
-                    self._add_error("地址重叠",
-                                   f"外设 '{name_i}' (0x{start_i:08X}-0x{end_i:08X}) 与 "
-                                   f"'{name_j}' (0x{start_j:08X}-0x{end_j:08X}) 地址范围重叠",
+                    self._add_error(t("val.cat.addr_overlap"),
+                                   t("val.addr_overlap_detail", name1=name_i, start1=start_i, end1=end_i, name2=name_j, start2=start_j, end2=end_j),
                                    f"peripheral.{name_i} / peripheral.{name_j}",
-                                   "请检查 baseAddress 和 addressBlock 配置")
+                                   t("val.check_base_addr"))
 
     def _validate_peripheral(self, name: str, periph: Peripheral):
         """验证单个外设"""
         # 必需字段
         if not periph.name or not periph.name.strip():
-            self._add_error("外设信息", f"外设(index={name})的 name 字段为空",
+            self._add_error(t("val.cat.periph_info"), t("val.periph_name_empty", name=name),
                            f"peripheral.{name}.name")
 
         if not periph.base_address or not str(periph.base_address).strip():
-            self._add_error("外设信息", f"外设 '{name}' 缺少基地址(baseAddress)",
+            self._add_error(t("val.cat.periph_info"), t("val.periph_base_empty", name=name),
                            f"peripheral.{name}.baseAddress")
 
         # 验证寄存器
         if not periph.registers:
-            self._add_warning("外设信息", f"外设 '{name}' 没有任何寄存器定义",
+            self._add_warning(t("val.cat.periph_info"), t("val.periph_no_registers", name=name),
                              f"peripheral.{name}.registers")
         else:
             self._validate_registers(name, periph)
@@ -237,15 +237,15 @@ class SVDSchemaValidator:
         for reg_name, reg in periph.registers.items():
             # 必需字段检查
             if not reg.name or not reg.name.strip():
-                self._add_error("寄存器信息",
-                               f"外设 '{periph_name}' 中有寄存器 name 为空",
+                self._add_error(t("val.cat.reg_info"),
+                               t("val.reg_name_empty", periph=periph_name),
                                f"peripheral.{periph_name}.register.{reg_name}")
 
             # 偏移地址验证
             offset = parse_hex(reg.offset)
             if offset is None:
-                self._add_error("寄存器偏移",
-                               f"寄存器 '{periph_name}.{reg_name}' 的偏移地址 '{reg.offset}' 不是有效的十六进制数",
+                self._add_error(t("val.cat.reg_offset"),
+                               t("val.reg_offset_invalid", periph=periph_name, reg=reg_name, offset=reg.offset),
                                f"peripheral.{periph_name}.register.{reg_name}.addressOffset")
             else:
                 offset_key = f"0x{offset:04X}"
@@ -257,16 +257,14 @@ class SVDSchemaValidator:
             reg_size_val = parse_hex(reg.size)
             if reg_size_val is not None:
                 if reg_size_val not in self.VALID_SIZE_VALUES:
-                    self._add_error("寄存器大小",
-                                   f"寄存器 '{periph_name}.{reg_name}' 的 size={reg.size} 不合法，"
-                                   f"CMSIS-SVD 规范要求: 8(0x08), 16(0x10), 32(0x20), 64(0x40)",
+                    self._add_error(t("val.cat.reg_size"),
+                                   t("val.reg_size_invalid", periph=periph_name, reg=reg_name, size=reg.size),
                                    f"peripheral.{periph_name}.register.{reg_name}.size")
 
             # access 验证
             if reg.access and reg.access not in self.VALID_ACCESS_VALUES:
-                self._add_error("访问权限",
-                               f"寄存器 '{periph_name}.{reg_name}' 的 access='{reg.access}' 不合法，"
-                               f"应为: {', '.join(sorted(self.VALID_ACCESS_VALUES))}",
+                self._add_error(t("val.cat.access"),
+                               t("val.reg_access_invalid", periph=periph_name, reg=reg_name, access=reg.access, valid=', '.join(sorted(self.VALID_ACCESS_VALUES))),
                                f"peripheral.{periph_name}.register.{reg_name}.access")
 
             # resetValue 与 size 一致性
@@ -275,9 +273,8 @@ class SVDSchemaValidator:
                 if reset_val is not None:
                     max_val = (1 << reg_size_val) - 1
                     if reset_val > max_val:
-                        self._add_error("复位值",
-                                       f"寄存器 '{periph_name}.{reg_name}' 的 resetValue=0x{reset_val:X} "
-                                       f"超出 size={reg_size_val} 位范围 (最大 0x{max_val:X})",
+                        self._add_error(t("val.cat.reset_value"),
+                                       t("val.reg_reset_overflow", periph=periph_name, reg=reg_name, reset=reset_val, size=reg_size_val, max=max_val),
                                        f"peripheral.{periph_name}.register.{reg_name}.resetValue")
 
             # 验证位域
@@ -287,10 +284,10 @@ class SVDSchemaValidator:
         # 报告偏移地址重复
         for offset_key, reg_names in offset_map.items():
             if len(reg_names) > 1:
-                self._add_error("地址重叠",
-                               f"外设 '{periph_name}' 中寄存器 {', '.join(reg_names)} 的偏移地址相同 ({offset_key})",
+                self._add_error(t("val.cat.addr_overlap"),
+                               t("val.reg_offset_duplicate", periph=periph_name, regs=', '.join(reg_names), offset=offset_key),
                                f"peripheral.{periph_name}.register.{'+'.join(reg_names)}",
-                               "寄存器偏移地址在同一外设内必须唯一")
+                               t("val.reg_offset_unique"))
 
     # ==================== 位域级验证 ====================
 
@@ -308,8 +305,8 @@ class SVDSchemaValidator:
 
             # 必需字段
             if not fld.name or not fld.name.strip():
-                self._add_error("位域信息",
-                               f"位域 '{periph_name}.{reg_name}.(unnamed)' name 为空",
+                self._add_error(t("val.cat.field_info"),
+                               t("val.field_name_empty", periph=periph_name, reg=reg_name),
                                location)
                 continue
 
@@ -318,47 +315,45 @@ class SVDSchemaValidator:
             bit_width = parse_int(fld.bit_width)
 
             if bit_offset is None:
-                self._add_error("位域偏移",
-                               f"位域 '{periph_name}.{reg_name}.{field_name}' 的 bitOffset 无效: {fld.bit_offset}",
+                self._add_error(t("val.cat.field_offset"),
+                               t("val.field_offset_invalid", periph=periph_name, reg=reg_name, field=field_name, offset=fld.bit_offset),
                                location)
                 continue
 
             if bit_width is None or bit_width < 1:
-                self._add_error("位域宽度",
-                               f"位域 '{periph_name}.{reg_name}.{field_name}' 的 bitWidth 无效: {fld.bit_width}",
+                self._add_error(t("val.cat.field_width"),
+                               t("val.field_width_invalid", periph=periph_name, reg=reg_name, field=field_name, width=fld.bit_width),
                                location)
                 continue
 
             # 位域范围检查
             if bit_offset < 0:
-                self._add_error("位域范围",
-                               f"位域 '{periph_name}.{reg_name}.{field_name}' 的 bitOffset={bit_offset} 不能为负数",
+                self._add_error(t("val.cat.field_range"),
+                               t("val.field_offset_negative", periph=periph_name, reg=reg_name, field=field_name, offset=bit_offset),
                                location)
                 continue
 
             if bit_offset + bit_width > reg_size:
-                self._add_error("位域范围",
-                               f"位域 '{periph_name}.{reg_name}.{field_name}' 的范围 [{bit_offset}:{bit_offset+bit_width-1}] "
-                               f"超出寄存器宽度 {reg_size} 位",
+                self._add_error(t("val.cat.field_range"),
+                               t("val.field_range_exceed", periph=periph_name, reg=reg_name, field=field_name, start=bit_offset, end=bit_offset+bit_width-1, reg_size=reg_size),
                                location,
-                               f"bitOffset + bitWidth 不能超过 {reg_size}")
+                               t("val.field_range_limit", reg_size=reg_size))
                 continue
 
             # 位域重叠检测
             for bit in range(bit_offset, bit_offset + bit_width):
                 if bit in bit_occupancy:
-                    self._add_error("位域重叠",
-                                   f"位域 '{field_name}' 与 '{bit_occupancy[bit]}' 在 bit {bit} 处重叠 "
-                                   f"(寄存器 {periph_name}.{reg_name})",
+                    self._add_error(t("val.cat.field_overlap"),
+                                   t("val.field_overlap_detail", field1=field_name, field2=bit_occupancy[bit], bit=bit, periph=periph_name, reg=reg_name),
                                    location,
-                                   "同一寄存器内的位域不能占据相同的位")
+                                   t("val.field_no_overlap"))
                     break  # 只报告一次重叠（避免大量重复消息）
                 bit_occupancy[bit] = field_name
 
             # access 验证
             if fld.access and fld.access not in self.VALID_ACCESS_VALUES:
-                self._add_error("访问权限",
-                               f"位域 '{periph_name}.{reg_name}.{field_name}' 的 access='{fld.access}' 不合法",
+                self._add_error(t("val.cat.access"),
+                               t("val.field_access_invalid", periph=periph_name, reg=reg_name, field=field_name, access=fld.access),
                                location)
 
             # resetValue 范围检查
@@ -366,9 +361,8 @@ class SVDSchemaValidator:
             if reset_val is not None and bit_width > 0:
                 max_val = (1 << bit_width) - 1
                 if reset_val > max_val:
-                    self._add_error("位域复位值",
-                                   f"位域 '{periph_name}.{reg_name}.{field_name}' 的 resetValue=0x{reset_val:X} "
-                                   f"超出 {bit_width} 位范围 (最大 0x{max_val:X})",
+                    self._add_error(t("val.cat.field_reset"),
+                                   t("val.field_reset_overflow", periph=periph_name, reg=reg_name, field=field_name, reset=reset_val, width=bit_width, max=max_val),
                                    location)
 
         # 检查位域间隙（可选，作为信息提示）
@@ -383,8 +377,8 @@ class SVDSchemaValidator:
             if len(covered_bits) > 0 and len(covered_bits) < reg_size:
                 uncovered = reg_size - len(covered_bits)
                 if uncovered > 4:  # 只在间隙较大时提示
-                    self._add_info("位域间隙",
-                                  f"寄存器 '{periph_name}.{reg_name}' 有 {uncovered}/{reg_size} 位未被位域覆盖",
+                    self._add_info(t("val.cat.field_gap"),
+                                  t("val.field_gap_info", periph=periph_name, reg=reg_name, uncovered=uncovered, reg_size=reg_size),
                                   f"peripheral.{periph_name}.register.{reg_name}")
 
     # ==================== 中断验证 ====================
@@ -398,20 +392,20 @@ class SVDSchemaValidator:
         irq_value_map: Dict[int, List[str]] = {}  # irq_number -> [interrupt_names]
         for irq_name, irq in device.interrupts.items():
             if not irq.name or not irq.name.strip():
-                self._add_error("中断信息", f"存在未命名的中断 (irq={irq.value})",
+                self._add_error(t("val.cat.interrupt_info"), t("val.irq_name_empty", value=irq.value),
                                "interrupts")
                 continue
 
             irq_val = parse_int(irq.value)
             if irq_val is None:
-                self._add_error("中断号",
-                               f"中断 '{irq.name}' 的中断号无效: {irq.value}",
+                self._add_error(t("val.cat.irq_number"),
+                               t("val.irq_number_invalid", name=irq.name, value=irq.value),
                                f"interrupt.{irq.name}.value")
                 continue
 
             if irq_val < 0:
-                self._add_error("中断号",
-                               f"中断 '{irq.name}' 的中断号 {irq_val} 不能为负数",
+                self._add_error(t("val.cat.irq_number"),
+                               t("val.irq_number_negative", name=irq.name, value=irq_val),
                                f"interrupt.{irq.name}.value")
 
             if irq_val not in irq_value_map:
@@ -422,18 +416,18 @@ class SVDSchemaValidator:
             if irq.peripherals:
                 for p_name in irq.peripherals:
                     if p_name not in device.peripherals:
-                        self._add_warning("中断关联",
-                                         f"中断 '{irq.name}' 关联的外设 '{p_name}' 不存在",
+                        self._add_warning(t("val.cat.interrupt_link"),
+                                         t("val.irq_periph_not_exist", name=irq.name, periph=p_name),
                                          f"interrupt.{irq.name}",
-                                         f"请确认外设 '{p_name}' 是否已定义")
+                                         t("val.irq_periph_confirm", periph=p_name))
 
         # 报告中断号重复
         for irq_val, irq_names in irq_value_map.items():
             if len(irq_names) > 1:
-                self._add_error("中断号重复",
-                               f"中断号 {irq_val} 被多个中断使用: {', '.join(irq_names)}",
+                self._add_error(t("val.cat.irq_dup"),
+                               t("val.irq_number_duplicate", value=irq_val, names=', '.join(irq_names)),
                                f"interrupt.{'+'.join(irq_names)}",
-                               "每个中断应有唯一的中断号")
+                               t("val.irq_number_unique"))
 
     # ==================== 主验证入口 ====================
 
@@ -548,9 +542,7 @@ class SVDSchemaValidator:
 
             # 检查重叠
             if new_start <= exist_end and exist_start <= new_end:
-                return (
-                    f"地址冲突：与外设 '{name}' (0x{exist_start:08X}-0x{exist_end:08X}) 地址范围重叠"
-                )
+                return t("val.conflict_periph_addr", name=name, start=exist_start, end=exist_end)
 
         return None
 
@@ -585,7 +577,7 @@ class SVDSchemaValidator:
                 continue
 
             if offset == exist_offset:
-                return f"偏移地址冲突：与寄存器 '{name}' 的偏移地址 (0x{exist_offset:04X}) 相同"
+                return t("val.conflict_reg_offset", name=name, offset=exist_offset)
 
         return None
 
@@ -630,29 +622,27 @@ class SVDSchemaValidator:
 
             # 检查位范围重叠
             if new_bit_offset <= exist_end and exist_offset <= new_end:
-                return (
-                    f"位域冲突：与位域 '{name}' [{exist_offset}:{exist_end}] 在位范围上重叠"
-                )
+                return t("val.conflict_field_bit", name=name, start=exist_offset, end=exist_end)
 
         return None
 
     def format_results_text(self, max_items: int = 50) -> str:
         """格式化验证结果为可读文本"""
         if not self.results:
-            return "✅ 验证通过，未发现任何问题。"
+            return t("val.result_pass")
 
         lines = []
         errors = self.get_errors()
         warnings = self.get_warnings()
         infos = [r for r in self.results if r.severity == Severity.INFO]
 
-        lines.append(f"验证结果: {len(errors)} 错误, {len(warnings)} 警告, {len(infos)} 信息")
+        lines.append(t("val.result_summary", errors=len(errors), warnings=len(warnings), infos=len(infos)))
         lines.append("=" * 60)
 
         # 错误
         if errors:
             lines.append("")
-            lines.append(f"🔴 错误 ({len(errors)}):")
+            lines.append(t("val.result_errors", count=len(errors)))
             for i, item in enumerate(errors[:max_items]):
                 loc = f" [{item.location}]" if item.location else ""
                 lines.append(f"  {i+1}. {item.category}{loc}: {item.message}")
@@ -662,7 +652,7 @@ class SVDSchemaValidator:
         # 警告
         if warnings:
             lines.append("")
-            lines.append(f"🟡 警告 ({len(warnings)}):")
+            lines.append(t("val.result_warnings", count=len(warnings)))
             for i, item in enumerate(warnings[:max_items]):
                 loc = f" [{item.location}]" if item.location else ""
                 lines.append(f"  {i+1}. {item.category}{loc}: {item.message}")
@@ -672,16 +662,16 @@ class SVDSchemaValidator:
         # 信息（精简显示）
         if infos:
             lines.append("")
-            lines.append(f"ℹ️ 信息 ({len(infos)}):")
+            lines.append(t("val.result_infos", count=len(infos)))
             for i, item in enumerate(infos[:10]):
                 loc = f" [{item.location}]" if item.location else ""
                 lines.append(f"  {i+1}. {item.category}{loc}: {item.message}")
             if len(infos) > 10:
-                lines.append(f"  ... 还有 {len(infos) - 10} 条信息")
+                lines.append(t("val.result_more_info", count=len(infos) - 10))
 
         remaining = len(self.results) - max_items
         if remaining > 0:
             lines.append("")
-            lines.append(f"... 共 {len(self.results)} 条结果，已显示前 {max_items} 条")
+            lines.append(t("val.result_total", total=len(self.results), max=max_items))
 
         return "\n".join(lines)

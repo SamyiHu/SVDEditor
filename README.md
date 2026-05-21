@@ -5,6 +5,9 @@
 
 [![English](https://img.shields.io/badge/English-US-blue?style=for-the-badge)](README.md)
 [![中文](https://img.shields.io/badge/中文-CN-red?style=for-the-badge)](README_zh.md)
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![PyQt6](https://img.shields.io/badge/PyQt6-6.5+-41CD52?style=for-the-badge&logo=qt&logoColor=white)](https://www.riverbankcomputing.com/software/pyqt/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge)](LICENSE)
 
 **A professional CMSIS-SVD parsing, editing, visualization, and CLI tool. Supports peripheral management, register editing, bitfield visualization, batch operations, diff/merge, C header generation, and more.**
 
@@ -14,23 +17,62 @@
 
 ---
 
+## Screenshots
+
+> Add screenshots here to showcase the GUI features
+
+<!-- ![GUI Overview](docs/screenshots/gui_overview.png) -->
+<!-- ![Bitfield Editor](docs/screenshots/bitfield_editor.png) -->
+<!-- ![AI Assistant](docs/screenshots/ai_assistant.png) -->
+
+---
+
 ## Features
 
 ### GUI Editor
-- **SVD/XML Parsing**: Import standard CMSIS-SVD files, parse device/peripheral/register/field hierarchy
-- **Visual Tree Editing**: Three-level tree view (Peripheral -> Register -> Bitfield) with full CRUD
-- **Inherited Peripheral Support**: Auto-merge registers from `derivedFrom` base peripherals
-- **Address Map Visualization**: Graphical peripheral address space layout with register offsets
-- **Bitfield Visualization**: Register bitfield diagrams with highlight and editing
-- **Interrupt Management**: Configure and manage interrupt vectors
-- **Undo/Redo**: Unlimited operation history with snapshot recovery
-- **Advanced Search**: Unified search syntax (`type:periph name:GPIO* addr:0x4001*`) with structured and full-text modes
-- **Batch Operations**: Batch modify, batch generate registers, batch clone across peripherals
-- **Chain Rules**: Cascading delete/modify rules with configurable actions
-- **Drag-and-Drop Sorting**: Reorder peripherals and registers via drag-and-drop
-- **Multi-document Tabs**: Open and switch between multiple SVD files
-- **Real-time Preview**: Live XML preview with syntax highlighting
-- **Dark/Light Theme**: Built-in theme switching with modern flat UI
+
+| Feature | Description |
+|---------|-------------|
+| **SVD/XML Parsing** | Import standard CMSIS-SVD files, parse device/peripheral/register/field hierarchy |
+| **Visual Tree Editing** | Three-level tree view (Peripheral -> Register -> Bitfield) with full CRUD |
+| **Inherited Peripheral Support** | Auto-merge registers from `derivedFrom` base peripherals |
+| **Address Map Visualization** | Graphical peripheral address space layout with register offsets |
+| **Bitfield Visualization** | Register bitfield diagrams with highlight and editing |
+| **Interrupt Management** | Configure and manage interrupt vectors |
+| **Undo/Redo** | Unlimited operation history with snapshot recovery |
+| **Advanced Search** | Unified search syntax (`type:periph name:GPIO* addr:0x4001*`) with structured and full-text modes |
+| **Batch Operations** | Batch modify, batch generate registers, batch clone across peripherals |
+| **Chain Rules** | Cascading delete/modify rules with configurable actions |
+| **Drag-and-Drop Sorting** | Reorder peripherals and registers via drag-and-drop |
+| **Multi-document Tabs** | Open and switch between multiple SVD files |
+| **Real-time Preview** | Live XML preview with syntax highlighting |
+| **Dark/Light Theme** | Built-in theme switching with modern flat UI |
+
+### AI Assistant
+
+The built-in AI assistant provides natural language interaction for SVD data operations. Simply describe what you want to do in plain language, and the AI will execute the corresponding operations.
+
+**Key Capabilities:**
+
+| Capability | Example |
+|------------|---------|
+| **Query & Search** | "Show me all peripherals", "Find registers with offset 0x10" |
+| **CRUD Operations** | "Add a new peripheral named TIMER0", "Delete register MODER" |
+| **Validation** | "Validate this SVD file", "Check for address conflicts" |
+| **Batch Operations** | "Rename all GPIO peripherals", "Fix all address conflicts" |
+| **Multi-document** | "Switch to STM32F4.svd", "Diff with the other open file" |
+| **Navigation** | "Jump to UART1", "Show register MODER in GPIOA" |
+
+**Supported Providers:**
+- OpenAI (GPT-4o, GPT-4o-mini, etc.)
+- Anthropic (Claude 3.5 Sonnet, Claude 3 Haiku, etc.)
+- Any OpenAI-compatible API (Ollama, vLLM, etc.)
+
+**Configuration:**
+- API key and endpoint configuration via Settings dialog
+- Streaming response support
+- Custom system prompt extensions
+- Conversation history management
 
 ### CLI Commands (CI/CD Ready)
 
@@ -57,10 +99,13 @@
 | `remove-field` | Remove bitfields from a register by name |
 
 ### Output & Export
+
 - **SVD Generation**: Well-formatted, indented SVD/XML output
 - **Documentation Export**: CSV, Markdown, HTML register documentation
 - **C Header Generation**: `#define` macros for register addresses and bitfield masks
 - **Diff Reports**: Text or JSON difference reports
+
+---
 
 ## AIfull_link Integration
 
@@ -79,9 +124,12 @@ python run.py --gui --file SCF10T.svd
 
 The JSON format is compatible with `DeviceInfo.to_dict()` output. See `data_model.py` for schema details.
 
+---
+
 ## Installation & Running
 
 ### Requirements
+
 - Python 3.10+
 - PyQt6 6.5.0+
 
@@ -95,7 +143,22 @@ python run.py                # GUI mode
 python run.py info file.svd  # CLI mode
 ```
 
+### AI Assistant Setup
+
+```bash
+# Install optional AI dependencies
+pip install openai anthropic
+
+# Configure API key (via GUI Settings or environment variable)
+export OPENAI_API_KEY="your-api-key"
+```
+
+---
+
 ## CLI Usage
+
+<details>
+<summary><b>Basic Commands</b></summary>
 
 ```bash
 # Validate
@@ -125,7 +188,14 @@ python run.py conflicts chip.svd [--json] [--strict]
 
 # Extract peripherals
 python run.py extract chip.svd --peripherals GPIOA,GPIOB,GPIOC -o gpio.svd
+```
 
+</details>
+
+<details>
+<summary><b>Advanced Commands</b></summary>
+
+```bash
 # Create SVD from JSON (e.g. exported from AIfull_link)
 python run.py create --data device_data.json -o chip.svd [--validate] [--open]
 
@@ -158,12 +228,24 @@ python run.py update-field chip.svd -p GPIOA -r MODER -n MODE0 --bit-width 1 --a
 
 # Remove bitfields
 python run.py remove-field chip.svd -p GPIOA -r MODER --names MODE0,MODE1 -o updated.svd
+```
 
+</details>
+
+<details>
+<summary><b>GUI Mode</b></summary>
+
+```bash
 # Open GUI with a specific file
 python run.py --gui --file chip.svd
 ```
 
-### Keyboard Shortcuts (GUI)
+</details>
+
+---
+
+## Keyboard Shortcuts (GUI)
+
 | Shortcut | Action |
 |----------|--------|
 | `Ctrl+N` | New SVD file |
@@ -175,6 +257,8 @@ python run.py --gui --file chip.svd
 | `Ctrl+H` | Advanced search |
 | `Ctrl+Shift+G` | Go to address |
 | `F5` | Refresh view |
+
+---
 
 ## Project Structure
 
@@ -197,6 +281,18 @@ SVDEditor/
 │   │   ├── chain_rules.py          # Chain rules engine
 │   │   ├── document_manager.py     # Multi-document manager
 │   │   └── command_history.py      # Undo/Redo
+│   ├── ai_assistant/
+│   │   ├── __init__.py             # Module entry
+│   │   ├── config.py               # AI configuration
+│   │   ├── backend.py              # API backend (OpenAI/Anthropic)
+│   │   ├── controller.py           # AI controller
+│   │   ├── prompt_builder.py       # System prompt builder
+│   │   ├── command_executor.py     # Operation executor
+│   │   ├── chat_history.py         # Chat history management
+│   │   └── widgets/
+│   │       ├── chat_panel.py       # Chat panel UI
+│   │       ├── chat_bubble.py      # Chat bubble widget
+│   │       └── settings_dialog.py  # AI settings dialog
 │   ├── ui/
 │   │   ├── main_window_refactored.py     # Main window
 │   │   ├── components/
@@ -232,6 +328,8 @@ SVDEditor/
 └── tests/                          # Test suite
 ```
 
+---
+
 ## Building
 
 See [BUILD_INSTRUCTIONS.md](docs/BUILD_INSTRUCTIONS.md) for detailed build instructions.
@@ -241,6 +339,8 @@ pip install pyinstaller
 cd build_tools
 python build_professional_fixed.py
 ```
+
+---
 
 ## License
 

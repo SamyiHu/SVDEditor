@@ -17,6 +17,7 @@ from ...core.svd_merger import (
     SVDMerger, MergeAction, MergeConflictLevel, MergeItem
 )
 from ...core.data_model import DeviceInfo
+from ...i18n.i18n import t
 from ..widgets.toggle_switch import ToggleSwitch
 
 
@@ -31,12 +32,13 @@ COLOR_MODIFIED_TEXT = QColor(180, 120, 0)
 COLOR_STRUCTURE_TEXT = QColor(200, 80, 0)
 
 
-# 合并动作下拉框数据
-ACTION_DATA = [
-    ("保留当前", MergeAction.KEEP_TARGET),
-    ("使用导入", MergeAction.USE_SOURCE),
-    ("逐项合并", MergeAction.MERGE_BOTH),
-]
+def _get_action_data():
+    """获取合并动作下拉框数据（支持i18n）"""
+    return [
+        (t("merge.action_keep"), MergeAction.KEEP_TARGET),
+        (t("merge.action_use"), MergeAction.USE_SOURCE),
+        (t("merge.action_merge"), MergeAction.MERGE_BOTH),
+    ]
 
 
 class MergeActionDelegate(QStyledItemDelegate):
@@ -48,7 +50,7 @@ class MergeActionDelegate(QStyledItemDelegate):
 
     def createEditor(self, parent, option, index):
         combo = QComboBox(parent)
-        for text, action in ACTION_DATA:
+        for text, action in _get_action_data():
             combo.addItem(text, action.value)
         return combo
 
@@ -56,7 +58,7 @@ class MergeActionDelegate(QStyledItemDelegate):
         tree_item = self._get_tree_item(index)
         if tree_item:
             action = self._action_cache.get(id(tree_item), MergeAction.KEEP_TARGET)
-            for i, (_, act) in enumerate(ACTION_DATA):
+            for i, (_, act) in enumerate(_get_action_data()):
                 if act == action:
                     editor.setCurrentIndex(i)
                     break
@@ -81,7 +83,7 @@ class MergeActionDelegate(QStyledItemDelegate):
 
     def _update_row_display(self, tree_item: QTreeWidgetItem, action: MergeAction):
         """更新行的显示"""
-        action_text = {a: t for t, a in ACTION_DATA}.get(action, "")
+        action_text = {a: txt for txt, a in _get_action_data()}.get(action, "")
         tree_item.setText(3, action_text)
 
 
@@ -100,7 +102,7 @@ class SVDMergeDialog(QDialog):
         """
         super().__init__(parent)
         self._diff_only = diff_only
-        self.setWindowTitle("SVD 文件差异比较" if diff_only else "SVD 文件导入合并")
+        self.setWindowTitle(t("merge.title_diff") if diff_only else t("merge.title_merge"))
         self.setMinimumSize(1000, 700)
         self.resize(1100, 750)
         self.current_device = current_device
@@ -113,32 +115,32 @@ class SVDMergeDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # === 第1步：文件选择区域 ===
-        file_group = QGroupBox("步骤 1：选择要导入的 SVD 文件")
+        file_group = QGroupBox(t("merge.step1_title"))
         file_layout = QHBoxLayout(file_group)
 
         # 当前文件信息
         if self.current_device:
-            curr_name = self.current_device.name or "未命名"
+            curr_name = self.current_device.name or t("msg.unnamed")
             curr_count = len(self.current_device.peripherals)
-            curr_label = QLabel(f"当前文件: {curr_name} ({curr_count} 个外设)")
+            curr_label = QLabel(t("merge.current_file", name=curr_name, count=curr_count))
             from ...config.styles import get_style_scheme
             _c = get_style_scheme().colors
             curr_label.setStyleSheet(f"font-weight: bold; color: {_c.text_primary};")
             file_layout.addWidget(curr_label)
 
-        file_layout.addWidget(QLabel("  导入文件: "), alignment=Qt.AlignmentFlag.AlignRight)
+        file_layout.addWidget(QLabel(t("merge.import_file")), alignment=Qt.AlignmentFlag.AlignRight)
 
-        self.file_label = QLabel("未选择文件")
+        self.file_label = QLabel(t("merge.file_not_selected"))
         self.file_label.setStyleSheet("color: gray;")
         self.file_label.setMinimumWidth(250)
         file_layout.addWidget(self.file_label, 1)
 
-        browse_btn = QPushButton("浏览...")
+        browse_btn = QPushButton(t("merge.browse"))
         browse_btn.setFixedWidth(80)
         browse_btn.clicked.connect(self._browse_file)
         file_layout.addWidget(browse_btn)
 
-        self.analyze_btn = QPushButton("分析差异")
+        self.analyze_btn = QPushButton(t("merge.analyze"))
         self.analyze_btn.setEnabled(False)
         self.analyze_btn.setStyleSheet("font-weight: bold; padding: 5px 15px;")
         self.analyze_btn.clicked.connect(self._do_analyze)
@@ -147,25 +149,25 @@ class SVDMergeDialog(QDialog):
         layout.addWidget(file_group)
 
         # === 第2步：合并选项（仅合并模式显示） ===
-        self.option_group = QGroupBox("步骤 2：选择合并策略")
+        self.option_group = QGroupBox(t("merge.step2_title"))
         opt_layout = QHBoxLayout(self.option_group)
 
-        self.chk_auto_accept_new = ToggleSwitch("自动接受所有新增项")
+        self.chk_auto_accept_new = ToggleSwitch(t("merge.auto_accept_new"))
         self.chk_auto_accept_new.setChecked(True)
-        self.chk_auto_accept_new.setToolTip("新增的外设/寄存器/位域默认使用导入文件的版本")
+        self.chk_auto_accept_new.setToolTip(t("merge.auto_accept_tooltip"))
         opt_layout.addWidget(self.chk_auto_accept_new)
 
-        self.chk_ignore_desc = ToggleSwitch("忽略描述差异")
+        self.chk_ignore_desc = ToggleSwitch(t("merge.ignore_desc"))
         opt_layout.addWidget(self.chk_ignore_desc)
 
         opt_layout.addStretch()
 
         # 快捷操作按钮
-        select_all_new_btn = QPushButton("全部接受新增")
+        select_all_new_btn = QPushButton(t("merge.accept_all_new"))
         select_all_new_btn.clicked.connect(self._select_all_new)
         opt_layout.addWidget(select_all_new_btn)
 
-        select_none_btn = QPushButton("全部保留当前")
+        select_none_btn = QPushButton(t("merge.keep_all_current"))
         select_none_btn.clicked.connect(self._select_all_keep)
         opt_layout.addWidget(select_none_btn)
 
@@ -178,14 +180,14 @@ class SVDMergeDialog(QDialog):
         # diff_only 模式下也显示忽略描述选项
         if self._diff_only:
             diff_opt_layout = QHBoxLayout()
-            self.chk_ignore_desc_diff = ToggleSwitch("忽略描述差异")
+            self.chk_ignore_desc_diff = ToggleSwitch(t("merge.ignore_desc"))
             self.chk_ignore_desc_diff.stateChanged.connect(self._re_analyze_if_has_data)
             diff_opt_layout.addWidget(self.chk_ignore_desc_diff)
             diff_opt_layout.addStretch()
             layout.addLayout(diff_opt_layout)
 
         # === 统计信息 ===
-        self.stats_label = QLabel("请选择导入文件并点击\"分析差异\"")
+        self.stats_label = QLabel(t("merge.hint_select"))
         self.stats_label.setFont(QFont("", 10))
         from ...config.styles import get_style_scheme
         _c = get_style_scheme().colors
@@ -196,7 +198,7 @@ class SVDMergeDialog(QDialog):
         splitter = QSplitter(Qt.Orientation.Vertical)
 
         self.merge_tree = QTreeWidget()
-        self.merge_tree.setHeaderLabels(["合并项", "冲突级别", "当前值", "合并策略", "导入值"])
+        self.merge_tree.setHeaderLabels([t("merge.col_item"), t("merge.col_conflict"), t("merge.col_current"), t("merge.col_action"), t("merge.col_import")])
         self.merge_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.merge_tree.setColumnWidth(1, 100)
         self.merge_tree.setColumnWidth(2, 180)
@@ -216,7 +218,7 @@ class SVDMergeDialog(QDialog):
         self.detail_text.setReadOnly(True)
         self.detail_text.setFont(QFont("Consolas", 9))
         self.detail_text.setMaximumHeight(150)
-        self.detail_text.setPlaceholderText("选中合并项后在此处显示详细信息...")
+        self.detail_text.setPlaceholderText(t("merge.detail_placeholder"))
         splitter.addWidget(self.detail_text)
 
         splitter.setSizes([500, 150])
@@ -227,7 +229,7 @@ class SVDMergeDialog(QDialog):
 
         btn_layout.addStretch()
 
-        self.merge_btn = QPushButton("执行合并")
+        self.merge_btn = QPushButton(t("merge.execute"))
         self.merge_btn.setEnabled(False)
         _mc = get_style_scheme().colors
         self.merge_btn.setStyleSheet(
@@ -240,7 +242,7 @@ class SVDMergeDialog(QDialog):
             self.merge_btn.hide()
         btn_layout.addWidget(self.merge_btn)
 
-        close_btn = QPushButton("关闭")
+        close_btn = QPushButton(t("merge.close"))
         close_btn.setFixedWidth(80)
         close_btn.clicked.connect(self.reject)
         btn_layout.addWidget(close_btn)
@@ -250,8 +252,8 @@ class SVDMergeDialog(QDialog):
     def _browse_file(self):
         """浏览选择要导入的 SVD 文件"""
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "选择要导入的 SVD 文件", "",
-            "SVD 文件 (*.svd);;XML 文件 (*.xml)"
+            self, t("merge.browse_title"), "",
+            t("merge.file_filter")
         )
         if not file_path:
             return
@@ -263,17 +265,17 @@ class SVDMergeDialog(QDialog):
             name = self.source_device.name or os.path.basename(file_path)
             n_periphs = len(self.source_device.peripherals)
             n_regs = sum(len(p.registers) for p in self.source_device.peripherals.values())
-            self.file_label.setText(f"{name} ({n_periphs} 外设, {n_regs} 寄存器)")
+            self.file_label.setText(t("merge.file_info", name=name, periphs=n_periphs, regs=n_regs))
             self.file_label.setStyleSheet("color: black;")
 
             self.analyze_btn.setEnabled(self.current_device is not None)
 
             if parser.warnings:
-                QMessageBox.warning(self, "解析警告",
+                QMessageBox.warning(self, t("merge.parse_warning"),
                     "\n".join(parser.warnings[:5]))
 
         except Exception as e:
-            QMessageBox.critical(self, "解析失败", f"无法解析 SVD 文件:\n{str(e)}")
+            QMessageBox.critical(self, t("merge.parse_failed"), t("merge.parse_error", error=str(e)))
 
     def _re_analyze_if_has_data(self):
         """选项变化时重新分析（仅diff模式）"""
@@ -283,7 +285,7 @@ class SVDMergeDialog(QDialog):
     def _do_analyze(self):
         """执行差异分析"""
         if not self.current_device or not self.source_device:
-            QMessageBox.warning(self, "提示", "请先选择要导入的 SVD 文件")
+            QMessageBox.warning(self, t("merge.hint"), t("merge.select_file_first"))
             return
 
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
@@ -291,7 +293,7 @@ class SVDMergeDialog(QDialog):
             self.merge_items = self.merger.analyze(self.current_device, self.source_device)
         except Exception as e:
             QApplication.restoreOverrideCursor()
-            QMessageBox.critical(self, "分析失败", f"差异分析出错:\n{str(e)}")
+            QMessageBox.critical(self, t("merge.analysis_failed"), t("merge.analysis_error", error=str(e)))
             return
         finally:
             QApplication.restoreOverrideCursor()
@@ -303,12 +305,12 @@ class SVDMergeDialog(QDialog):
         # 更新统计
         counts = SVDMerger.count_items(self.merge_items)
         self.stats_label.setText(
-            f"分析完成  |  "
-            f"<span style='color:green'>新增: {counts['new_in_source']}</span>  "
-            f"<span style='color:gray'>仅当前: {counts['only_in_target']}</span>  "
-            f"<span style='color:orange'>属性修改: {counts['attr_modified']}</span>  "
-            f"<span style='color:red'>结构变化: {counts['structure_changed']}</span>  "
-            f"总计: {counts['total']} 项"
+            t("merge.analysis_done") +
+            f"  <span style='color:green'>{t('merge.stat_new', count=counts['new_in_source'])}</span>  "
+            f"<span style='color:gray'>{t('merge.stat_current', count=counts['only_in_target'])}</span>  "
+            f"<span style='color:orange'>{t('merge.stat_attr', count=counts['attr_modified'])}</span>  "
+            f"<span style='color:red'>{t('merge.stat_struct', count=counts['structure_changed'])}</span>  "
+            f"{t('merge.stat_total', count=counts['total'])}"
         )
 
         # 填充合并树
@@ -357,10 +359,10 @@ class SVDMergeDialog(QDialog):
 
             # 冲突级别
             level_text = {
-                MergeConflictLevel.NEW_IN_SOURCE: "✅ 新增",
-                MergeConflictLevel.ONLY_IN_TARGET: "➖ 仅当前",
-                MergeConflictLevel.ATTR_MODIFIED: "⚠️ 属性修改",
-                MergeConflictLevel.STRUCTURE_CHANGED: "🔴 结构变化",
+                MergeConflictLevel.NEW_IN_SOURCE: t("merge.status_new"),
+                MergeConflictLevel.ONLY_IN_TARGET: t("merge.status_current"),
+                MergeConflictLevel.ATTR_MODIFIED: t("merge.status_attr"),
+                MergeConflictLevel.STRUCTURE_CHANGED: t("merge.status_struct"),
             }.get(item.conflict_level, "")
             tree_item.setText(1, level_text)
 
@@ -368,7 +370,7 @@ class SVDMergeDialog(QDialog):
             tree_item.setText(2, self._format_value(item.target_obj))
 
             # 合并策略
-            action_text = {a: t for t, a in ACTION_DATA}.get(item.action, "")
+            action_text = {a: txt for txt, a in _get_action_data()}.get(item.action, "")
             tree_item.setText(3, action_text)
 
             # 导入值
@@ -392,7 +394,7 @@ class SVDMergeDialog(QDialog):
     def _format_value(self, obj) -> str:
         """格式化显示值"""
         if obj is None:
-            return "(无)"
+            return t("merge.value_none")
         if isinstance(obj, (int, float, str, bool)):
             s = str(obj)
             return s[:60] + "..." if len(s) > 60 else s
@@ -457,14 +459,14 @@ class SVDMergeDialog(QDialog):
             tree_item = parent.child(i)
             merge_item = tree_item.data(0, Qt.ItemDataRole.UserRole)
             if merge_item:
-                action_text = {a: t for t, a in ACTION_DATA}.get(merge_item.action, "")
+                action_text = {a: txt for txt, a in _get_action_data()}.get(merge_item.action, "")
                 tree_item.setText(3, action_text)
             self._refresh_tree_items(tree_item)
 
     def _do_merge(self):
         """执行合并"""
         if not self.merge_items:
-            QMessageBox.warning(self, "提示", "请先分析差异")
+            QMessageBox.warning(self, t("merge.hint"), t("merge.no_items"))
             return
 
         # 确认操作
@@ -472,13 +474,12 @@ class SVDMergeDialog(QDialog):
         use_source_count = counts.get('use_source', 0)
 
         if use_source_count == 0:
-            QMessageBox.information(self, "提示", "没有选择任何要合并的项目。请在合并策略列中选择\"使用导入\"。")
+            QMessageBox.information(self, t("merge.hint"), t("merge.no_selection"))
             return
 
         reply = QMessageBox.question(
-            self, "确认合并",
-            f"即将合并 {use_source_count} 项变更到当前文件。\n"
-            f"此操作可以通过撤销(Ctrl+Z)回退。\n\n确定要执行合并吗？",
+            self, t("merge.confirm_title"),
+            t("merge.confirm_msg", count=use_source_count),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -490,7 +491,7 @@ class SVDMergeDialog(QDialog):
             result_device, stats = self.merger.execute_merge(self.current_device, self.merge_items)
         except Exception as e:
             QApplication.restoreOverrideCursor()
-            QMessageBox.critical(self, "合并失败", f"合并过程中出错:\n{str(e)}")
+            QMessageBox.critical(self, t("merge.failed"), t("merge.failed_error", error=str(e)))
             return
         finally:
             QApplication.restoreOverrideCursor()
@@ -499,15 +500,15 @@ class SVDMergeDialog(QDialog):
         summary = self.merger.generate_summary(self.merge_items, stats)
 
         # 显示合并结果
-        QMessageBox.information(self, "合并完成",
-            f"合并已成功完成！\n\n"
-            f"新增外设: {stats['peripherals_added']}\n"
-            f"新增寄存器: {stats['registers_added']}\n"
-            f"新增位域: {stats['fields_added']}\n"
-            f"新增簇: {stats['clusters_added']}\n"
-            f"新增中断: {stats['interrupts_added']}\n"
-            f"属性更新: {stats['attrs_updated']}\n"
-            f"跳过(保留): {stats['skipped']}"
+        QMessageBox.information(self, t("merge.done"),
+            t("merge.done_summary",
+              periph=stats['peripherals_added'],
+              reg=stats['registers_added'],
+              field=stats['fields_added'],
+              cluster=stats['clusters_added'],
+              irq=stats['interrupts_added'],
+              attr=stats['attrs_updated'],
+              skipped=stats['skipped'])
         )
 
         # 发射合并完成信号

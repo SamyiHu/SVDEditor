@@ -169,7 +169,7 @@ class DeviceInfoManager(QObject):
 
     def update_ui_from_device_info(self, device_info=None):
         """从设备信息更新UI
-        
+
         Args:
             device_info: 可选的设备信息对象，如果为None则从协调器获取
         """
@@ -179,13 +179,20 @@ class DeviceInfoManager(QObject):
                 if not self.coordinator:
                     self.logger.error("协调器未设置，无法更新UI")
                     return
-                
+
                 # 通过协调器获取设备信息
                 device_info = self.coordinator.get_device_info()
                 if not device_info:
                     self.logger.error("无法获取设备信息")
                     return
-            
+
+            # 设置保护标志，防止控件信号触发 _on_basic_info_edited 覆盖数据模型
+            main_win = self.coordinator.get_component("layout_manager")
+            if main_win and hasattr(main_win, 'main_window'):
+                main_win = main_win.main_window
+            if main_win and hasattr(main_win, '_basic_info_updating'):
+                main_win._basic_info_updating = True
+
             # 更新基本信息控件
             ic_name_edit = self.coordinator.get_widget('ic_name_edit')
             if ic_name_edit:
@@ -330,10 +337,17 @@ class DeviceInfoManager(QObject):
                 reset_mask_edit.setText(device_info.reset_mask or "")
             
             self.logger.debug("UI已从设备信息更新")
-            
+
         except Exception as e:
             self.logger.error(f"从设备信息更新UI时出错: {str(e)}")
             raise
+        finally:
+            # 重置保护标志
+            main_win = self.coordinator.get_component("layout_manager")
+            if main_win and hasattr(main_win, 'main_window'):
+                main_win = main_win.main_window
+            if main_win and hasattr(main_win, '_basic_info_updating'):
+                main_win._basic_info_updating = False
 
     def reset_device_info(self):
         """重置设备信息为默认值"""

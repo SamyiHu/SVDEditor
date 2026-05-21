@@ -131,6 +131,10 @@ class MainWindowRefactored(
 
         # 初始化连锁规则引擎
         self.chain_rules_engine = ChainRulesEngine()
+
+        # 继承外设不写入寄存器开关（默认开启）
+        self.skip_derived_registers = True
+        self.state_manager.skip_derived_registers = True
         # 自动加载项目根目录下的 chain_rules.json
         _chain_rules_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'chain_rules.json')
         if os.path.exists(_chain_rules_path):
@@ -256,6 +260,7 @@ class MainWindowRefactored(
             welcome_page.new_file_requested.connect(self.new_file)
             welcome_page.open_file_requested.connect(self.open_svd_file)
             welcome_page.open_recent_requested.connect(self._open_recent_file)
+            welcome_page.files_dropped.connect(self._on_files_dropped)
 
         # 连接搜索功能（使用search_manager）
         self.search_manager.connect_search_signals()

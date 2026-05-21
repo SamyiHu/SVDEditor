@@ -38,6 +38,10 @@ class CommandExecutor:
             "add_field": self._op_add_field,
             "update_field": self._op_update_field,
             "remove_field": self._op_remove_field,
+            # 多文档操作
+            "switch_document": self._op_switch_document,
+            "save_document": self._op_save_document,
+            "batch_save": self._op_batch_save,
         }
 
     def execute(self, action: Dict[str, Any]) -> Dict[str, Any]:
@@ -152,7 +156,10 @@ class CommandExecutor:
                 ),
                 "interrupts": len(device.interrupts),
             },
-            "peripheral_names": list(device.peripherals.keys()),
+            "peripheral_names": [
+                f"{name} (derivedFrom={p.derived_from})" if p.derived_from else name
+                for name, p in device.peripherals.items()
+            ],
         }
         msg = (f"设备: {device.name} | "
                f"外设: {info['statistics']['peripherals']} | "
@@ -175,9 +182,12 @@ class CommandExecutor:
         results = []
 
         if search_type in ("all", "peripheral"):
-            for name in device.peripherals:
+            for name, periph in device.peripherals.items():
                 if keyword in name.lower():
-                    results.append({"type": "peripheral", "name": name})
+                    entry = {"type": "peripheral", "name": name}
+                    if periph.derived_from:
+                        entry["derived_from"] = periph.derived_from
+                    results.append(entry)
 
         if search_type in ("all", "register"):
             for pname, periph in device.peripherals.items():
@@ -789,3 +799,130 @@ class CommandExecutor:
         self._notify_refresh(periph_name)
 
         return {"success": True, "message": f"已删除位域 '{field_name}' (从 '{reg_name}')", "data": {"name": field_name}}
+
+    # ==================== 多文档操作 ====================
+
+    def _op_switch_document(self, params: Dict) -> Dict[str, Any]:
+        """切换到指定文档"""
+        if not self.main_window or not hasattr(self.main_window, 'document_manager'):
+            return {"success": False, "message": "文档管理器不可用", "data": None}
+
+        dm = self.main_window.document_manager
+        target = params.get("doc_id", "").strip()
+        name_hint = params.get("name", "").strip()
+
+        if not target and not name_hint:
+            return {"success": False, "message": "请提供 doc_id 或 name 参数", "data": None}
+
+        # 按 doc_id 查找
+        if target and target in dm.get_all_documents():
+            # 先保存当前文档状态
+            if hasattr(self.main_window, '_save_current_document_state'):
+                self.main_window._save_current_document_state()
+            dm.switch_to(target)
+            if hasattr(self.main_window, '_restore_document_state'):
+                doc = dm.get_document(target)
+                if doc:
+                    self.main_window._restore_document_state(doc)
+            doc = dm.get_document(target)
+            return {"success": True, "message": f"已切换到文档: {doc.display_name}", "data": {"doc_id": target}}
+
+        # 按名称模糊查找
+        if name_hint:
+            name_lower = name_hint.lower()
+            for doc_id, doc in dm.get_all_documents().items():
+                if name_lower in doc.display_name.lower() or name_lower in (doc.device_info.name or "").lower():
+                    if hasattr(self.main_window, '_save_current_document_state'):
+                        self.main_window._save_current_document_state()
+                    dm.switch_to(doc_id)
+                    if hasattr(self.main_window, '_restore_document_state'):
+                        self.main_window._restore_document_state(doc)
+                    return {"success": True, "message": f"已切换到文档: {doc.display_name}", "data": {"doc_id": doc_id}}
+
+        return {"success": False, "message": f"找不到匹配的文档: {target or name_hint}", "data": None}
+
+    def _op_save_document(self, params: Dict) -> Dict[str, Any]:
+        """保存指定文档（默认保存当前文档）"""
+        if not self.main_window or not hasattr(self.main_window, 'document_manager'):
+            return {"success": False, "message": "文档管理器不可用", "data": None}
+
+        dm = self.main_window.document_manager
+        target_id = params.get("doc_id", "").strip() or dm.active_doc_id
+
+        if not target_id:
+            return {"success": False, "message": "没有可保存的文档", "data": None}
+
+        doc = dm.get_document(target_id)
+        if not doc:
+            return {"success": False, "message": f"文档不存在: {target_id}", "data": None}
+
+        try:
+            from svd_tool.core.svd_generator import SVDGenerator
+            generator = SVDGenerator(doc.device_info, skip_derived_registers=getattr(self.main_window, 'skip_derived_registers', True))
+            svd_xml = generator.generate()
+
+            save_path = params.get("file_path", "").strip() or doc.file_path
+            if not save_path:
+                return {"success": False, "message": f"文档 '{doc.display_name}' 没有保存路径，请指定 file_path", "data": None}
+
+            with open(save_path, 'w', encoding='utf-8') as f:
+                f.write(svd_xml)
+
+            dm.save_document(target_id, file_path=save_path if params.get("file_path") else None)
+            return {"success": True, "message": f"已保存文档 '{doc.display_name}' 到 {save_path}", "data": {"doc_id": target_id, "path": save_path}}
+        except Exception as e:
+            return {"success": False, "message": f"保存失败: {e}", "data": None}
+
+    def _op_batch_save(self, params: Dict) -> Dict[str, Any]:
+        """批量保存文档
+
+        params:
+            paths: {doc_id: new_file_path} — 每个文档指定新路径（可选，指定后原文件不动）
+            doc_ids: [doc_id, ...] — 指定要保存的文档
+            all: true — 保存所有文档
+        """
+        if not self.main_window or not hasattr(self.main_window, 'document_manager'):
+            return {"success": False, "message": "文档管理器不可用", "data": None}
+
+        dm = self.main_window.document_manager
+        paths = params.get("paths", {})
+        target_ids = params.get("doc_ids", None)
+        save_all = params.get("all", False)
+
+        if save_all:
+            docs_to_save = list(dm.get_all_documents().keys())
+        elif target_ids:
+            docs_to_save = target_ids
+        else:
+            docs_to_save = dm.get_modified_documents()
+
+        if not docs_to_save:
+            return {"success": True, "message": "没有需要保存的文档", "data": {"saved": [], "failed": []}}
+
+        from svd_tool.core.svd_generator import SVDGenerator
+        saved = []
+        failed = []
+
+        for doc_id in docs_to_save:
+            doc = dm.get_document(doc_id)
+            if not doc:
+                failed.append({"doc_id": doc_id, "error": "文档不存在"})
+                continue
+            new_path = paths.get(doc_id, "").strip() if paths else ""
+            save_path = new_path or doc.file_path
+            if not save_path:
+                failed.append({"doc_id": doc_id, "name": doc.display_name, "error": "没有保存路径"})
+                continue
+            try:
+                generator = SVDGenerator(doc.device_info, skip_derived_registers=getattr(self.main_window, 'skip_derived_registers', True))
+                svd_xml = generator.generate()
+                with open(save_path, 'w', encoding='utf-8') as f:
+                    f.write(svd_xml)
+                # 有新路径时更新文档记录，否则只标记已保存
+                dm.save_document(doc_id, file_path=new_path or None)
+                saved.append({"doc_id": doc_id, "name": doc.display_name, "path": save_path})
+            except Exception as e:
+                failed.append({"doc_id": doc_id, "name": doc.display_name, "error": str(e)})
+
+        msg = f"批量保存完成: {len(saved)} 成功, {len(failed)} 失败"
+        return {"success": len(failed) == 0, "message": msg, "data": {"saved": saved, "failed": failed}}

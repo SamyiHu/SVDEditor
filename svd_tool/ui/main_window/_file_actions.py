@@ -96,21 +96,89 @@ class FileActionsMixin:
                     self.layout_manager.update_status(t("status.files_loaded", count=len(file_paths)))
 
     def save_svd_file(self):
-        """保存SVD文件"""
-        self.save_svd_file_impl(force_save_as=False)
+        """保存SVD文件（多文档时保存全部）"""
+        if hasattr(self, 'document_manager') and self.document_manager and self.document_manager.document_count > 1:
+            self.save_all_documents()
+        else:
+            self.save_svd_file_impl(force_save_as=False)
+
+    def save_all_documents(self):
+        """保存所有已修改的文档"""
+        if not hasattr(self, 'document_manager') or not self.document_manager:
+            self.save_svd_file_impl(force_save_as=False)
+            return
+
+        dm = self.document_manager
+        # 先保存当前文档的 UI 状态
+        self._save_current_document_state()
+        self.update_device_info_from_ui()
+
+        saved_count = 0
+        failed_count = 0
+        no_path_docs = []
+
+        for doc_id, doc in dm.get_all_documents().items():
+            if not doc.file_path:
+                no_path_docs.append(doc)
+                continue
+            try:
+                generator = SVDGenerator(doc.device_info, skip_derived_registers=self.skip_derived_registers)
+                svd_xml = generator.generate()
+                with open(doc.file_path, 'w', encoding='utf-8') as f:
+                    f.write(svd_xml)
+                dm.save_document(doc_id)
+                saved_count += 1
+            except Exception as e:
+                self.logger.error(f"保存文档 {doc.display_name} 失败: {e}")
+                failed_count += 1
+
+        # 未保存过的新文档逐个弹窗让用户选路径
+        for doc in no_path_docs:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, f"保存 {doc.display_name}", "",
+                "SVD文件 (*.svd);;所有文件 (*.*)"
+            )
+            if file_path:
+                try:
+                    generator = SVDGenerator(doc.device_info, skip_derived_registers=self.skip_derived_registers)
+                    svd_xml = generator.generate()
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write(svd_xml)
+                    dm.save_document(doc.doc_id, file_path=file_path)
+                    saved_count += 1
+                except Exception as e:
+                    self.logger.error(f"保存文档 {doc.display_name} 失败: {e}")
+                    failed_count += 1
+            else:
+                failed_count += 1
+
+        self.layout_manager.update_status(f"批量保存完成: {saved_count} 成功" + (f", {failed_count} 失败" if failed_count else ""))
+        if failed_count:
+            QMessageBox.warning(self, t("msg.save_error"), f"{failed_count} 个文档保存失败")
+        elif saved_count:
+            QMessageBox.information(self, t("msg.save_success"), f"已保存 {saved_count} 个文档")
 
     def save_svd_file_as(self):
         """另存为SVD文件"""
         self.save_svd_file_impl(force_save_as=True)
 
     def save_svd_file_impl(self, force_save_as=False):
-        """保存SVD文件实现"""
+        """保存SVD文件实现（支持多文档）"""
         try:
-            # 获取保存路径
+            # 从 DocumentManager 获取当前文档的保存路径
             file_path = None
-            if not force_save_as and hasattr(self, 'current_file_path') and self.current_file_path:
-                file_path = self.current_file_path
-            else:
+            active_doc = None
+            if hasattr(self, 'document_manager') and self.document_manager:
+                active_doc = self.document_manager.active_document
+
+            if not force_save_as:
+                # 优先使用当前文档的路径
+                if active_doc and active_doc.file_path:
+                    file_path = active_doc.file_path
+                elif hasattr(self, 'current_file_path') and self.current_file_path:
+                    file_path = self.current_file_path
+
+            if not file_path:
                 file_path, _ = QFileDialog.getSaveFileName(
                     self, "保存SVD文件", "", "SVD文件 (*.svd);;所有文件 (*.*)"
                 )
@@ -122,14 +190,18 @@ class FileActionsMixin:
             self.update_device_info_from_ui()
 
             # 生成SVD
-            generator = SVDGenerator(self.state_manager.device_info)
+            generator = SVDGenerator(self.state_manager.device_info, skip_derived_registers=self.skip_derived_registers)
             svd_xml = generator.generate()
 
             # 保存文件
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(svd_xml)
 
-            # 更新状态
+            # 更新 DocumentManager 中的文档状态
+            if active_doc:
+                self.document_manager.save_document(active_doc.doc_id, file_path=file_path)
+
+            # 更新兼容性字段
             self.current_file_path = file_path
             self.layout_manager.update_status(t("status.svd_saved", path=file_path))
             QMessageBox.information(self, t("msg.save_success"), t("msg.svd_file_saved", path=file_path))
@@ -157,7 +229,7 @@ class FileActionsMixin:
                 return
 
             # 生成SVD
-            generator = SVDGenerator(self.state_manager.device_info)
+            generator = SVDGenerator(self.state_manager.device_info, skip_derived_registers=self.skip_derived_registers)
             svd_xml = generator.generate()
 
             # 更新预览
@@ -178,7 +250,7 @@ class FileActionsMixin:
             # 首先从UI更新设备信息
             self.update_device_info_from_ui()
 
-            generator = SVDGenerator(self.state_manager.device_info)
+            generator = SVDGenerator(self.state_manager.device_info, skip_derived_registers=self.skip_derived_registers)
             svd_xml = generator.generate()
 
             preview_edit = self.layout_manager.get_widget('preview_edit')
@@ -206,7 +278,7 @@ class FileActionsMixin:
             self.update_device_info_from_ui()
 
             # 生成SVD
-            generator = SVDGenerator(self.state_manager.device_info)
+            generator = SVDGenerator(self.state_manager.device_info, skip_derived_registers=self.skip_derived_registers)
             svd_xml = generator.generate()
 
             # 保存文件
@@ -306,6 +378,17 @@ class FileActionsMixin:
     def validate_data(self):
         """验证 SVD 数据（CMSIS-SVD Schema 完整验证）"""
         self.file_operations.validate_svd()
+
+    def _on_files_dropped(self, file_paths: list):
+        """处理拖拽打开的文件"""
+        for file_path in file_paths:
+            try:
+                self._load_svd_from_path(file_path)
+                self.layout_manager.show_editor()
+                self.layout_manager.add_recent_file(file_path)
+            except Exception as e:
+                self.logger.error(f"拖拽打开文件失败: {file_path} - {e}")
+                QMessageBox.critical(self, t("msg.load_error"), t("msg.file_load_failed_detail", error=str(e)))
 
     def export_document(self, format_type: str = "markdown"):
         """导出文档（CSV/Markdown/HTML）"""

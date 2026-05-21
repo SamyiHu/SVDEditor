@@ -996,7 +996,8 @@ class RealtimePreviewWidget(QWidget):
                 return
             
             # 生成SVD XML
-            generator = SVDGenerator(self.state_manager.device_info)
+            skip_derived = getattr(self.state_manager, 'skip_derived_registers', True)
+            generator = SVDGenerator(self.state_manager.device_info, skip_derived_registers=skip_derived)
             svd_xml = generator.generate(pretty_print=False)
             
             # 美化XML
@@ -1072,7 +1073,8 @@ class RealtimePreviewWidget(QWidget):
             # 在后台线程中执行CPU密集型操作：XML生成 + 美化 + 行号映射解析
             def _generate_xml_and_parse():
                 try:
-                    generator = SVDGenerator(device_info)
+                    skip_derived = getattr(self.state_manager, 'skip_derived_registers', True)
+                    generator = SVDGenerator(device_info, skip_derived_registers=skip_derived)
                     svd_xml = generator.generate(pretty_print=False)
                     pretty_svd = pretty_xml(svd_xml)
                     line_map, element_ranges, element_hierarchy, element_children = _parse_xml_line_map(pretty_svd)

@@ -71,11 +71,11 @@ class SVDDiffDialog(QDialog):
         file_bar.addWidget(curr_frame, 1)
 
         # 过滤
-        self.chk_description = ToggleSwitch("忽略描述")
+        self.chk_description = ToggleSwitch(t("diff.ignore_desc"))
         self.chk_description.stateChanged.connect(self._re_diff)
         file_bar.addWidget(self.chk_description)
 
-        self.chk_reset_value = ToggleSwitch("忽略复位值")
+        self.chk_reset_value = ToggleSwitch(t("diff.ignore_reset"))
         self.chk_reset_value.stateChanged.connect(self._re_diff)
         file_bar.addWidget(self.chk_reset_value)
 
@@ -117,7 +117,7 @@ class SVDDiffDialog(QDialog):
             active_id = self.document_manager.active_doc_id
             for doc_id, doc in self.document_manager.get_all_documents().items():
                 if doc_id != active_id:
-                    display = doc.display_name or doc.device_info.name or "未命名"
+                    display = doc.display_name or doc.device_info.name or t("msg.unnamed")
                     self._open_docs[display] = (doc_id, doc.device_info)
                     self._open_doc_combo.addItem(display)
             self._open_doc_combo.blockSignals(False)
@@ -131,7 +131,7 @@ class SVDDiffDialog(QDialog):
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
         self.tree_a = QTreeWidget()
-        self.tree_a.setHeaderLabels(["A — 当前"])
+        self.tree_a.setHeaderLabels([t("diff.current")])
         self.tree_a.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.tree_a.setStyleSheet(f"""
             QTreeWidget {{ border: 1px solid {_c.border_light}; border-radius: 4px; }}
@@ -139,7 +139,7 @@ class SVDDiffDialog(QDialog):
         """)
 
         self.tree_b = QTreeWidget()
-        self.tree_b.setHeaderLabels(["B — 比较"])
+        self.tree_b.setHeaderLabels([t("diff.other")])
         self.tree_b.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.tree_b.setStyleSheet(f"""
             QTreeWidget {{ border: 1px solid {_c.border_light}; border-radius: 4px; }}
@@ -235,7 +235,7 @@ class SVDDiffDialog(QDialog):
 
     def set_other_device(self, device: DeviceInfo):
         self.other_device = device
-        self.file_label.setText(device.name or "比较文件")
+        self.file_label.setText(device.name or t("diff.compare_file"))
         self.file_label.setStyleSheet(f"color: {get_style_scheme().colors.text_primary}; border: none;")
 
     # ==================== 比较 ====================
@@ -260,10 +260,10 @@ class SVDDiffDialog(QDialog):
 
         _c = get_style_scheme().colors
         if total == 0:
-            self.stats_label.setText("完全一致，没有差异")
+            self.stats_label.setText(t("diff.identical"))
         else:
             self.stats_label.setText(
-                f"新增 {added}  ·  删除 {removed}  ·  修改 {modified}  ·  共 {total} 处差异"
+                t("diff.stats", added=added, removed=removed, modified=modified, total=total)
             )
 
         # 填充双树
@@ -300,11 +300,11 @@ class SVDDiffDialog(QDialog):
             # 层级标签
             label = name
             if diff.category == 'peripheral':
-                label = f"[外设] {name}"
+                label = f"{t('diff.label_periph')} {name}"
             elif diff.category == 'register':
-                label = f"[寄存器] {name}"
+                label = f"{t('diff.label_reg')} {name}"
             elif diff.category == 'field':
-                label = f"[位域] {name}"
+                label = f"{t('diff.label_field')} {name}"
 
             item_a = QTreeWidgetItem()
             item_a.setText(0, label)
@@ -320,11 +320,11 @@ class SVDDiffDialog(QDialog):
                 item_a.setForeground(0, fg_dim)
                 item_b.setBackground(0, bg_add)
                 item_b.setForeground(0, fg_add)
-                item_b.setText(0, label + "  [+新增]")
+                item_b.setText(0, label + f"  {t('diff.added_suffix')}")
             elif diff.diff_type == DiffType.REMOVED:
                 item_a.setBackground(0, bg_rem)
                 item_a.setForeground(0, fg_rem)
-                item_a.setText(0, label + "  [-删除]")
+                item_a.setText(0, label + f"  {t('diff.removed_suffix')}")
                 item_b.setText(0, label + "  —")
                 item_b.setForeground(0, fg_dim)
             elif diff.diff_type == DiffType.MODIFIED:
@@ -363,7 +363,7 @@ class SVDDiffDialog(QDialog):
             if self._diffs:
                 summary = self.differ.generate_summary(self._diffs)
             else:
-                summary = "没有差异"
+                summary = t("diff.no_diff")
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(summary)
             QMessageBox.information(self, t("diff_merge.export_done"),

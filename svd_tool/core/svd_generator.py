@@ -12,10 +12,11 @@ from ..utils.logger import Logger
 class SVDGenerator:
     """SVD文件生成器"""
     
-    def __init__(self, device_info: DeviceInfo):
+    def __init__(self, device_info: DeviceInfo, skip_derived_registers: bool = True):
         self.device_info = device_info
         self.indent = "  "
         self.logger = Logger("svd_generator")
+        self.skip_derived_registers = skip_derived_registers
     
     def generate(self, pretty_print: bool = True) -> str:
         """生成SVD XML字符串"""
@@ -142,19 +143,24 @@ class SVDGenerator:
         ET.SubElement(addr_block_elem, "size").text = peripheral.address_block["size"]
         ET.SubElement(addr_block_elem, "usage").text = peripheral.address_block.get("usage", "registers")
         
+        # 如果是继承外设且开启了跳过开关，不写入继承的寄存器/簇/中断
+        is_derived = bool(peripheral.derived_from)
+        skip_inherited = is_derived and self.skip_derived_registers
+
         # 添加中断
-        for interrupt in peripheral.interrupts:
-            self._add_interrupt_to_peripheral(periph_elem, interrupt)
-        
+        if not skip_inherited:
+            for interrupt in peripheral.interrupts:
+                self._add_interrupt_to_peripheral(periph_elem, interrupt)
+
         # 添加寄存器和簇
-        if peripheral.registers or peripheral.clusters:
+        if not skip_inherited and (peripheral.registers or peripheral.clusters):
             registers_elem = ET.SubElement(periph_elem, "registers")
-            
+
             for reg_name, register in peripheral.registers.items():
                 reg_elem = self._create_register_element(register)
                 if reg_elem:
                     registers_elem.append(reg_elem)
-            
+
             # 添加寄存器簇
             for cl_name, cluster in peripheral.clusters.items():
                 cl_elem = self._create_cluster_element(cluster)
@@ -416,6 +422,7 @@ class SVDGenerator:
         gen.device_info = None
         gen.indent = "  "
         gen.logger = Logger("svd_generator_preview")
+        gen.skip_derived_registers = True
         elem = gen._create_peripheral_element(peripheral)
         if elem is None:
             return ""

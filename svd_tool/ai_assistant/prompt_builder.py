@@ -35,8 +35,22 @@ class PromptBuilder:
 
         # 其他已打开的文档
         if open_documents:
-            doc_list = ", ".join(open_documents)
-            parts.append(f"当前编辑器中还打开了以下文件（可通过 diff 操作直接比较）：{doc_list}")
+            if isinstance(open_documents, dict):
+                # 新格式：包含 doc_id 和 file_path
+                active = open_documents.get("active")
+                others = open_documents.get("others", [])
+                if active:
+                    parts.append(f"当前活跃文档: {active['name']} (doc_id: {active['doc_id']}, 路径: {active.get('file_path', '无')})")
+                if others:
+                    doc_lines = []
+                    for d in others:
+                        modified = " [已修改]" if d.get("modified") else ""
+                        doc_lines.append(f"  - {d['name']} (doc_id: {d['doc_id']}, 路径: {d.get('file_path', '无')}{modified})")
+                    parts.append("其他已打开的文档:\n" + "\n".join(doc_lines))
+            else:
+                # 兼容旧格式
+                doc_list = ", ".join(open_documents)
+                parts.append(f"当前编辑器中还打开了以下文件（可通过 diff 操作直接比较）：{doc_list}")
 
         # 第三层：操作格式规范
         parts.append(self._build_action_schema())
@@ -107,6 +121,7 @@ class PromptBuilder:
                 "name": name,
                 "base_address": periph.base_address,
                 "description": periph.description,
+                "derived_from": periph.derived_from or None,
                 "registers": {},
             }
             for rname, reg in periph.registers.items():
@@ -215,6 +230,27 @@ class PromptBuilder:
     或: {"compare_with": "文件名"}（指定已打开的文件名进行模糊匹配）
     或: {"file_path": "SVD文件路径"}（比较外部文件）
     返回：差异摘要（新增/删除/修改的外设、寄存器、位域数量及详细变更列表），同时弹出可视化对比窗口
+
+17. **switch_document** — 切换到另一个已打开的文档（操作前会自动保存当前文档状态）
+    params: {"doc_id": "文档ID"} 或 {"name": "文档名称（支持模糊匹配）"}
+    示例：切换到 STM32F4.svd → {"operation": "switch_document", "params": {"name": "STM32F4"}}
+
+18. **save_document** — 保存指定文档（默认保存当前文档）
+    params: {}（保存当前文档到原路径）
+    或: {"doc_id": "文档ID"}（保存指定文档到原路径）
+    或: {"doc_id": "文档ID", "file_path": "新路径"}（另存为新文件，原文件不动）
+
+19. **batch_save** — 批量保存多个文档
+    params: {"all": true}（保存所有文档到原路径）
+    或: {"doc_ids": ["doc_1", "doc_2"]}（保存指定文档到原路径）
+    或: {}（保存所有已修改的文档到原路径）
+    或: {"paths": {"doc_1": "D:/new_name1.svd", "doc_2": "D:/new_name2.svd"}}（保存到新路径，原文件不动）
+    注意：paths 中的路径是新文件路径，不会覆盖原文件；未保存过的新文档必须用 paths 指定路径
+
+**多文档操作流程**：
+- 用户要求修改某个已打开的文档时，先用 switch_document 切换到该文档，再执行修改操作
+- 批量操作时，可以逐个切换文档并执行操作，最后用 batch_save 一次性保存
+- 每次切换文档后，系统会自动提供该文档的最新上下文
 
 注意：
 - 如果用户只是询问问题，不需要执行操作，直接用自然语言回答即可（不要返回 JSON）
