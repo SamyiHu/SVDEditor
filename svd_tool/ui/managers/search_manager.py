@@ -80,32 +80,33 @@ class SearchManager(QObject):
         for i in range(model.rowCount()):
             periph_idx = model.index(i, 0)
             model.ensure_fetched(periph_idx)
-            node_type = model.data(periph_idx, DeviceTreeModel.NodeTypeRole)
             node_name = model.data(periph_idx, DeviceTreeModel.NodeNameRole)
 
-            if tree_type == 'peripheral' and search_text in node_name.lower():
+            # 搜索外设: 'periph'(全部) 或 'peripheral'
+            if tree_type in ('periph', 'peripheral') and search_text in node_name.lower():
                 self.search_results.append({
                     'type': 'periph',
                     'model_index': periph_idx,
                     'text': node_name,
                 })
 
-            # 搜索寄存器
-            if tree_type in ('register', 'field', 'periph'):
+            # 搜索寄存器和位域
+            if tree_type in ('periph', 'register', 'field'):
                 for j in range(model.rowCount(periph_idx)):
                     reg_idx = model.index(j, 0, periph_idx)
                     model.ensure_fetched(reg_idx)
                     reg_name = model.data(reg_idx, DeviceTreeModel.NodeNameRole)
 
-                    if tree_type == 'register' and search_text in reg_name.lower():
+                    # 搜索寄存器: 'periph'(全部) 或 'register'
+                    if tree_type in ('periph', 'register') and search_text in reg_name.lower():
                         self.search_results.append({
                             'type': 'periph',
                             'model_index': reg_idx,
                             'text': reg_name,
                         })
 
-                    # 搜索位域
-                    if tree_type == 'field':
+                    # 搜索位域: 'periph'(全部) 或 'field'
+                    if tree_type in ('periph', 'field'):
                         for k in range(model.rowCount(reg_idx)):
                             field_idx = model.index(k, 0, reg_idx)
                             field_name = model.data(field_idx, DeviceTreeModel.NodeNameRole)
@@ -324,15 +325,20 @@ class SearchManager(QObject):
         result = self.search_results[self.current_search_index]
         
         if result['type'] == 'periph':
-            # 清除树项高亮
-            item = result['item']
-            for col in range(item.columnCount()):
-                item.setBackground(col, QBrush())
-            
-            # 清除选中状态
             tree = self.get_widget('periph_tree')
-            if tree:
-                tree.clearSelection()
+
+            # 检测是否为 model-based（无 'item' 键）
+            if 'model_index' in result:
+                if tree:
+                    tree.clearSelection()
+            else:
+                # 传统 QTreeWidgetItem 路径
+                item = result.get('item')
+                if item:
+                    for col in range(item.columnCount()):
+                        item.setBackground(col, QBrush())
+                if tree:
+                    tree.clearSelection()
         
         elif result['type'] == 'irq':
             # 清除表格行高亮
@@ -376,7 +382,7 @@ class SearchManager(QObject):
             # 只搜索外设
             periph_tree = self.get_widget('periph_tree')
             if periph_tree:
-                self.search_in_tree(periph_tree, search_text, 'periph')
+                self.search_in_tree(periph_tree, search_text, 'peripheral')
         elif search_type == 'register':
             # 只搜索寄存器
             periph_tree = self.get_widget('periph_tree')
@@ -417,7 +423,12 @@ class SearchManager(QObject):
         search_edit = self.get_widget('search_edit')
         if search_edit:
             search_edit.textChanged.connect(self._on_search_text_changed)
-        
+
+        # 切换搜索类型时重新搜索
+        search_type_combo = self.get_widget('search_type_combo')
+        if search_type_combo:
+            search_type_combo.currentIndexChanged.connect(self._on_search_type_changed)
+
         search_prev_btn = self.get_widget('search_prev_btn')
         if search_prev_btn:
             search_prev_btn.clicked.connect(self.goto_prev_result)
@@ -425,160 +436,17 @@ class SearchManager(QObject):
         search_next_btn = self.get_widget('search_next_btn')
         if search_next_btn:
             search_next_btn.clicked.connect(self.goto_next_result)
-    
+
     def _on_search_text_changed(self, text: str):
         """搜索文本变化处理"""
         self.perform_search(text)
-    
-    # ==================== 深度搜索（数据模型搜索） ====================
-    
-    def deep_search(self, search_text: str, search_scope: str = 'all') -> List[Dict[str, Any]]:
-        """
-        深度搜索数据模型：搜索名称、描述、地址、复位值、访问权限等所有属性
-        
-        Args:
-            search_text: 搜索文本
-            search_scope: 搜索范围 'all'/'name'/'description'/'address'/'value'
-        
-        Returns:
-            匹配结果列表，每项包含:
-              - level: 'peripheral'/'register'/'field'/'interrupt'
-              - path: 显示路径 (e.g. "GPIOA > MODER > MODE0")
-              - peripheral/register/field: 对应数据对象
-              - match_field: 匹配的字段名
-              - match_text: 匹配的文本片段
-        """
-        if not search_text:
-            return []
-        
-        results = []
-        text_lower = search_text.lower()
-        state_mgr = self._get_state_manager()
-        if not state_mgr:
-            return results
-        
-        device = state_mgr.device_info
-        
-        # 搜索外设
-        for pname, periph in device.peripherals.items():
-            if search_scope in ('all', 'name') and text_lower in pname.lower():
-                results.append({
-                    'level': 'peripheral', 'path': pname,
-                    'peripheral': pname, 'register': None, 'field': None,
-                    'match_field': 'name', 'match_text': pname
-                })
-            if search_scope in ('all', 'description') and periph.description and text_lower in periph.description.lower():
-                results.append({
-                    'level': 'peripheral', 'path': pname,
-                    'peripheral': pname, 'register': None, 'field': None,
-                    'match_field': 'description', 'match_text': periph.description[:80]
-                })
-            if search_scope in ('all', 'address') and text_lower in periph.base_address.lower():
-                results.append({
-                    'level': 'peripheral', 'path': f"{pname} ({periph.base_address})",
-                    'peripheral': pname, 'register': None, 'field': None,
-                    'match_field': 'base_address', 'match_text': periph.base_address
-                })
-            
-            # 搜索寄存器
-            for rname, reg in periph.registers.items():
-                reg_path = f"{pname} > {rname}"
-                if search_scope in ('all', 'name') and text_lower in rname.lower():
-                    results.append({
-                        'level': 'register', 'path': reg_path,
-                        'peripheral': pname, 'register': rname, 'field': None,
-                        'match_field': 'name', 'match_text': rname
-                    })
-                if search_scope in ('all', 'description') and reg.description and text_lower in reg.description.lower():
-                    results.append({
-                        'level': 'register', 'path': reg_path,
-                        'peripheral': pname, 'register': rname, 'field': None,
-                        'match_field': 'description', 'match_text': reg.description[:80]
-                    })
-                if search_scope in ('all', 'address') and text_lower in reg.offset.lower():
-                    results.append({
-                        'level': 'register', 'path': f"{reg_path} (偏移: {reg.offset})",
-                        'peripheral': pname, 'register': rname, 'field': None,
-                        'match_field': 'offset', 'match_text': reg.offset
-                    })
-                if search_scope in ('all', 'value') and text_lower in reg.reset_value.lower():
-                    results.append({
-                        'level': 'register', 'path': f"{reg_path} (复位值: {reg.reset_value})",
-                        'peripheral': pname, 'register': rname, 'field': None,
-                        'match_field': 'reset_value', 'match_text': reg.reset_value
-                    })
-                if search_scope in ('all', 'name') and reg.access and text_lower in reg.access.lower():
-                    results.append({
-                        'level': 'register', 'path': f"{reg_path} (访问: {reg.access})",
-                        'peripheral': pname, 'register': rname, 'field': None,
-                        'match_field': 'access', 'match_text': reg.access
-                    })
-                
-                # 搜索位域
-                for fname, fld in reg.fields.items():
-                    field_path = f"{pname} > {rname} > {fname}"
-                    if search_scope in ('all', 'name') and text_lower in fname.lower():
-                        results.append({
-                            'level': 'field', 'path': field_path,
-                            'peripheral': pname, 'register': rname, 'field': fname,
-                            'match_field': 'name', 'match_text': fname
-                        })
-                    if search_scope in ('all', 'description') and fld.description and text_lower in fld.description.lower():
-                        results.append({
-                            'level': 'field', 'path': field_path,
-                            'peripheral': pname, 'register': rname, 'field': fname,
-                            'match_field': 'description', 'match_text': fld.description[:80]
-                        })
-                    # 按位范围搜索 (e.g. "7:4" or "bit 5")
-                    bit_str = str(fld.bit_offset) if fld.bit_width == 1 else f"{fld.bit_offset + fld.bit_width - 1}:{fld.bit_offset}"
-                    if search_scope in ('all', 'address') and text_lower in bit_str:
-                        results.append({
-                            'level': 'field', 'path': f"{field_path} [{bit_str}]",
-                            'peripheral': pname, 'register': rname, 'field': fname,
-                            'match_field': 'bit_range', 'match_text': bit_str
-                        })
-                    if search_scope in ('all', 'value') and text_lower in fld.reset_value.lower():
-                        results.append({
-                            'level': 'field', 'path': field_path,
-                            'peripheral': pname, 'register': rname, 'field': fname,
-                            'match_field': 'reset_value', 'match_text': fld.reset_value
-                        })
-                    # 搜索位域访问权限
-                    if fld.access and text_lower in fld.access.lower():
-                        results.append({
-                            'level': 'field', 'path': f"{field_path} ({fld.access})",
-                            'peripheral': pname, 'register': rname, 'field': fname,
-                            'match_field': 'access', 'match_text': fld.access
-                        })
-        
-        # 搜索中断
-        for iname, irq in device.interrupts.items():
-            irq_path = f"中断: {iname}"
-            if search_scope in ('all', 'name') and text_lower in iname.lower():
-                results.append({
-                    'level': 'interrupt', 'path': irq_path,
-                    'peripheral': None, 'register': None, 'field': None,
-                    'interrupt': iname,
-                    'match_field': 'name', 'match_text': iname
-                })
-            if search_scope in ('all', 'description') and irq.description and text_lower in irq.description.lower():
-                results.append({
-                    'level': 'interrupt', 'path': irq_path,
-                    'peripheral': None, 'register': None, 'field': None,
-                    'interrupt': iname,
-                    'match_field': 'description', 'match_text': irq.description[:80]
-                })
-            # 按中断号搜索
-            if search_scope in ('all', 'value') and text_lower in str(irq.value):
-                results.append({
-                    'level': 'interrupt', 'path': f"{irq_path} (IRQ#{irq.value})",
-                    'peripheral': None, 'register': None, 'field': None,
-                    'interrupt': iname,
-                    'match_field': 'irq_number', 'match_text': str(irq.value)
-                })
-        
-        return results
-    
+
+    def _on_search_type_changed(self):
+        """搜索类型变化时重新搜索"""
+        search_edit = self.get_widget('search_edit')
+        if search_edit and search_edit.text().strip():
+            self.perform_search(search_edit.text())
+
     def goto_address(self, address_text: str) -> bool:
         """
         按地址跳转：输入地址（如 0x40010000），自动定位到对应的外设和寄存器
@@ -689,10 +557,10 @@ class SearchManager(QObject):
         search_edit = QLineEdit()
         search_edit.setPlaceholderText(
             t("search.advanced_placeholder",
-              default="输入关键词或使用语法: type:periph name:GPIO* access:ro"))
+              default="输入搜索语法: type:periph name:GPIO* addr:0x4001* access:ro"))
         search_edit.setClearButtonEnabled(True)
         search_edit.setToolTip(
-            "支持统一搜索语法:\n"
+            "搜索语法:\n"
             "  type:peripheral  按类型\n"
             "  name:GPIO*       按名称（通配符）\n"
             "  desc:clock       按描述\n"
@@ -701,16 +569,6 @@ class SearchManager(QObject):
             "  periph:GPIOA     限定外设\n"
             "  纯文本           全属性搜索")
         input_row.addWidget(search_edit, 1)
-
-        # 搜索范围
-        scope_combo = QComboBox()
-        scope_combo.addItem(t("search.scope_all", default="全部属性"), "all")
-        scope_combo.addItem(t("search.scope_name", default="仅名称"), "name")
-        scope_combo.addItem(t("search.scope_desc", default="仅描述"), "description")
-        scope_combo.addItem(t("search.scope_addr", default="仅地址"), "address")
-        scope_combo.addItem(t("search.scope_value", default="仅复位值"), "value")
-        scope_combo.setFixedWidth(120)
-        input_row.addWidget(scope_combo)
 
         # 语法帮助按钮
         help_btn = QPushButton("?")
@@ -775,29 +633,15 @@ class SearchManager(QObject):
         _search_results_data = []
         state_mgr = self._get_state_manager()
 
-        def _is_structured_query(text: str) -> bool:
-            """检测是否使用了结构化搜索语法"""
-            return bool(re.search(r'\w+:', text))
-
         def do_search():
             nonlocal _search_results_data
             text = search_edit.text().strip()
             if not text:
                 return
 
-            # 自动检测：如果输入包含 key: 语法，使用结构化搜索
-            if _is_structured_query(text):
-                _search_results_data = self.structured_search(text)
-                count_label.setText(
-                    f'<span style="color:{_c.accent};">🔤 结构化搜索</span> | '
-                    f'找到 <b>{len(_search_results_data)}</b> 个结果')
-            else:
-                # 使用传统的深度搜索
-                scope = scope_combo.currentData() or 'all'
-                _search_results_data = self.deep_search(text, scope)
-                count_label.setText(
-                    f'<span style="color:{_c.text_secondary};">🔎 全文搜索</span> | '
-                    f'找到 <b>{len(_search_results_data)}</b> 个结果')
+            _search_results_data = self.structured_search(text)
+            count_label.setText(
+                f'找到 <b>{len(_search_results_data)}</b> 个结果')
 
             results_list.clear()
 
@@ -881,9 +725,8 @@ class SearchManager(QObject):
                     periph_tree = self.get_widget('periph_tree')
                     if periph_tree:
                         # 使用 peripheral_manager 的选择方法
-                        # DeviceTreeView/DeviceTreeModel imported at top
-                        # DeviceTreeModel imported at top
-                        if isinstance(periph_tree, DeviceTreeView):
+                        periph_mgr = self.coordinator.get_component('peripheral_manager') if self.coordinator else None
+                        if isinstance(periph_tree, DeviceTreeView) and periph_mgr:
                             if field and reg:
                                 periph_mgr.select_field(periph, reg, field)
                             elif reg:
@@ -1121,7 +964,7 @@ class SearchManager(QObject):
             query: 搜索查询字符串
         
         Returns:
-            匹配结果列表（同 deep_search 格式）
+            匹配结果列表
         """
         if not query or not query.strip():
             return []
