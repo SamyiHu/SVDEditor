@@ -42,6 +42,14 @@ class ToolActionsMixin:
 
     def show_svd_diff(self):
         """显示 SVD 差异比较对话框（纯对比，非模态）"""
+        self._show_diff_dialog(initial_mode="compare")
+
+    def show_svd_diff_merge(self):
+        """显示 SVD 比较与合并对话框（非模态）"""
+        self._show_diff_dialog(initial_mode="merge")
+
+    def _show_diff_dialog(self, initial_mode="compare"):
+        """统一对话框入口"""
         from ..dialogs.svd_diff_dialog import SVDDiffDialog
         if not self.state_manager.device_info:
             from PyQt6.QtWidgets import QMessageBox
@@ -50,32 +58,14 @@ class ToolActionsMixin:
 
         self._diff_dialog = SVDDiffDialog(
             self, self.state_manager.device_info,
-            document_manager=self.document_manager
+            document_manager=self.document_manager,
+            initial_mode=initial_mode
         )
+        self._diff_dialog.merge_completed.connect(self._on_merge_completed)
         self._diff_dialog.setWindowFlags(
             self._diff_dialog.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint
         )
         self._diff_dialog.show()
-
-    def show_svd_diff_merge(self):
-        """显示 SVD 比较与合并对话框（非模态）"""
-        from ..dialogs.svd_diff_merge_dialog import SVDDiffMergeDialog
-        if not self.state_manager.device_info:
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, t("message.info"), t("msg.open_or_create_first"))
-            return
-
-        # 保存引用防止被垃圾回收
-        self._diff_merge_dialog = SVDDiffMergeDialog(
-            self, self.state_manager.device_info,
-            document_manager=self.document_manager
-        )
-        self._diff_merge_dialog.merge_completed.connect(self._on_merge_completed)
-        self._diff_merge_dialog.finished.connect(lambda: self._cleanup_diff_merge_dialog())
-        self._diff_merge_dialog.setWindowFlags(
-            self._diff_merge_dialog.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint
-        )
-        self._diff_merge_dialog.show()
 
     def _cleanup_diff_merge_dialog(self):
         """清理比较合并对话框引用"""

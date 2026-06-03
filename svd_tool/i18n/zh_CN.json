@@ -947,6 +947,13 @@
   "diff.removed_suffix": "[-删除]",
   "diff.no_diff": "没有差异",
   "diff.compare_file": "比较文件",
+  "diff.view_tree": "树形对比",
+  "diff.view_raw": "原始XML",
+  "diff.mode_compare": "对比",
+  "diff.mode_merge": "合并",
+  "diff.accept_all": "接受所有新增",
+  "diff.keep_all": "保留所有当前",
+  "diff.execute_merge": "执行合并",
 
   "merge.action_keep": "保留当前",
   "merge.action_use": "使用导入",

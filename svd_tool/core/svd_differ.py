@@ -93,13 +93,17 @@ class SVDDiffer:
             List[DiffItem]: 层次化的差异列表
         """
         results = []
-        
+
         periphs_a = {name: p for name, p in device_a.peripherals.items()} if device_a else {}
         periphs_b = {name: p for name, p in device_b.peripherals.items()} if device_b else {}
-        
-        all_periph_names = set(list(periphs_a.keys()) + list(periphs_b.keys()))
-        
-        for periph_name in sorted(all_periph_names):
+
+        # 按 B 的原始顺序排列，B 中没有的 A 外设追加在末尾
+        ordered_names = list(periphs_b.keys())
+        for name in periphs_a:
+            if name not in periphs_b:
+                ordered_names.append(name)
+
+        for periph_name in ordered_names:
             p_a = periphs_a.get(periph_name)
             p_b = periphs_b.get(periph_name)
             
@@ -132,13 +136,16 @@ class SVDDiffer:
             ['base_address', 'description', 'display_name', 'version', 'group_name'])
         children.extend(prop_diffs)
         
-        # 比较寄存器
+        # 比较寄存器（按 B 的原始顺序排列）
         regs_a = {r_name: r for r_name, r in p_a.registers.items()} if p_a.registers else {}
         regs_b = {r_name: r for r_name, r in p_b.registers.items()} if p_b.registers else {}
-        
-        all_reg_names = set(list(regs_a.keys()) + list(regs_b.keys()))
-        
-        for reg_name in sorted(all_reg_names):
+
+        ordered_reg_names = list(regs_b.keys())
+        for rname in regs_a:
+            if rname not in regs_b:
+                ordered_reg_names.append(rname)
+
+        for reg_name in ordered_reg_names:
             r_a = regs_a.get(reg_name)
             r_b = regs_b.get(reg_name)
             

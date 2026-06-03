@@ -947,6 +947,13 @@
   "diff.removed_suffix": "[-Removed]",
   "diff.no_diff": "No differences",
   "diff.compare_file": "Compare file",
+  "diff.view_tree": "Tree View",
+  "diff.view_raw": "Raw XML",
+  "diff.mode_compare": "Compare",
+  "diff.mode_merge": "Merge",
+  "diff.accept_all": "Accept All New",
+  "diff.keep_all": "Keep All Current",
+  "diff.execute_merge": "Execute Merge",
 
   "merge.action_keep": "Keep Current",
   "merge.action_use": "Use Import",
