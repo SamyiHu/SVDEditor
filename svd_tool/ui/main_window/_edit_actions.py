@@ -931,7 +931,7 @@ class EditActionsMixin:
         confirm_msg = f"确定要删除以下 {total} 个项目吗？\n\n" + "\n".join(msg_parts)
 
         reply = QMessageBox.question(
-            self, "批量删除确认",
+            self, t("msg.batch_delete_confirm"),
             confirm_msg,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No

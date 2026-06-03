@@ -14,7 +14,6 @@ class Coordinator(QObject):
     device_info_updated = pyqtSignal(object)  # 设备信息更新
     file_loaded = pyqtSignal(object)  # 文件加载完成
     file_saved = pyqtSignal(str)  # 文件保存完成
-    svd_generated = pyqtSignal(str)  # SVD生成完成
     peripheral_added = pyqtSignal(str)  # 外设添加
     peripheral_updated = pyqtSignal(str)  # 外设更新
     peripheral_deleted = pyqtSignal(str)  # 外设删除
@@ -85,8 +84,6 @@ class Coordinator(QObject):
             self.file_loaded.emit(data)
         elif event_type == "file_saved":
             self.file_saved.emit(data)
-        elif event_type == "svd_generated":
-            self.svd_generated.emit(data)
         elif event_type == "peripheral_added":
             self.peripheral_added.emit(data)
         elif event_type == "peripheral_updated":
@@ -152,11 +149,7 @@ class Coordinator(QObject):
     def notify_file_saved(self, file_path: str):
         """通知文件保存完成"""
         self.emit_event("file_saved", file_path)
-    
-    def notify_svd_generated(self, svd_xml: str):
-        """通知SVD生成完成"""
-        self.emit_event("svd_generated", svd_xml)
-    
+
     def notify_peripheral_added(self, peripheral_name: str):
         """通知外设添加"""
         self.emit_event("peripheral_added", peripheral_name)
@@ -197,14 +190,7 @@ class Coordinator(QObject):
         if device_info_manager and hasattr(device_info_manager, 'update_device_info_from_ui'):
             return device_info_manager.update_device_info_from_ui()
         return None
-    
-    def generate_svd(self):
-        """生成SVD"""
-        file_operations = self.get_file_operations()
-        if file_operations and hasattr(file_operations, 'generate_svd'):
-            return file_operations.generate_svd()
-        return None
-    
+
     def open_svd_file(self):
         """打开SVD文件"""
         file_operations = self.get_file_operations()

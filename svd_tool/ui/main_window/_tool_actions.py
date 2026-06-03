@@ -156,13 +156,13 @@ class ToolActionsMixin:
 
         # 按钮
         btn_layout = QHBoxLayout()
-        refresh_btn = QPushButton("刷新检测")
+        refresh_btn = QPushButton(t("button.refresh_detect"))
         refresh_btn.clicked.connect(lambda: (
             self.conflict_detector.detect_all(self.state_manager.device_info),
             dialog.accept(),
             self.show_address_conflicts()
         ))
-        close_btn = QPushButton("关闭")
+        close_btn = QPushButton(t("button.close"))
         close_btn.clicked.connect(dialog.accept)
         btn_layout.addStretch()
         btn_layout.addWidget(refresh_btn)

@@ -14,6 +14,7 @@ from PyQt6.QtGui import (
     QFont, QSyntaxHighlighter, QTextCharFormat,
     QColor
 )
+from ...i18n.i18n import t
 
 
 class XMLSyntaxHighlighter(QSyntaxHighlighter):
@@ -138,6 +139,8 @@ class BaseEditDialog(QDialog):
         self._button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
+        self._button_box.button(QDialogButtonBox.StandardButton.Ok).setText(t("button.ok"))
+        self._button_box.button(QDialogButtonBox.StandardButton.Cancel).setText(t("button.cancel"))
         self._button_box.accepted.connect(self._on_accept)
         self._button_box.rejected.connect(self.reject)
         self._main_layout.addWidget(self._button_box)
@@ -196,7 +199,7 @@ class BaseEditDialog(QDialog):
             self.collect_data()
             self.accept()
         except Exception as e:
-            QMessageBox.warning(self, "验证错误", str(e))
+            QMessageBox.warning(self, t("error.validation_error"), str(e))
 
     def validate_input(self):
         """子类重写此方法进行输入验证"""

@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QHeaderView, QWidget
 )
 from PyQt6.QtCore import Qt, pyqtSignal
+from ..i18n.i18n import t
 
 from ..core.validators import Validator, ValidationError
 
@@ -30,9 +31,11 @@ class BaseEditDialog(QDialog):
         
         # 按钮区域
         self.button_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | 
+            QDialogButtonBox.StandardButton.Ok |
             QDialogButtonBox.StandardButton.Cancel
         )
+        self.button_box.button(QDialogButtonBox.StandardButton.Ok).setText(t("button.ok"))
+        self.button_box.button(QDialogButtonBox.StandardButton.Cancel).setText(t("button.cancel"))
         self.button_box.accepted.connect(self.on_accept)
         self.button_box.rejected.connect(self.reject)
         self.main_layout.addWidget(self.button_box)
@@ -51,9 +54,9 @@ class BaseEditDialog(QDialog):
             self.collect_data()
             self.accept()
         except ValidationError as e:
-            QMessageBox.warning(self, "输入错误", str(e))
+            QMessageBox.warning(self, t("error.input_error"), str(e))
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"发生未知错误: {str(e)}")
+            QMessageBox.critical(self, t("error.title_error"), t("error.unknown_error", error=str(e)))
     
     def validate_input(self):
         """验证输入"""

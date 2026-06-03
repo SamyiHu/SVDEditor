@@ -125,7 +125,7 @@ class RegisterManager:
         """编辑寄存器"""
         peripheral, current_register = self._get_current_selection()
         if not peripheral:
-            QMessageBox.warning(None, "警告", "请先选择一个外设")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.select_periph_first"))
             return
         
         state_manager = self.get_state_manager()
@@ -137,17 +137,17 @@ class RegisterManager:
             reg_name = current_register
         
         if not reg_name:
-            QMessageBox.warning(None, "警告", "请先选择一个寄存器")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.select_reg_first"))
             return
         
         # 检查寄存器是否存在
         if peripheral not in state_manager.device_info.peripherals:
-            QMessageBox.warning(None, "警告", f"外设 '{peripheral}' 不存在")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.periph_not_exist", name=peripheral))
             return
         
         periph = state_manager.device_info.peripherals[peripheral]
         if reg_name not in periph.registers:
-            QMessageBox.warning(None, "警告", f"寄存器 '{reg_name}' 不存在")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.reg_not_exist", name=reg_name))
             return
         
         # 获取寄存器对象
@@ -211,7 +211,7 @@ class RegisterManager:
         """删除寄存器"""
         peripheral, current_register = self._get_current_selection()
         if not peripheral:
-            QMessageBox.warning(None, "警告", "请先选择一个外设")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.select_periph_first"))
             return
         
         state_manager = self.get_state_manager()
@@ -223,23 +223,23 @@ class RegisterManager:
             reg_name = current_register
         
         if not reg_name:
-            QMessageBox.warning(None, "警告", "请先选择一个寄存器")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.select_reg_first"))
             return
         
         # 检查寄存器是否存在
         if peripheral not in state_manager.device_info.peripherals:
-            QMessageBox.warning(None, "警告", f"外设 '{peripheral}' 不存在")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.periph_not_exist", name=peripheral))
             return
         
         periph = state_manager.device_info.peripherals[peripheral]
         if reg_name not in periph.registers:
-            QMessageBox.warning(None, "警告", f"寄存器 '{reg_name}' 不存在")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.reg_not_exist", name=reg_name))
             return
         
         # 确认删除
         reply = QMessageBox.question(
-            None, "确认删除",
-            f"确定要删除寄存器 '{reg_name}' 吗？",
+            None, t("msg.confirm_delete_title"),
+            t("msg.confirm_delete_reg", name=reg_name),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -266,7 +266,7 @@ class RegisterManager:
         """删除多个寄存器"""
         peripheral, _ = self._get_current_selection()
         if not peripheral:
-            QMessageBox.warning(None, "警告", "请先选择一个外设")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.select_periph_first"))
             return
         
         state_manager = self.get_state_manager()
@@ -275,8 +275,8 @@ class RegisterManager:
         
         # 确认删除
         reply = QMessageBox.question(
-            None, "确认删除",
-            f"确定要删除选中的 {len(reg_names)} 个寄存器吗？",
+            None, t("msg.confirm_delete_title"),
+            t("msg.confirm_delete_regs", count=len(reg_names)),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -310,7 +310,7 @@ class RegisterManager:
         """添加位域"""
         peripheral, register = self._get_current_selection()
         if not peripheral or not register:
-            QMessageBox.warning(None, "警告", "请先选择一个寄存器")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.select_reg_first"))
             return
         
         state_manager = self.get_state_manager()
@@ -369,7 +369,7 @@ class RegisterManager:
         """编辑位域"""
         peripheral, register = self._get_current_selection()
         if not peripheral or not register:
-            QMessageBox.warning(None, "警告", "请先选择一个寄存器")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.select_reg_first"))
             return
         
         state_manager = self.get_state_manager()
@@ -382,12 +382,12 @@ class RegisterManager:
             field_name = selection.get('field')
         
         if not field_name:
-            QMessageBox.warning(None, "警告", "请先选择一个位域")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.select_field_first"))
             return
         
         # 检查位域是否存在
         if peripheral not in state_manager.device_info.peripherals:
-            QMessageBox.warning(None, "警告", f"外设 '{peripheral}' 不存在")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.periph_not_exist", name=peripheral))
             return
         
         periph = state_manager.device_info.peripherals[peripheral]
@@ -397,7 +397,7 @@ class RegisterManager:
         
         reg = periph.registers[register]
         if field_name not in reg.fields:
-            QMessageBox.warning(None, "警告", f"位域 '{field_name}' 不存在")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.field_not_exist", name=field_name))
             return
         
         # 获取位域对象
@@ -466,7 +466,7 @@ class RegisterManager:
         """删除位域"""
         peripheral, register = self._get_current_selection()
         if not peripheral or not register:
-            QMessageBox.warning(None, "警告", "请先选择一个寄存器")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.select_reg_first"))
             return
         
         state_manager = self.get_state_manager()
@@ -479,12 +479,12 @@ class RegisterManager:
             field_name = selection.get('field')
         
         if not field_name:
-            QMessageBox.warning(None, "警告", "请先选择一个位域")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.select_field_first"))
             return
         
         # 检查位域是否存在
         if peripheral not in state_manager.device_info.peripherals:
-            QMessageBox.warning(None, "警告", f"外设 '{peripheral}' 不存在")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.periph_not_exist", name=peripheral))
             return
         
         periph = state_manager.device_info.peripherals[peripheral]
@@ -494,13 +494,13 @@ class RegisterManager:
         
         reg = periph.registers[register]
         if field_name not in reg.fields:
-            QMessageBox.warning(None, "警告", f"位域 '{field_name}' 不存在")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.field_not_exist", name=field_name))
             return
         
         # 确认删除
         reply = QMessageBox.question(
-            None, "确认删除",
-            f"确定要删除位域 '{field_name}' 吗？",
+            None, t("msg.confirm_delete_title"),
+            t("msg.confirm_delete_field", name=field_name),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )

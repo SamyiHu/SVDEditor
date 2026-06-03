@@ -115,12 +115,12 @@ class InterruptManager:
             # 获取中断表格当前选中的行
             irq_table = self.get_widget('irq_table')
             if not irq_table:
-                QMessageBox.warning(None, "警告", "中断表格未找到")
+                QMessageBox.warning(None, t("error.title_warning"), t("msg.irq_table_not_found"))
                 return
             
             selected_rows = irq_table.selectedItems()
             if not selected_rows:
-                QMessageBox.warning(None, "警告", "请先选择一个中断")
+                QMessageBox.warning(None, t("error.title_warning"), t("msg.select_irq_first"))
                 return
             
             # 获取第一列（名称列）的文本
@@ -128,7 +128,7 @@ class InterruptManager:
         
         # 检查中断是否存在
         if interrupt_name not in state_manager.device_info.interrupts:
-            QMessageBox.warning(None, "警告", f"中断 '{interrupt_name}' 不存在")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.irq_not_exist", name=interrupt_name))
             return
         
         # 获取中断对象
@@ -205,12 +205,12 @@ class InterruptManager:
             # 获取中断表格当前选中的行
             irq_table = self.get_widget('irq_table')
             if not irq_table:
-                QMessageBox.warning(None, "警告", "中断表格未找到")
+                QMessageBox.warning(None, t("error.title_warning"), t("msg.irq_table_not_found"))
                 return
             
             selected_rows = irq_table.selectedItems()
             if not selected_rows:
-                QMessageBox.warning(None, "警告", "请先选择一个中断")
+                QMessageBox.warning(None, t("error.title_warning"), t("msg.select_irq_first"))
                 return
             
             # 获取第一列（名称列）的文本
@@ -218,13 +218,13 @@ class InterruptManager:
         
         # 检查中断是否存在
         if interrupt_name not in state_manager.device_info.interrupts:
-            QMessageBox.warning(None, "警告", f"中断 '{interrupt_name}' 不存在")
+            QMessageBox.warning(None, t("error.title_warning"), t("msg.irq_not_exist", name=interrupt_name))
             return
         
         # 确认删除
         reply = QMessageBox.question(
-            None, "确认删除",
-            f"确定要删除中断 '{interrupt_name}' 吗？",
+            None, t("msg.confirm_delete_title"),
+            t("msg.confirm_delete_irq", name=interrupt_name),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )

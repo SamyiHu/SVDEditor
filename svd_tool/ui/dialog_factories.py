@@ -236,7 +236,7 @@ class PeripheralEditDialog(BaseEditDialog):
         
         # 检查地址冲突（阻止保存）
         if self._has_address_conflict:
-            raise ValidationError("外设地址与现有外设冲突，请修改基地址或地址块大小")
+            raise ValidationError(t("error.periph_addr_conflict"))
         
         # 验证继承关系
         derived_from = self.derived_combo.currentText()
@@ -416,7 +416,7 @@ class RegisterEditDialog(BaseEditDialog):
         
         # 检查偏移冲突（阻止保存）
         if self._has_offset_conflict:
-            raise ValidationError("寄存器偏移地址与现有寄存器冲突，请修改偏移地址")
+            raise ValidationError(t("error.reg_offset_conflict"))
     
     def collect_data(self):
         """收集数据"""
@@ -602,11 +602,11 @@ class FieldEditDialog(BaseEditDialog):
         
         # 检查位域冲突（阻止保存）
         if self._has_bit_conflict:
-            raise ValidationError("位域位范围与现有位域冲突，请修改起始位或位宽")
-        
+            raise ValidationError(t("error.field_bit_conflict"))
+
         # 验证枚举值
         if not self.enum_editor.validate():
-            raise ValidationError("枚举值验证失败")
+            raise ValidationError(t("error.enum_validation_failed"))
     
     def collect_data(self):
         """收集数据"""

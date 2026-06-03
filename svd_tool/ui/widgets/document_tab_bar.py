@@ -369,14 +369,14 @@ class DocumentTabBar(QWidget):
             diff_id = self._get_diff_id(index)
             
             # 关闭比较标签
-            close_action = menu.addAction("关闭比较")
+            close_action = menu.addAction(t("menu.doc.close_compare"))
             close_action.triggered.connect(
                 lambda checked, did=diff_id: self.diff_tab_close_requested.emit(did))
-            
+
             menu.addSeparator()
-            
+
             # 导出差异报告
-            export_action = menu.addAction("导出差异报告...")
+            export_action = menu.addAction(t("menu.doc.export_diff_report"))
             if diff_id and diff_id in self._diff_tabs:
                 export_action.triggered.connect(
                     lambda checked, did=diff_id: self._export_diff_report(did))
@@ -414,7 +414,7 @@ class DocumentTabBar(QWidget):
         
         # 关闭所有比较标签
         if self._diff_tabs:
-            close_diffs_action = menu.addAction("关闭所有比较")
+            close_diffs_action = menu.addAction(t("menu.doc.close_all_compare"))
             close_diffs_action.triggered.connect(self._close_all_diffs)
         
         menu.exec(QCursor.pos())

@@ -272,14 +272,7 @@ class MenuBarBuilder:
         validate_action.triggered.connect(self.main_window.validate_data)
         validate_action.setIcon(get_icon("tools_validate"))
         tools_menu.addAction(validate_action)
-        
-        # 生成SVD
-        generate_action = QAction(t("menu.tools.generate"), self.parent)
-        generate_action.triggered.connect(self.main_window.generate_svd)
-        generate_action.setShortcut(QKeySequence("Ctrl+G"))
-        generate_action.setIcon(get_icon("tools_generate"))
-        tools_menu.addAction(generate_action)
-        
+
         tools_menu.addSeparator()
         
         # 导出文档子菜单

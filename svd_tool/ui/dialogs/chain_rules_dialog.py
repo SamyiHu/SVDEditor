@@ -563,6 +563,8 @@ class ChainRulesDialog(QDialog):
         # 按钮
         btn_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btn_box.button(QDialogButtonBox.StandardButton.Ok).setText(t("button.ok"))
+        btn_box.button(QDialogButtonBox.StandardButton.Cancel).setText(t("button.cancel"))
         btn_box.accepted.connect(batch_dlg.accept)
         btn_box.rejected.connect(batch_dlg.reject)
         batch_lay.addWidget(btn_box)

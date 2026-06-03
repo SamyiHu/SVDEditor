@@ -247,9 +247,9 @@ class EnumValuesEditor(QGroupBox):
             if not name and not value:
                 continue
             if not name:
-                errors.append(f"第 {row+1} 行: 枚举名称不能为空")
+                errors.append(t("enum.name_empty", row=row+1))
             if not value:
-                errors.append(f"第 {row+1} 行: 枚举值不能为空")
+                errors.append(t("enum.value_empty", row=row+1))
             else:
                 try:
                     if value.startswith(("0x", "0X")):
@@ -259,13 +259,13 @@ class EnumValuesEditor(QGroupBox):
                     else:
                         int(value)
                 except ValueError:
-                    errors.append(f"第 {row+1} 行: 枚举值 '{value}' 格式无效")
+                    errors.append(t("enum.value_invalid", row=row+1, value=value))
             if name and name in seen_names:
-                errors.append(f"枚举名称 '{name}' 重复")
+                errors.append(t("enum.name_dup", name=name))
             if name:
                 seen_names.add(name)
             if value and value in seen_values:
-                errors.append(f"枚举值 '{value}' 重复")
+                errors.append(t("enum.value_dup", value=value))
             if value:
                 seen_values.add(value)
         if errors:

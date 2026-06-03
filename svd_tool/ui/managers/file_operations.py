@@ -8,6 +8,7 @@ from typing import Optional
 
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QLabel
 from PyQt6.QtCore import QObject, pyqtSignal
+from ...i18n.i18n import t
 
 from ...core.svd_parser import SVDParser
 from ...core.svd_generator import SVDGenerator
@@ -22,7 +23,6 @@ class FileOperations(QObject):
     # 信号定义
     file_loaded = pyqtSignal(object)  # 文件加载完成
     file_saved = pyqtSignal(str)  # 文件保存完成
-    svd_generated = pyqtSignal(str)  # SVD生成完成
 
     def __init__(self, state_manager, layout_manager):
         """
@@ -47,7 +47,7 @@ class FileOperations(QObject):
             self.state_manager.command_history.clear()
 
             # 更新状态
-            self.layout_manager.update_status("已创建新文件")
+            self.layout_manager.update_status(t("status.new_file_created"))
 
     def open_svd_file(self):
         """打开SVD文件"""
@@ -55,14 +55,14 @@ class FileOperations(QObject):
         if self.check_unsaved_changes():
             file_path, _ = QFileDialog.getOpenFileName(
                 self.layout_manager.main_window,
-                "选择SVD文件",
+                t("dialog.select_svd"),
                 "",
-                "SVD文件 (*.svd);;XML文件 (*.xml)"
+                t("filter.svd_xml")
             )
 
             if file_path:
                 try:
-                    self.layout_manager.update_status("正在解析SVD文件...")
+                    self.layout_manager.update_status(t("status.parsing"))
                     from PyQt6.QtWidgets import QApplication
                     QApplication.processEvents()  # 更新UI
 
@@ -81,25 +81,25 @@ class FileOperations(QObject):
                     # 更新UI
                     self.logger.debug(f"发射file_loaded信号: {device_info.name if device_info else 'None'}")
                     self.file_loaded.emit(device_info)
-                    self.layout_manager.update_status(f"已加载: {os.path.basename(file_path)}")
+                    self.layout_manager.update_status(t("status.loaded", name=os.path.basename(file_path)))
 
                     # 显示警告
                     if parser.warnings:
                         warning_msg = "\n".join(parser.warnings[:10])
                         if len(parser.warnings) > 10:
-                            warning_msg += f"\n...还有{len(parser.warnings)-10}条警告"
+                            warning_msg += t("validation.more_warnings", count=len(parser.warnings)-10)
                         QMessageBox.warning(
                             self.layout_manager.main_window,
-                            "解析警告",
+                            t("msg.parse_warnings"),
                             warning_msg
                         )
 
                 except Exception as e:
-                    self.logger.error(f"文件加载失败: {str(e)}")
+                    self.logger.error(f"File load failed: {str(e)}")
                     QMessageBox.critical(
                         self.layout_manager.main_window,
-                        "加载错误",
-                        f"文件加载失败: {str(e)}"
+                        t("msg.load_error"),
+                        t("msg.load_failed", error=str(e))
                     )
 
     def save_svd_file(self):
@@ -120,9 +120,9 @@ class FileOperations(QObject):
             else:
                 file_path, _ = QFileDialog.getSaveFileName(
                     self.layout_manager.main_window,
-                    "保存SVD文件",
+                    t("dialog.save_svd"),
                     "",
-                    "SVD文件 (*.svd);;所有文件 (*.*)"
+                    "SVD (*.svd);;All (*.*)"
                 )
 
             if not file_path:
@@ -146,20 +146,20 @@ class FileOperations(QObject):
 
             # 更新状态
             self.current_file_path = file_path
-            self.layout_manager.update_status(f"SVD文件已保存: {file_path}")
+            self.layout_manager.update_status(t("status.saved", path=file_path))
             self.file_saved.emit(file_path)
             QMessageBox.information(
                 self.layout_manager.main_window,
-                "保存成功",
-                f"SVD文件已保存到:\n{file_path}"
+                t("msg.save_success"),
+                t("msg.save_success_text", path=file_path)
             )
 
         except Exception as e:
-            self.logger.error(f"文件保存失败: {str(e)}")
+            self.logger.error(f"File save failed: {str(e)}")
             QMessageBox.critical(
                 self.layout_manager.main_window,
-                "保存错误",
-                f"文件保存失败: {str(e)}"
+                t("msg.save_error"),
+                t("msg.save_failed", error=str(e))
             )
 
     def _validate_before_save(self) -> bool:
@@ -175,10 +175,10 @@ class FileOperations(QObject):
             warnings = validator.get_warnings()
             if warnings:
                 self.layout_manager.update_status(
-                    f"验证通过（{len(warnings)} 条警告）- 正在保存..."
+                    t("validation.pass_with_warnings", count=len(warnings))
                 )
             else:
-                self.layout_manager.update_status("验证通过 - 正在保存...")
+                self.layout_manager.update_status(t("validation.pass_saving"))
             return True
 
         # 有错误，显示验证结果对话框
@@ -188,14 +188,14 @@ class FileOperations(QObject):
         # 询问用户是否继续保存
         msg_box = QMessageBox(self.layout_manager.main_window)
         msg_box.setIcon(QMessageBox.Icon.Warning)
-        msg_box.setWindowTitle("SVD 验证发现问题")
+        msg_box.setWindowTitle(t("validation.schema_issues"))
         msg_box.setText(
-            f"验证发现 {summary['errors']} 个错误和 {summary['warnings']} 个警告。\n"
-            f"建议修复错误后再保存，否则下游工具可能解析失败。"
+            t("validation.schema_issues_text",
+              errors=summary['errors'], warnings=summary['warnings'])
         )
         msg_box.setDetailedText(result_text)
-        save_btn = msg_box.addButton("仍然保存", QMessageBox.ButtonRole.AcceptRole)
-        cancel_btn = msg_box.addButton("返回修改", QMessageBox.ButtonRole.RejectRole)
+        save_btn = msg_box.addButton(t("validation.save_anyway"), QMessageBox.ButtonRole.AcceptRole)
+        cancel_btn = msg_box.addButton(t("validation.go_back"), QMessageBox.ButtonRole.RejectRole)
         msg_box.setDefaultButton(cancel_btn)
 
         msg_box.exec()
@@ -204,6 +204,8 @@ class FileOperations(QObject):
     # 地址冲突相关的 Schema 类别，由 AddressConflictDetector 专门处理
     _ADDRESS_CONFLICT_CATEGORIES = {
         "外设地址", "地址重叠", "寄存器偏移", "位域重叠", "中断号重复",
+        "Peripheral Address", "Address Overlap", "Register Offset",
+        "Field Bit Overlap", "Interrupt Duplicate",
     }
 
     def validate_svd(self):
@@ -255,14 +257,14 @@ class FileOperations(QObject):
             if conflict_results:
                 from ...core.address_conflict_detector import ConflictType
                 type_map = {
-                    ConflictType.PERIPHERAL_ADDRESS_OVERLAP: "外设地址重叠",
-                    ConflictType.PERIPHERAL_BASE_DUPLICATE: "外设基地址重复",
-                    ConflictType.REGISTER_OFFSET_DUPLICATE: "寄存器偏移重复",
-                    ConflictType.REGISTER_ADDRESS_OVERLAP: "寄存器地址重叠",
-                    ConflictType.FIELD_BIT_OVERLAP: "位域位重叠",
-                    ConflictType.INTERRUPT_VALUE_DUPLICATE: "中断号重复",
+                    ConflictType.PERIPHERAL_ADDRESS_OVERLAP: t("conflict.periph_addr_overlap"),
+                    ConflictType.PERIPHERAL_BASE_DUPLICATE: t("conflict.periph_base_dup"),
+                    ConflictType.REGISTER_OFFSET_DUPLICATE: t("conflict.reg_offset_dup"),
+                    ConflictType.REGISTER_ADDRESS_OVERLAP: t("conflict.reg_addr_overlap"),
+                    ConflictType.FIELD_BIT_OVERLAP: t("conflict.field_bit_overlap"),
+                    ConflictType.INTERRUPT_VALUE_DUPLICATE: t("conflict.irq_dup"),
                 }
-                result_lines.append(f"[地址冲突检测] 共 {conflict_count} 个冲突")
+                result_lines.append(t("validation.conflict_header", count=conflict_count))
                 result_lines.append("-" * 50)
                 for i, c in enumerate(conflict_results[:30]):
                     icon = "[ERROR]" if c.severity.value == "error" else "[WARN]"
@@ -271,7 +273,7 @@ class FileOperations(QObject):
                     if c.detail:
                         result_lines.append(f"       -> {c.detail}")
                 if len(conflict_results) > 30:
-                    result_lines.append(f"  ... 还有 {len(conflict_results) - 30} 个冲突")
+                    result_lines.append(f"  {t('validation.more_conflicts', count=len(conflict_results) - 30)}")
 
             # 4b. Schema 验证结果（按严重程度分组）
             if schema_items:
@@ -281,17 +283,17 @@ class FileOperations(QObject):
 
                 if errors:
                     result_lines.append("")
-                    result_lines.append(f"[Schema 错误] 共 {len(errors)} 项")
+                    result_lines.append(t("validation.schema_errors", count=len(errors)))
                     result_lines.append("-" * 50)
                     for i, item in enumerate(errors[:30]):
                         loc = f" [{item.location}]" if item.location else ""
                         result_lines.append(f"  {i+1}. {item.category}{loc}: {item.message}")
                         if item.suggestion:
-                            result_lines.append(f"       -> 建议: {item.suggestion}")
+                            result_lines.append(f"       {t('validation.suggestion', text=item.suggestion)}")
 
                 if warnings:
                     result_lines.append("")
-                    result_lines.append(f"[Schema 警告] 共 {len(warnings)} 项")
+                    result_lines.append(t("validation.schema_warnings", count=len(warnings)))
                     result_lines.append("-" * 50)
                     for i, item in enumerate(warnings[:20]):
                         loc = f" [{item.location}]" if item.location else ""
@@ -299,13 +301,13 @@ class FileOperations(QObject):
 
                 if infos:
                     result_lines.append("")
-                    result_lines.append(f"[Schema 信息] 共 {len(infos)} 项")
+                    result_lines.append(t("validation.schema_infos", count=len(infos)))
                     result_lines.append("-" * 50)
                     for i, item in enumerate(infos[:10]):
                         loc = f" [{item.location}]" if item.location else ""
                         result_lines.append(f"  {i+1}. {item.category}{loc}: {item.message}")
                     if len(infos) > 10:
-                        result_lines.append(f"  ... 还有 {len(infos) - 10} 条信息")
+                        result_lines.append(f"  {t('validation.more_infos', count=len(infos) - 10)}")
 
             result_text = "\n".join(result_lines)
 
@@ -313,10 +315,8 @@ class FileOperations(QObject):
             if total_errors == 0 and total_warnings == 0:
                 QMessageBox.information(
                     self.layout_manager.main_window,
-                    "SVD 验证通过",
-                    "验证通过，未发现任何问题。\n\n"
-                    f"已检查 Schema 验证规则 {len(schema_items)} 项。\n"
-                    f"已检查地址冲突检测（0 个冲突）。"
+                    t("validation.passed_title"),
+                    t("validation.passed_text", count=len(schema_items))
                 )
             else:
                 self._show_validation_result_dialog(
@@ -324,17 +324,18 @@ class FileOperations(QObject):
                     conflict_count, result_text
                 )
 
-            self.layout_manager.update_status(
-                f"验证完成: {total_errors} 错误, {total_warnings} 警告"
-                + (f" (含 {conflict_count} 个地址冲突)" if conflict_count > 0 else "")
-            )
+            status_msg = t("validation.complete_status",
+                           errors=total_errors, warnings=total_warnings)
+            if conflict_count > 0:
+                status_msg += t("validation.with_conflicts", count=conflict_count)
+            self.layout_manager.update_status(status_msg)
 
         except Exception as e:
-            self.logger.error(f"验证失败: {str(e)}")
+            self.logger.error(f"Validation failed: {str(e)}")
             QMessageBox.critical(
                 self.layout_manager.main_window,
-                "验证错误",
-                f"验证过程出错: {str(e)}"
+                t("validation.error_title"),
+                t("validation.error_text", error=str(e))
             )
 
     def _validate_all_documents(self, document_manager):
@@ -391,10 +392,10 @@ class FileOperations(QObject):
                     loc = f" [{r.location}]" if r.location else ""
                     detail_lines.append(f"  [WARN]  {r.category}{loc}: {r.message}")
                 if conflict_details:
-                    detail_lines.append(f"  [地址冲突] ({conflict_count} 个)")
+                    detail_lines.append(f"  [{t('conflict.periph_addr_overlap')}] ({conflict_count})")
                     detail_lines.extend(conflict_details)
                 if len(errors) > 15:
-                    detail_lines.append(f"  ... 还有 {len(errors) - 15} 个错误")
+                    detail_lines.append(f"  ... {len(errors) - 15} more errors")
 
                 total_errors += doc_errors
                 total_warnings += doc_warnings
@@ -403,7 +404,7 @@ class FileOperations(QObject):
                     "conflicts": conflict_count, "detail": "\n".join(detail_lines),
                 })
             except Exception as e:
-                all_results.append({"name": doc.display_name, "errors": 1, "warnings": 0, "conflicts": 0, "detail": f"  验证出错: {e}"})
+                all_results.append({"name": doc.display_name, "errors": 1, "warnings": 0, "conflicts": 0, "detail": f"  {t('validation.doc_error', error=str(e))}"})
                 total_errors += 1
 
         # 切回原文档
@@ -414,27 +415,28 @@ class FileOperations(QObject):
                 main_win._restore_document_state(original_doc)
 
         # 构建汇总结果
-        result_lines = [f"多文档验证结果（共 {len(all_results)} 个文档）", "=" * 60]
+        result_lines = [t("validation.multi_doc_result", count=len(all_results)), "=" * 60]
         for r in all_results:
             icon = "PASS" if r["errors"] == 0 else "FAIL"
-            line = f"\n[{icon}] {r['name']}: {r['errors']} 错误, {r['warnings']} 警告"
+            line = f"\n[{icon}] {t('validation.doc_summary', name=r['name'], errors=r['errors'], warnings=r['warnings'])}"
             if r["conflicts"] > 0:
-                line += f", {r['conflicts']} 地址冲突"
+                line += t("validation.doc_conflicts", count=r['conflicts'])
             result_lines.append(line)
             result_lines.append("-" * 50)
             if r["detail"]:
                 result_lines.append(r["detail"])
             elif r["errors"] == 0:
-                result_lines.append("  验证通过，无问题")
+                result_lines.append(t("validation.doc_pass"))
 
         result_text = "\n".join(result_lines)
 
         if total_errors == 0 and total_warnings == 0:
-            QMessageBox.information(main_win, "多文档验证通过", f"所有 {len(all_results)} 个文档验证通过，未发现问题。")
+            QMessageBox.information(main_win, t("validation.multi_doc_passed"),
+                                    t("validation.multi_doc_passed_text", count=len(all_results)))
         else:
             self._show_validation_result_dialog(total_errors, total_warnings, 0, 0, result_text)
 
-        self.layout_manager.update_status(f"多文档验证完成: {total_errors} 错误, {total_warnings} 警告")
+        self.layout_manager.update_status(t("validation.multi_doc_status", errors=total_errors, warnings=total_warnings))
 
     def _show_validation_result_dialog(self, errors, warnings, infos,
                                         conflict_count, detail_text):
@@ -442,7 +444,7 @@ class FileOperations(QObject):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox
 
         dialog = QDialog(self.layout_manager.main_window)
-        dialog.setWindowTitle("SVD 验证结果")
+        dialog.setWindowTitle(t("validation.result_title"))
         dialog.setMinimumSize(640, 480)
         dialog.resize(720, 560)
 
@@ -452,17 +454,16 @@ class FileOperations(QObject):
         # 摘要标签
         summary_parts = []
         if errors > 0:
-            summary_parts.append(f"{errors} 个错误")
+            summary_parts.append(t("validation.n_errors", count=errors))
         if warnings > 0:
-            summary_parts.append(f"{warnings} 个警告")
+            summary_parts.append(t("validation.n_warnings", count=warnings))
         if infos > 0:
-            summary_parts.append(f"{infos} 条信息")
+            summary_parts.append(t("validation.n_infos", count=infos))
         if conflict_count > 0:
-            summary_parts.append(f"{conflict_count} 个地址冲突")
+            summary_parts.append(t("validation.n_conflicts", count=conflict_count))
 
         summary_label = QLabel(
-            f"验证发现: {'，'.join(summary_parts)}。\n"
-            f"建议优先修复错误项，警告项可酌情处理。"
+            t("validation.result_summary", summary="，".join(summary_parts))
         )
         summary_label.setWordWrap(True)
         layout.addWidget(summary_label)
@@ -476,6 +477,7 @@ class FileOperations(QObject):
 
         # 按钮
         btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        btn_box.button(QDialogButtonBox.StandardButton.Ok).setText(t("button.ok"))
         btn_box.accepted.connect(dialog.accept)
         layout.addWidget(btn_box)
 
@@ -486,43 +488,6 @@ class FileOperations(QObject):
         # 这里可以添加检查逻辑
         # 暂时返回True表示可以继续
         return True
-
-    def generate_svd(self):
-        """生成SVD文件"""
-        try:
-            # 首先从UI更新设备信息
-            self.update_device_info_from_ui()
-
-            # 验证数据
-            errors = self.state_manager.validate_device_info()
-            if errors:
-                QMessageBox.warning(
-                    self.layout_manager.main_window,
-                    "验证错误",
-                    "\n".join(errors)
-                )
-                return
-
-            # 生成SVD
-            generator = SVDGenerator(self.state_manager.device_info, skip_derived_registers=getattr(self.state_manager, 'skip_derived_registers', True))
-            svd_xml = generator.generate()
-
-            # 更新预览
-            preview_edit = self.layout_manager.get_widget('preview_edit')
-            if preview_edit:
-                preview_edit.setPlainText(pretty_xml(svd_xml))
-
-            self.logger.info("SVD生成成功")
-            self.layout_manager.update_status("SVD生成成功")
-            self.svd_generated.emit(svd_xml)
-
-        except Exception as e:
-            self.logger.error(f"SVD生成失败: {str(e)}")
-            QMessageBox.critical(
-                self.layout_manager.main_window,
-                "生成错误",
-                f"SVD生成失败: {str(e)}"
-            )
 
     def preview_xml(self):
         """预览XML"""
@@ -551,8 +516,8 @@ class FileOperations(QObject):
             self.logger.exception("预览失败")
             QMessageBox.critical(
                 self.layout_manager.main_window,
-                "预览错误",
-                f"XML预览失败: {str(e)}"
+                t("msg.preview_error"),
+                t("msg.preview_failed", error=str(e))
             )
 
     def export_file(self):
@@ -560,10 +525,10 @@ class FileOperations(QObject):
         try:
             file_path, selected_filter = QFileDialog.getSaveFileName(
                 self.layout_manager.main_window,
-                "导出文件",
+                t("dialog.export_file"),
                 "",
-                "SVD文件 (*.svd);;CSV 寄存器详情 (*.csv);;CSV 寄存器汇总 (*.csv);;"
-                "Markdown 文档 (*.md);;HTML 文档 (*.html);;所有文件 (*.*)"
+                "SVD (*.svd);;CSV Detail (*.csv);;CSV Summary (*.csv);;"
+                "Markdown (*.md);;HTML (*.html);;All (*.*)"
             )
 
             if not file_path:
@@ -592,26 +557,26 @@ class FileOperations(QObject):
                 success = True
 
             if success:
-                self.logger.info(f"文件导出成功: {file_path}")
-                self.layout_manager.update_status(f"文件导出成功: {os.path.basename(file_path)}")
+                self.logger.info(f"File exported: {file_path}")
+                self.layout_manager.update_status(t("msg.export_success"))
                 QMessageBox.information(
                     self.layout_manager.main_window,
-                    "导出成功",
-                    f"文件已导出到:\n{file_path}"
+                    t("msg.export_success"),
+                    t("msg.export_success_text", path=file_path)
                 )
             else:
                 QMessageBox.warning(
                     self.layout_manager.main_window,
-                    "导出失败",
-                    "文件导出失败，请检查日志。"
+                    t("msg.export_error"),
+                    t("msg.export_failed")
                 )
 
         except Exception as e:
-            self.logger.error(f"文件导出失败: {str(e)}")
+            self.logger.error(f"File export failed: {str(e)}")
             QMessageBox.critical(
                 self.layout_manager.main_window,
-                "导出错误",
-                f"文件导出失败: {str(e)}"
+                t("msg.export_error"),
+                t("msg.export_error_text", error=str(e))
             )
 
     def export_document(self, format_type: str = "markdown"):

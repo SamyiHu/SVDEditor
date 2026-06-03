@@ -2,6 +2,7 @@
 import re
 from typing import Union, Optional, Tuple
 from .constants import ACCESS_OPTIONS
+from ..i18n.i18n import t
 
 
 class ValidationError(Exception):
@@ -13,79 +14,85 @@ class Validator:
     """验证器基类"""
     
     @staticmethod
-    def validate_hex(value: str, field_name: str = "值") -> str:
+    def validate_hex(value: str, field_name: str = None) -> str:
         """验证十六进制值"""
+        if field_name is None:
+            field_name = t("validator.base_address")
         if not value:
-            raise ValidationError(f"{field_name}不能为空")
-        
+            raise ValidationError(t("validator.not_empty", field=field_name))
+
         value = value.strip()
         # 移除可能的0x前缀后再检查
         clean_value = value[2:] if value.startswith("0x") else value
-        
+
         if not clean_value:
-            raise ValidationError(f"{field_name}不能为空")
-        
+            raise ValidationError(t("validator.not_empty", field=field_name))
+
         try:
             int(clean_value, 16)
         except ValueError:
-            raise ValidationError(f"{field_name}必须是有效的十六进制数")
-        
+            raise ValidationError(t("validator.invalid_hex", field=field_name))
+
         return value
-    
+
     @staticmethod
-    def validate_decimal(value: str, field_name: str = "值") -> int:
+    def validate_decimal(value: str, field_name: str = None) -> int:
         """验证十进制值"""
+        if field_name is None:
+            field_name = t("validator.bit_offset")
         if not value:
-            raise ValidationError(f"{field_name}不能为空")
-        
+            raise ValidationError(t("validator.not_empty", field=field_name))
+
         try:
             return int(value)
         except ValueError:
-            raise ValidationError(f"{field_name}必须是有效的数字")
-    
+            raise ValidationError(t("validator.invalid_number", field=field_name))
+
     @staticmethod
-    def validate_name(name: str, field_name: str = "名称") -> str:
+    def validate_name(name: str, field_name: str = None) -> str:
         """验证名称"""
+        if field_name is None:
+            field_name = t("validator.field_name")
         if not name or not name.strip():
-            raise ValidationError(f"{field_name}不能为空")
-        
+            raise ValidationError(t("validator.not_empty", field=field_name))
+
         name = name.strip()
         # 检查是否包含非法字符
         if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name):
-            raise ValidationError(f"{field_name}只能包含字母、数字和下划线，且不能以数字开头")
-        
+            raise ValidationError(t("validator.invalid_name", field=field_name))
+
         return name
-    
+
     @staticmethod
     def validate_access(access: str) -> Optional[str]:
         """验证访问权限"""
-        if not access or access == "无":
+        if not access or access == "none":
             return None
-        
-        if access not in [opt for opt in ACCESS_OPTIONS if opt != "无"]:
-            raise ValidationError(f"访问权限必须是: {', '.join(ACCESS_OPTIONS[1:])}")
-        
+
+        if access not in [opt for opt in ACCESS_OPTIONS if opt != "none"]:
+            raise ValidationError(t("validator.invalid_access", valid=", ".join(ACCESS_OPTIONS[1:])))
+
         return access
-    
+
     @staticmethod
     def validate_bit_range(offset: int, width: int, max_bits: int = 32) -> Tuple[int, int]:
         """验证位域范围"""
         if offset < 0 or offset >= max_bits:
-            raise ValidationError(f"起始位必须在0-{max_bits-1}之间")
-        
+            raise ValidationError(t("validator.bit_offset_range", max=max_bits-1))
+
         if width < 1 or width > max_bits:
-            raise ValidationError(f"位宽必须在1-{max_bits}之间")
-        
+            raise ValidationError(t("validator.bit_width_range", max=max_bits))
+
         if offset + width > max_bits:
-            raise ValidationError(f"位域范围{offset}-{offset+width-1}超出{max_bits}位寄存器")
-        
+            raise ValidationError(t("validator.bit_range_overflow", offset=offset, end=offset+width-1, max=max_bits))
+
         return offset, width
-    
+
     @staticmethod
     def validate_irq_number(irq_num: int) -> int:
         """验证中断号"""
         if irq_num < 0 or irq_num > 255:
-            raise ValidationError("中断号必须在0-255之间")
+            raise ValidationError(t("validator.irq_range"))
         return irq_num
     
     @classmethod
@@ -94,11 +101,11 @@ class Validator:
         validated = {}
         
         # 验证名称
-        validated['name'] = cls.validate_name(data.get('name', ''), "外设名")
-        
+        validated['name'] = cls.validate_name(data.get('name', ''), t("validator.periph_name"))
+
         # 验证基地址
         validated['base_address'] = cls.validate_hex(
-            data.get('base_address', ''), "基地址"
+            data.get('base_address', ''), t("validator.base_address")
         )
         
         # 验证描述
@@ -117,10 +124,10 @@ class Validator:
         address_block = data.get('address_block', {})
         validated['address_block'] = {
             'offset': cls.validate_hex(
-                address_block.get('offset', '0x0'), "地址块偏移"
+                address_block.get('offset', '0x0'), t("validator.offset_address")
             ),
             'size': cls.validate_hex(
-                address_block.get('size', '0x14'), "地址块大小"
+                address_block.get('size', '0x14'), t("validator.reg_size")
             ),
             'usage': address_block.get('usage', 'registers')
         }
@@ -133,11 +140,11 @@ class Validator:
         validated = {}
         
         # 验证名称
-        validated['name'] = cls.validate_name(data.get('name', ''), "寄存器名")
-        
+        validated['name'] = cls.validate_name(data.get('name', ''), t("validator.reg_name"))
+
         # 验证偏移地址
         validated['offset'] = cls.validate_hex(
-            data.get('offset', ''), "偏移地址"
+            data.get('offset', ''), t("validator.offset_address")
         )
         
         # 验证描述
@@ -151,12 +158,12 @@ class Validator:
         
         # 验证复位值
         validated['reset_value'] = cls.validate_hex(
-            data.get('reset_value', '0x00000000'), "复位值"
+            data.get('reset_value', '0x00000000'), t("validator.reset_value")
         )
-        
+
         # 验证大小
         validated['size'] = cls.validate_hex(
-            data.get('size', '0x20'), "寄存器大小"
+            data.get('size', '0x20'), t("validator.reg_size")
         )
         
         return validated
@@ -167,11 +174,11 @@ class Validator:
         validated = {}
         
         # 验证名称
-        validated['name'] = cls.validate_name(data.get('name', ''), "位域名")
-        
+        validated['name'] = cls.validate_name(data.get('name', ''), t("validator.field_name"))
+
         # 验证起始位和位宽
-        offset = cls.validate_decimal(str(data.get('offset', 0)), "起始位")
-        width = cls.validate_decimal(str(data.get('width', 1)), "位宽")
+        offset = cls.validate_decimal(str(data.get('offset', 0)), t("validator.bit_offset"))
+        width = cls.validate_decimal(str(data.get('width', 1)), t("validator.bit_width"))
         validated['offset'], validated['width'] = cls.validate_bit_range(offset, width)
         
         # 验证描述
@@ -185,7 +192,7 @@ class Validator:
         
         # 验证复位值
         validated['reset_value'] = cls.validate_hex(
-            data.get('reset_value', '0x0'), "位域复位值"
+            data.get('reset_value', '0x0'), t("validator.field_reset")
         )
         
         return validated
@@ -196,7 +203,7 @@ class Validator:
         validated = {}
         
         # 验证名称
-        validated['name'] = cls.validate_name(data.get('name', ''), "中断名")
+        validated['name'] = cls.validate_name(data.get('name', ''), t("validator.irq_name"))
         
         # 验证中断号
         validated['value'] = cls.validate_irq_number(data.get('value', 0))
@@ -207,6 +214,6 @@ class Validator:
         # 验证关联外设
         validated['peripheral'] = data.get('peripheral', '').strip()
         if not validated['peripheral']:
-            raise ValidationError("关联外设不能为空")
+            raise ValidationError(t("validator.assoc_periph_empty"))
         
         return validated

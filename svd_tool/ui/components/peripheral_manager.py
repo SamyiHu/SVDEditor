@@ -902,8 +902,8 @@ class PeripheralManager(QObject):
             if not peripheral:
                 QMessageBox.warning(
                     self.layout_manager.main_window,
-                    "复制失败",
-                    f"外设 '{periph_name}' 不存在"
+                    t("error.title_error"),
+                    t("error.periph_not_exist", name=periph_name)
                 )
                 return
             
@@ -913,7 +913,7 @@ class PeripheralManager(QObject):
                 QMessageBox.warning(
                     self.layout_manager.main_window,
                     "复制失败",
-                    f"寄存器 '{reg_name}' 不存在"
+                    t("error.reg_not_exist", name=reg_name)
                 )
                 return
             
@@ -950,7 +950,7 @@ class PeripheralManager(QObject):
                 QMessageBox.warning(
                     self.layout_manager.main_window,
                     "粘贴失败",
-                    f"目标外设 '{periph_name}' 不存在"
+                    t("error.target_periph_not_exist", name=periph_name)
                 )
                 return
             
@@ -1021,8 +1021,8 @@ class PeripheralManager(QObject):
             if not peripheral:
                 QMessageBox.warning(
                     self.layout_manager.main_window,
-                    "复制失败",
-                    f"外设 '{periph_name}' 不存在"
+                    t("error.title_error"),
+                    t("error.periph_not_exist", name=periph_name)
                 )
                 return
             
@@ -1032,7 +1032,7 @@ class PeripheralManager(QObject):
                 QMessageBox.warning(
                     self.layout_manager.main_window,
                     "复制失败",
-                    f"寄存器 '{reg_name}' 不存在"
+                    t("error.reg_not_exist", name=reg_name)
                 )
                 return
             
@@ -1042,7 +1042,7 @@ class PeripheralManager(QObject):
                 QMessageBox.warning(
                     self.layout_manager.main_window,
                     "复制失败",
-                    f"位域 '{field_name}' 不存在"
+                    t("error.field_not_exist", name=field_name)
                 )
                 return
             
@@ -1080,7 +1080,7 @@ class PeripheralManager(QObject):
                 QMessageBox.warning(
                     self.layout_manager.main_window,
                     "粘贴失败",
-                    f"目标外设 '{periph_name}' 不存在"
+                    t("error.target_periph_not_exist", name=periph_name)
                 )
                 return
             
@@ -1089,7 +1089,7 @@ class PeripheralManager(QObject):
                 QMessageBox.warning(
                     self.layout_manager.main_window,
                     "粘贴失败",
-                    f"目标寄存器 '{reg_name}' 不存在"
+                    t("error.target_reg_not_exist", name=reg_name)
                 )
                 return
             

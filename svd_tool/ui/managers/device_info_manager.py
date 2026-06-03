@@ -140,30 +140,30 @@ class DeviceInfoManager(QObject):
         
         # 验证基本信息
         if not device_info.name or device_info.name.strip() == "":
-            errors.append("设备名称不能为空")
-        
+            errors.append(t("validation.device_name_empty"))
+
         if not device_info.version or device_info.version.strip() == "":
-            errors.append("设备版本不能为空")
-        
+            errors.append(t("validation.device_version_empty"))
+
         if not device_info.svd_version or device_info.svd_version.strip() == "":
-            errors.append("SVD版本不能为空")
-        
+            errors.append(t("validation.svd_version_empty"))
+
         # 验证CPU信息
         if not device_info.cpu.name or device_info.cpu.name.strip() == "":
-            errors.append("CPU名称不能为空")
-        
+            errors.append(t("validation.cpu_name_empty"))
+
         if device_info.cpu.nvic_prio_bits < 0 or device_info.cpu.nvic_prio_bits > 32:
-            errors.append("NVIC优先级位数必须在0-32之间")
-        
+            errors.append(t("validation.nvic_range"))
+
         # 验证数值范围
         if hasattr(device_info, 'address_unit_bits') and device_info.address_unit_bits <= 0:
-            errors.append("地址单元位数必须大于0")
-        
+            errors.append(t("validation.addr_unit_positive"))
+
         if hasattr(device_info, 'width') and device_info.width <= 0:
-            errors.append("数据宽度必须大于0")
-        
+            errors.append(t("validation.width_positive"))
+
         if hasattr(device_info, 'size') and device_info.size <= 0:
-            errors.append("设备大小必须大于0")
+            errors.append(t("validation.size_positive"))
         
         return errors
 

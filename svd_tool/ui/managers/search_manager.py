@@ -689,7 +689,7 @@ class SearchManager(QObject):
                 f'{escaped}</pre>')
             help_layout.addWidget(help_text)
 
-            close_btn = QPushButton("关闭")
+            close_btn = QPushButton(t("button.close"))
             close_btn.setFixedHeight(32)
             close_btn.clicked.connect(help_dlg.accept)
             help_layout.addWidget(close_btn)

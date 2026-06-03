@@ -216,34 +216,6 @@ class FileActionsMixin:
         # 暂时返回True表示可以继续
         return True
 
-    def generate_svd(self):
-        """生成SVD文件"""
-        try:
-            # 首先从UI更新设备信息
-            self.update_device_info_from_ui()
-
-            # 验证数据
-            errors = self.state_manager.validate_device_info()
-            if errors:
-                QMessageBox.warning(self, t("msg.validation_error"), "\n".join(errors))
-                return
-
-            # 生成SVD
-            generator = SVDGenerator(self.state_manager.device_info, skip_derived_registers=self.skip_derived_registers)
-            svd_xml = generator.generate()
-
-            # 更新预览
-            preview_edit = self.layout_manager.get_widget('preview_edit')
-            if preview_edit:
-                preview_edit.setPlainText(pretty_xml(svd_xml))
-
-            self.logger.info("SVD生成成功")
-            self.layout_manager.update_status(t("status.svd_generated"))
-
-        except Exception as e:
-            self.logger.error(f"SVD生成失败: {str(e)}")
-            QMessageBox.critical(self, t("msg.generate_error"), t("msg.svd_generate_failed", error=str(e)))
-
     def preview_xml(self):
         """预览XML"""
         try:

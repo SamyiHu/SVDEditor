@@ -7,6 +7,7 @@ import traceback
 from typing import Optional, Callable, Any, Dict, List
 from enum import Enum
 from PyQt6.QtWidgets import QMessageBox, QWidget
+from ..i18n.i18n import t
 
 
 class ErrorLevel(Enum):
@@ -78,40 +79,40 @@ class ValidationError(AppError):
 
 class FileIOError(AppError):
     """文件操作错误"""
-    
+
     def __init__(self, message: str, details: Optional[str] = None):
         super().__init__(
             message=message,
             level=ErrorLevel.ERROR,
             category=ErrorCategory.FILE_IO,
             details=details,
-            user_message=f"文件操作失败: {message}"
+            user_message=t("error.file_io", message=message)
         )
 
 
 class ParsingError(AppError):
     """解析错误"""
-    
+
     def __init__(self, message: str, details: Optional[str] = None):
         super().__init__(
             message=message,
             level=ErrorLevel.ERROR,
             category=ErrorCategory.PARSING,
             details=details,
-            user_message=f"解析失败: {message}"
+            user_message=t("error.parsing", message=message)
         )
 
 
 class GenerationError(AppError):
     """生成错误"""
-    
+
     def __init__(self, message: str, details: Optional[str] = None):
         super().__init__(
             message=message,
             level=ErrorLevel.ERROR,
             category=ErrorCategory.GENERATION,
             details=details,
-            user_message=f"生成失败: {message}"
+            user_message=t("error.generation", message=message)
         )
 
 
@@ -241,13 +242,13 @@ class ErrorHandler:
     def _get_message_title(self, level: ErrorLevel) -> str:
         """获取消息框标题"""
         if level == ErrorLevel.WARNING:
-            return "警告"
+            return t("error.title_warning")
         elif level == ErrorLevel.ERROR:
-            return "错误"
+            return t("error.title_error")
         elif level == ErrorLevel.CRITICAL:
-            return "严重错误"
+            return t("error.title_critical")
         else:
-            return "提示"
+            return t("error.title_info")
     
     def get_error_history(self) -> List[AppError]:
         """获取错误历史记录"""
