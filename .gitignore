@@ -97,3 +97,9 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# Documentation (excluded from repo)
+docs/使用说明书.md
+docs/维护手册.md
+SVD_Editor_使用说明书.docx
+SVD_Editor_维护文档.docx
