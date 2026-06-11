@@ -6,7 +6,7 @@
 [![中文](https://img.shields.io/badge/中文-CN-red?style=for-the-badge)](README_zh.md)
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![PyQt6](https://img.shields.io/badge/PyQt6-6.5+-41CD52?style=for-the-badge&logo=qt&logoColor=white)](https://www.riverbankcomputing.com/software/pyqt/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPL%20v3-blue?style=for-the-badge)](LICENSE)
 
 **专业的 CMSIS-SVD 解析、编辑、可视化和 CLI 工具。支持外设管理、寄存器编辑、位域可视化、批量操作、差异比较/合并、C 头文件生成等。**
 
@@ -346,7 +346,7 @@ python build_professional_fixed.py
 
 ## 许可证
 
-Apache License 2.0 - 详见 [LICENSE](LICENSE)。
+GNU General Public License v3.0 - 详见 [LICENSE](LICENSE)。
 
 ## 维护者
 

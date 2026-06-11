@@ -7,7 +7,7 @@
 [![中文](https://img.shields.io/badge/中文-CN-red?style=for-the-badge)](README_zh.md)
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![PyQt6](https://img.shields.io/badge/PyQt6-6.5+-41CD52?style=for-the-badge&logo=qt&logoColor=white)](https://www.riverbankcomputing.com/software/pyqt/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPL%20v3-blue?style=for-the-badge)](LICENSE)
 
 **A professional CMSIS-SVD parsing, editing, visualization, and CLI tool. Supports peripheral management, register editing, bitfield visualization, batch operations, diff/merge, C header generation, and more.**
 
@@ -347,7 +347,7 @@ python build_professional_fixed.py
 
 ## License
 
-Apache License 2.0 - see [LICENSE](LICENSE) for details.
+GNU General Public License v3.0 - see [LICENSE](LICENSE) for details.
 
 ## Maintainer
 
