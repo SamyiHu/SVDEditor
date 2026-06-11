@@ -491,6 +491,9 @@ class FieldEditDialog(BaseEditDialog):
         self._connect_preview_signal(self.reset_edit)
         self._connect_preview_signal(self.access_combo)
 
+        # 枚举值表格变化时刷新预览
+        self.enum_editor.enum_table.itemChanged.connect(self.update_preview)
+
         if field:
             self.load_data(field)
     
