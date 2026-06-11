@@ -11,6 +11,7 @@ import subprocess
 import platform
 import shutil
 import tempfile
+import ctypes
 from pathlib import Path
 
 # Set UTF-8 encoding for Windows console / 为Windows控制台设置UTF-8编码
@@ -18,6 +19,83 @@ if sys.platform == 'win32':
     import codecs
     sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
     sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+
+
+def get_short_path(path):
+    """获取Windows短路径名（8.3格式），绕过PyInstaller对非ASCII路径的编码问题"""
+    if sys.platform != 'win32':
+        return str(path)
+    path = str(path)
+    try:
+        GetShortPathName = ctypes.windll.kernel32.GetShortPathNameW
+        buf = ctypes.create_unicode_buffer(512)
+        result = GetShortPathName(path, buf, 512)
+        if result > 0:
+            short = buf.value
+            if short != path:
+                print(f"  短路径转换: {path} -> {short}")
+            return short
+    except Exception:
+        pass
+    return path
+
+
+def get_ascii_path(path):
+    """确保路径是纯ASCII，如果不是则通过junction转换。文件路径会自动处理父目录。"""
+    path = str(path)
+    try:
+        path.encode('ascii')
+        return path  # 已经是纯ASCII
+    except UnicodeEncodeError:
+        pass
+    # 路径含非ASCII字符
+    p = Path(path)
+    if p.is_dir():
+        return _get_or_create_junction(path)
+    else:
+        # 文件：对父目录创建junction，再拼接文件名
+        parent_junction = _get_or_create_junction(str(p.parent))
+        return os.path.join(parent_junction, p.name)
+
+
+_junction_map = {}  # 原始路径 -> junction路径
+
+def _get_or_create_junction(target):
+    """获取或创建junction，相同目录只创建一次"""
+    target = str(Path(target))  # 规范化路径
+    if target in _junction_map:
+        return _junction_map[target]
+
+    import tempfile, hashlib
+    temp_base = tempfile.gettempdir()
+    name = "svd_build_" + hashlib.md5(target.encode('utf-8')).hexdigest()[:12]
+    junction = os.path.join(temp_base, name)
+
+    # 清理旧的junction
+    if os.path.exists(junction):
+        try:
+            os.rmdir(junction)
+        except OSError:
+            shutil.rmtree(junction, ignore_errors=True)
+
+    # 创建junction（只对目录）
+    subprocess.run(
+        ['cmd', '/c', 'mklink', '/J', junction, target],
+        capture_output=True, text=True, check=True
+    )
+    _junction_map[target] = junction
+    print(f"  Junction: {junction} -> {target}")
+    return junction
+
+
+def cleanup_junctions():
+    """清理所有创建的junction"""
+    for j in _junction_map.values():
+        if os.path.exists(j):
+            try:
+                os.rmdir(j)
+            except OSError:
+                pass
 
 class ProfessionalBuilder:
     def __init__(self):
@@ -57,23 +135,18 @@ class ProfessionalBuilder:
     
     def create_optimized_spec(self, arch, console=False, onefile=True):
         """创建优化的spec文件，减少误报"""
-        
-        # 确定输出目录 - 直接输出到项目根目录的release/文件夹
-        release_dir = str(self.project_root.parent / "release")
-        if onefile:
-            # 单文件模式：release/64bit/SVDEditor_64bit.exe
-            output_dir = str(Path(release_dir) / arch)
-        else:
-            # 目录模式：release/64bit/SVDEditor_64bit/
-            output_dir = str(Path(release_dir) / arch / f"SVDEditor_{arch}")
-        
+
         # 项目根目录（父目录，因为run.py在build_tools的上一级）
-        project_root_parent = str(self.project_root.parent)
-        
+        project_root_parent = get_ascii_path(self.project_root.parent)
+
         # run.py的绝对路径
-        run_py_path = str(self.project_root.parent / 'run.py')
-        
-        spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
+        run_py_path = get_ascii_path(self.project_root.parent / 'run.py')
+
+        # version_info.txt在build_tools目录下
+        version_info_path = get_ascii_path(self.project_root / 'version_info.txt')
+
+        # 公共的Analysis配置
+        analysis_block = f'''# -*- mode: python ; coding: utf-8 -*-
 import sys
 import os
 
@@ -83,12 +156,6 @@ sys.setrecursionlimit(5000)
 # 项目根目录（父目录）
 project_root = r'{project_root_parent}'
 
-# 输出目录设置 - 直接输出到release文件夹
-if '{onefile}' == 'True':
-    dist_dir = r'{output_dir}'
-else:
-    dist_dir = r'{output_dir}'
-
 block_cipher = None
 
 # 分析配置 - 使用run.py的绝对路径
@@ -97,15 +164,14 @@ a = Analysis(
     pathex=[project_root],
     binaries=[],
     datas=[
-        # 配置文件 - 使用绝对路径
-        (r'{project_root_parent}/config.py', '.'),
+        # 文档和许可证
         (r'{project_root_parent}/README.md', '.'),
         (r'{project_root_parent}/README_zh.md', '.'),
         (r'{project_root_parent}/LICENSE', '.'),
-        
+
         # i18n国际化翻译文件
         (r'{project_root_parent}/svd_tool/i18n', 'svd_tool/i18n'),
-        
+
         # 图标文件
         (r'{project_root_parent}/icon.ico', '.'),
     ],
@@ -116,14 +182,13 @@ a = Analysis(
         'PyQt6.QtGui',
         'PyQt6.QtWidgets',
         'PyQt6.sip',
-        
+
         # 标准库模块
         'xml.etree',
         'xml.etree.ElementTree',
         'xml.dom',
         'xml.dom.minidom',
         'collections',
-        'collections.abc',
         'dataclasses',
         'typing',
         'logging',
@@ -141,7 +206,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={{}},
     runtime_hooks=[],
-    
+
     # 排除不必要的模块以减少文件大小和误报
     excludes=[
         'tkinter',
@@ -161,9 +226,8 @@ a = Analysis(
         'curses',
         'ensurepip',
         'venv',
-        'distutils',
     ],
-    
+
     # 减少误报的设置
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -171,43 +235,62 @@ a = Analysis(
     noarchive=False,
 )
 
-# 减少误报的额外设置
-a.binaries = a.binaries  # 保持原样
-a.datas = a.datas  # 保持原样
-
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+'''
 
-# 可执行文件配置
+        if onefile:
+            # 单文件模式：EXE打包所有内容，不需要COLLECT
+            exe_block = f'''
+# 单文件模式 - 所有内容打包进EXE
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
     a.zipfiles,
     a.datas,
-    
-    # 减少误报的关键设置
     name='SVDEditor_{arch}',
-    debug=False,           # 禁用调试信息
+    debug=False,
     bootloader_ignore_signals=False,
-    strip=False,           # 不剥离符号（某些杀毒软件会检测剥离操作）
-    upx=True,              # 使用UPX压缩
-    upx_exclude=[],        # 不排除任何文件
+    strip=False,
+    upx=True,
+    upx_exclude=[],
     runtime_tmpdir=None,
-    console={console},     # 控制台设置
+    console={console},
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    
-    # 图标设置（如果有）
     icon=os.path.join(project_root, 'icon.ico') if os.path.exists(os.path.join(project_root, 'icon.ico')) else None,
-    
-    # 版本信息（减少误报）
-    version=os.path.join(project_root, 'version_info.txt') if os.path.exists(os.path.join(project_root, 'version_info.txt')) else None,
+    version=r'{version_info_path}' if os.path.exists(r'{version_info_path}') else None,
+)
+'''
+        else:
+            # 目录模式：EXE不含数据，COLLECT收集所有文件
+            exe_block = f'''
+# 目录模式 - EXE和依赖文件分开
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='SVDEditor_{arch}',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console={console},
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=os.path.join(project_root, 'icon.ico') if os.path.exists(os.path.join(project_root, 'icon.ico')) else None,
+    version=r'{version_info_path}' if os.path.exists(r'{version_info_path}') else None,
 )
 
-# 收集文件（用于目录模式）
 coll = COLLECT(
     exe,
     a.binaries,
@@ -218,6 +301,8 @@ coll = COLLECT(
     name='SVDEditor_{arch}',
 )
 '''
+
+        spec_content = analysis_block + exe_block
         
         # 保存spec文件到构建目录
         spec_file = self.build_dir / f'svd_editor_{arch}.spec'
@@ -281,57 +366,59 @@ VSVersionInfo(
     
     def build(self, arch=None, console=False, onefile=True, clean=True):
         """执行构建"""
-        if arch is None:
-            arch = self.arch
-        
-        print(f"\n{'='*60}")
-        print(f"构建 {arch} 版本")
-        print(f"模式: {'单文件' if onefile else '目录'}")
-        print(f"控制台: {'显示' if console else '隐藏'}")
-        print(f"{'='*60}")
-        
-        # 清理之前的构建
-        if clean:
-            self.clean_previous_builds()
-        
-        # 创建版本信息文件
-        version_file = self.create_version_info()
-        print(f"创建版本信息文件: {version_file}")
-        
-        # 创建优化的spec文件
-        spec_file = self.create_optimized_spec(arch, console, onefile)
-        print(f"创建spec文件: {spec_file}")
-        
-        # 构建命令 - 当提供.spec文件时，不能使用--specpath
-        # 注意：spec文件中已经设置了输出目录，但为了保险，我们也在这里设置
-        release_output_dir = str(self.project_root.parent / "release" / arch)
-        cmd = [
-            sys.executable, '-m', 'PyInstaller',
-            '--clean',
-            '--distpath', release_output_dir,
-            '--workpath', str(self.build_dir),
-            str(spec_file)
-        ]
-        
-        print(f"\n执行命令: {' '.join(cmd)}")
-        
         try:
+            if arch is None:
+                arch = self.arch
+
+            print(f"\n{'='*60}")
+            print(f"构建 {arch} 版本")
+            print(f"模式: {'单文件' if onefile else '目录'}")
+            print(f"控制台: {'显示' if console else '隐藏'}")
+            print(f"{'='*60}")
+
+            # 清理之前的构建
+            if clean:
+                self.clean_previous_builds()
+
+            # 创建版本信息文件
+            version_file = self.create_version_info()
+            print(f"创建版本信息文件: {version_file}")
+
+            # 创建优化的spec文件
+            spec_file = self.create_optimized_spec(arch, console, onefile)
+            print(f"创建spec文件: {spec_file}")
+
+            # 构建命令 - 当提供.spec文件时，不能使用--specpath
+            # 注意：spec文件中已经设置了输出目录，但为了保险，我们也在这里设置
+            release_output_path = self.project_root.parent / "release" / arch
+            release_output_path.mkdir(parents=True, exist_ok=True)
+            release_output_dir = get_ascii_path(release_output_path)
+            cmd = [
+                sys.executable, '-m', 'PyInstaller',
+                '--clean', '-y',
+                '--distpath', release_output_dir,
+                '--workpath', get_ascii_path(self.build_dir),
+                get_ascii_path(spec_file)
+            ]
+
+            print(f"\n执行命令: {' '.join(cmd)}")
+
             # 执行构建
             result = subprocess.run(
                 cmd,
                 check=True,
                 capture_output=True,
                 text=True,
-                cwd=self.project_root,
+                cwd=get_ascii_path(self.project_root),
                 encoding='utf-8',
                 errors='replace'
             )
-            
+
             print("\n构建输出摘要:")
             for line in result.stdout.split('\n'):
                 if any(keyword in line for keyword in ['INFO:', 'WARNING:', 'ERROR:']):
                     print(f"  {line}")
-            
+
             # 检查构建结果 - 现在在release/arch目录中
             release_arch_dir = Path(release_output_dir)
             if onefile:
@@ -340,22 +427,22 @@ VSVersionInfo(
             else:
                 exe_name = f'SVDEditor_{arch}'
                 exe_path = release_arch_dir / exe_name / f'SVDEditor_{arch}.exe'
-            
+
             if exe_path.exists():
                 print(f"\n[成功] 构建成功!")
                 print(f"   可执行文件: {exe_path}")
                 print(f"   文件大小: {exe_path.stat().st_size / 1024 / 1024:.2f} MB")
-                
+
                 # 由于已经直接输出到release目录，不需要再复制
                 # 但可以创建ZIP包等
                 self.create_release_package(arch, onefile, exe_path)
-                
+
                 return True
             else:
                 print(f"\n[失败] 构建失败: 可执行文件未找到")
                 print(f"   预期路径: {exe_path}")
                 return False
-                
+
         except subprocess.CalledProcessError as e:
             print(f"\n[失败] 构建失败，退出码: {e.returncode}")
             # 安全地处理编码问题
@@ -372,6 +459,8 @@ VSVersionInfo(
             import traceback
             traceback.print_exc()
             return False
+        finally:
+            cleanup_junctions()
     
     def create_release_package(self, arch, onefile, exe_path):
         """创建发布包（ZIP和说明文件）"""
@@ -599,6 +688,8 @@ def main():
     
     # 打印总结
     builder.print_summary()
+
+    input("\n按回车键退出... / Press Enter to exit...")
 
 if __name__ == '__main__':
     main()

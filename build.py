@@ -51,42 +51,7 @@ def main():
     print("="*60)
     print_bilingual("解决报毒问题和目录结构不美观问题", "Solves false positive virus detection and directory structure issues")
     print()
-    
-    # 首先选择版本类型
-    print_bilingual("请选择版本类型:", "Please select version type:")
-    print()
-    print("1. 单文件版本 / Single-file version")
-    print_bilingual("   - 单个.exe文件，所有依赖打包在一起", "   - Single .exe file with all dependencies packaged together")
-    print_bilingual("   - 适合分发和便携使用", "   - Suitable for distribution and portable use")
-    print()
-    print("2. 目录版本 / Directory version")
-    print_bilingual("   - 包含.exe和依赖文件的文件夹", "   - Folder containing .exe and dependency files")
-    print_bilingual("   - 适合调试和查看", "   - Suitable for debugging and viewing")
-    print()
-    print("3. 所有版本 / All versions")
-    print_bilingual("   - 同时构建单文件和目录版本", "   - Build both single-file and directory versions")
-    print()
-    print("="*60)
-    print()
-    
-    version_choice = input("请选择版本类型 (1-3) / Please select version type (1-3): ").strip()
-    
-    # 确定构建参数
-    build_args = []
-    if version_choice == '1':
-        build_args = ['--onefile']
-        print_bilingual("\n已选择: 单文件版本", "\nSelected: Single-file version")
-    elif version_choice == '2':
-        build_args = ['--onedir']
-        print_bilingual("\n已选择: 目录版本", "\nSelected: Directory version")
-    elif version_choice == '3':
-        build_args = ['--all']
-        print_bilingual("\n已选择: 所有版本", "\nSelected: All versions")
-    else:
-        print_bilingual("\n无效选择，默认使用单文件版本", "\nInvalid choice, defaulting to single-file version")
-        build_args = ['--onefile']
-    
-    print()
+
     print_bilingual("请选择构建脚本:", "Please select build script:")
     print()
     print("1. Professional build (recommended) / 专业构建（推荐）")
@@ -100,19 +65,17 @@ def main():
     print()
     print("="*60)
     print()
-    
+
     script_choice = input("您想运行哪个构建脚本？(1 或 2) / Which build script would you like to run? (1 or 2): ").strip()
-    
+
     if script_choice == '1':
         print_bilingual("\n运行专业构建脚本...", "\nRunning professional build script...")
-        print_bilingual("注意: 此脚本将询问架构选择 (32位/64位)", "Note: This script will ask for architecture selection (32-bit/64-bit)")
         print()
-        success = run_build_script("build_professional_fixed.py", build_args)
+        success = run_build_script("build_professional_fixed.py")
     elif script_choice == '2':
         print_bilingual("\n运行基础Windows构建脚本...", "\nRunning basic Windows build script...")
-        print_bilingual("注意: 此脚本将询问架构选择 (32位/64位)", "Note: This script will ask for architecture selection (32-bit/64-bit)")
         print()
-        success = run_build_script("build_windows.py", build_args)
+        success = run_build_script("build_windows.py")
     else:
         print_bilingual("\n无效选择。请手动运行:", "\nInvalid choice. Please run manually:")
         print("  cd build_tools")
@@ -120,12 +83,15 @@ def main():
         print_bilingual("  或", "  or")
         print("  cd build_tools")
         print("  python build_windows.py")
+        input("\n按回车键退出... / Press Enter to exit...")
         return
-    
+
     if success:
         print_bilingual("\n构建完成！", "\nBuild completed!")
     else:
         print_bilingual("\n构建失败，请检查错误信息", "\nBuild failed, please check error messages")
+
+    input("\n按回车键退出... / Press Enter to exit...")
 
 if __name__ == '__main__':
     main()
