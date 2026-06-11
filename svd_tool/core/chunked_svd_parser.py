@@ -433,8 +433,39 @@ class ChunkedSVDParser(BaseSVDParser):
         reset_value_nodes = field_node.getElementsByTagName("resetValue")
         if reset_value_nodes and reset_value_nodes[0].firstChild:
             field.reset_value = reset_value_nodes[0].firstChild.data.strip()
-        
+
+        # 枚举值 (如果存在)
+        enum_nodes = field_node.getElementsByTagName("enumeratedValues")
+        if enum_nodes:
+            field.enumerated_values = self._parse_enumerated_values(enum_nodes[0])
+
         return field
+
+    def _parse_enumerated_values(self, enum_values_node) -> List[Dict[str, str]]:
+        """解析枚举值"""
+        result = []
+        enum_value_nodes = enum_values_node.getElementsByTagName("enumeratedValue")
+        for ev_node in enum_value_nodes:
+            try:
+                enum_entry = {}
+                name_nodes = ev_node.getElementsByTagName("name")
+                if name_nodes and name_nodes[0].firstChild:
+                    enum_entry["name"] = name_nodes[0].firstChild.data.strip()
+                else:
+                    continue
+
+                desc_nodes = ev_node.getElementsByTagName("description")
+                if desc_nodes and desc_nodes[0].firstChild:
+                    enum_entry["description"] = desc_nodes[0].firstChild.data.strip()
+
+                value_nodes = ev_node.getElementsByTagName("value")
+                if value_nodes and value_nodes[0].firstChild:
+                    enum_entry["value"] = value_nodes[0].firstChild.data.strip()
+
+                result.append(enum_entry)
+            except Exception as e:
+                self.warnings.append(f"解析枚举值失败: {str(e)}")
+        return result
     
     def _parse_interrupts_for_peripheral(self, periph_node, peripheral: Peripheral):
         """为外设解析中断"""

@@ -590,6 +590,15 @@ class BitFieldWidget(QWidget):
                         tooltip += f"{t('bitfield.tooltip_description')}: {field.description}<br>"
                     if hasattr(field, 'access') and field.access:
                         tooltip += f"{t('bitfield.tooltip_access')}: {field.access}"
+                    if field.enumerated_values:
+                        enum_strs = []
+                        for ev in field.enumerated_values:
+                            name = ev.get("name", "")
+                            value = ev.get("value", "")
+                            if name and value:
+                                enum_strs.append(f"{value}={name}")
+                        if enum_strs:
+                            tooltip += f"<br>{t('bitfield.tooltip_enums')}: {', '.join(enum_strs)}"
                     QToolTip.showText(event.globalPosition().toPoint(), tooltip, self)
                     break
         
