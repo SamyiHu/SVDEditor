@@ -119,6 +119,23 @@ class HierarchicalCardWidget(QFrame):
         else:
             self._summary_label = None
 
+        # --- 枚举值显示（仅field类型） ---
+        if self._card_type == 'field':
+            enum_values = self._data.get('enumerated_values', [])
+            if enum_values:
+                enum_strs = []
+                for ev in enum_values:
+                    name = ev.get("name", "")
+                    value = ev.get("value", "")
+                    if name and value:
+                        enum_strs.append(f"{value}={name}")
+                if enum_strs:
+                    enum_label = QLabel(f"⚙ {', '.join(enum_strs)}")
+                    enum_label.setStyleSheet(
+                        f"color: {c.text_secondary}; font-size: 8pt; border: none; margin-left: 18px;")
+                    enum_label.setWordWrap(True)
+                    layout.addWidget(enum_label)
+
         # --- 子节点容器（初始隐藏） ---
         self._children_widget = QWidget()
         self._children_widget.setStyleSheet("background: transparent; border: none;")
@@ -254,6 +271,7 @@ class HierarchicalCardWidget(QFrame):
                         'access': fld.access if hasattr(fld, 'access') and fld.access else '',
                         'description': fld.description,
                         'reset_value': fld.reset_value,
+                        'enumerated_values': fld.enumerated_values if hasattr(fld, 'enumerated_values') else [],
                     },
                     color=TYPE_COLORS['field'],
                     state_manager=self._state_manager,

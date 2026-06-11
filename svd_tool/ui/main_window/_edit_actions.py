@@ -309,7 +309,8 @@ class EditActionsMixin:
                 description=result["description"],
                 display_name=result["display_name"],
                 access=result["access"],
-                reset_value=result["reset_value"]
+                reset_value=result["reset_value"],
+                enumerated_values=result.get("enumerated_values", [])
             )
 
             # 使用StateManager添加位域
@@ -388,7 +389,8 @@ class EditActionsMixin:
                 description=result["description"],
                 display_name=result["display_name"],
                 access=result["access"],
-                reset_value=result["reset_value"]
+                reset_value=result["reset_value"],
+                enumerated_values=result.get("enumerated_values", [])
             )
 
             # 使用StateManager更新位域
