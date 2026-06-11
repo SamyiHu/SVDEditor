@@ -169,6 +169,9 @@ a = Analysis(
         (r'{project_root_parent}/README_zh.md', '.'),
         (r'{project_root_parent}/LICENSE', '.'),
 
+        # 关于页面配置
+        (r'{project_root_parent}/svd_tool/config/about.json', 'svd_tool/config'),
+
         # i18n国际化翻译文件
         (r'{project_root_parent}/svd_tool/i18n', 'svd_tool/i18n'),
 

@@ -3,9 +3,19 @@
 支持多语言切换
 """
 import os
+import sys
 import json
 from typing import Dict, Optional
 from dataclasses import dataclass
+
+
+def _resource_path(relative_path):
+    """获取资源文件路径，兼容PyInstaller打包"""
+    if hasattr(sys, '_MEIPASS'):
+        base = sys._MEIPASS
+    else:
+        base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return os.path.join(base, relative_path)
 
 
 @dataclass
@@ -45,8 +55,8 @@ class I18nManager:
                 self.fallback_translations = json.load(f)
     
     def _get_translation_file(self, locale: str) -> str:
-        """获取翻译文件路径"""
-        return os.path.join(os.path.dirname(__file__), f"{locale}.json")
+        """获取翻译文件路径，兼容PyInstaller打包"""
+        return _resource_path(os.path.join('svd_tool', 'i18n', f"{locale}.json"))
     
     def set_locale(self, locale: str):
         """
@@ -98,13 +108,16 @@ class I18nManager:
     def get_available_locales(self) -> list:
         """获取可用的语言列表"""
         locales = []
-        i18n_dir = os.path.dirname(__file__)
-        
+        i18n_dir = os.path.dirname(self._get_translation_file("dummy"))
+        # 回退到模块目录（如果资源路径不存在）
+        if not os.path.isdir(i18n_dir):
+            i18n_dir = os.path.dirname(__file__)
+
         for filename in os.listdir(i18n_dir):
             if filename.endswith('.json'):
                 locale_code = filename[:-5]  # 移除 .json
                 locales.append(locale_code)
-        
+
         return locales
 
 

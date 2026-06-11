@@ -197,14 +197,18 @@ class SettingsActionsMixin:
 
     def show_about(self):
         """显示关于对话框（内容来自配置文件，支持国际化）"""
+        import sys
         import json
         from ... import __version__
 
-        # 读取 about.json 配置
-        config_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-            "config", "about.json"
-        )
+        # 读取 about.json 配置（兼容PyInstaller打包）
+        if hasattr(sys, '_MEIPASS'):
+            config_path = os.path.join(sys._MEIPASS, "svd_tool", "config", "about.json")
+        else:
+            config_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                "config", "about.json"
+            )
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 about_cfg = json.load(f)
