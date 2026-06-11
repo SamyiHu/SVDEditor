@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
+from PyQt6 import sip
 
 from ...config.styles import get_style_scheme
 from ...i18n.i18n import t
@@ -42,9 +43,13 @@ class ChatBubble(QFrame):
         pass
 
     def set_content(self, text: str):
+        if sip.isdeleted(self._content_label):
+            return
         self._content_label.setText(text)
 
     def append_text(self, text: str):
+        if sip.isdeleted(self._content_label):
+            return
         current = self._content_label.text()
         self._content_label.setText(current + text)
 
@@ -66,7 +71,7 @@ class UserBubble(ChatBubble):
                 margin: 2px 4px 2px 40px;
             }}
         """)
-        self._role_label.setText("你")
+        self._role_label.setText(t("ai.role_user", default="你"))
         self._role_label.setStyleSheet(f"color: {c.accent}; font-weight: bold; font-size: 9pt; border: none;")
         self._content_label.setStyleSheet(f"color: {c.text_primary}; border: none; font-size: 10pt;")
 

@@ -14,6 +14,7 @@ from .backend import AIBackend, create_backend
 from .command_executor import CommandExecutor
 from .prompt_builder import PromptBuilder
 from .chat_history import ChatHistory
+from ..i18n.i18n import t
 
 logger = logging.getLogger("AIAssistant.Controller")
 
@@ -45,7 +46,7 @@ class _StreamingWorker(QThread):
         except ImportError as e:
             self.error_occurred.emit(str(e))
         except Exception as e:
-            self.error_occurred.emit(f"请求失败: {str(e)}")
+            self.error_occurred.emit(t("ai.error.request_failed", error=str(e)))
 
 
 class AIAssistantController(QObject):
@@ -141,14 +142,14 @@ class AIAssistantController(QObject):
 
         if not self.config.is_configured():
             if self.panel:
-                self.panel.append_system_message("请先在设置中配置 API Key。点击工具栏齿轮图标或菜单「工具 → AI 助手设置」。")
+                self.panel.append_system_message(t("ai.error.no_api_key_hint"))
             return
 
         if not self.backend:
             self._init_backend()
             if not self.backend:
                 if self.panel:
-                    self.panel.append_system_message("AI 后端初始化失败，请检查设置。")
+                    self.panel.append_system_message(t("ai.error.backend_init_failed"))
                 return
 
         # 添加用户消息到历史
@@ -217,7 +218,7 @@ class AIAssistantController(QObject):
                 if doc_id != active_id:
                     other_docs.append({
                         "doc_id": doc_id,
-                        "name": doc.display_name or doc.device_info.name or "未命名",
+                        "name": doc.display_name or doc.device_info.name or t("msg.unnamed"),
                         "file_path": doc.file_path or "",
                         "modified": doc.modified,
                     })
@@ -280,7 +281,7 @@ class AIAssistantController(QObject):
         if self.panel:
             self.panel.finalize_assistant_message("")
             self.panel.set_streaming(False)
-            self.panel.append_system_message(f"错误: {error_msg}")
+            self.panel.append_system_message(t("ai.error.prefix", error=error_msg))
 
     def _clean_streaming_text(self, text: str) -> str:
         """实时去除流式文本中的 JSON 内容，仅保留用户可读的自然语言部分"""
@@ -319,14 +320,14 @@ class AIAssistantController(QObject):
             actions = action_data.get("actions", [])
             if actions:
                 ops = [a.get("operation", "?") for a in actions]
-                return f"正在执行: {', '.join(ops)}"
+                return t("ai.executing", ops=', '.join(ops))
 
         return full_response.strip()
 
     def _schedule_continuation(self, continuation_prompt: str):
         """调度多步骤任务的下一步（不显示用户气泡，直接内部续发）"""
         from PyQt6.QtCore import QTimer
-        prompt = continuation_prompt or "继续执行任务"
+        prompt = continuation_prompt or t("ai.continue_task")
         # 将 continuation_prompt 作为用户消息加入历史（供 API 上下文），但不显示气泡
         self.chat_history.add_message("user", prompt)
         QTimer.singleShot(500, self._send_message_internal)
@@ -401,6 +402,16 @@ class AIAssistantController(QObject):
     def is_busy(self) -> bool:
         """是否正在处理请求"""
         return self._worker is not None and self._worker.isRunning()
+
+    def stop_generation(self):
+        """停止当前 AI 生成"""
+        if self._worker and self._worker.isRunning():
+            self.logger.info("用户请求停止生成")
+            self._worker.quit()
+            self._worker.wait(2000)
+            if self.panel:
+                self.panel.finalize_assistant_message("")
+                self.panel.set_streaming(False)
 
     def shutdown(self):
         """关闭 AI 助手"""

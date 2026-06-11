@@ -584,12 +584,12 @@ class BitFieldWidget(QWidget):
                     self.hovered_field_name = field.name
                     # 显示详细tooltip
                     tooltip = f"<b>{field.name}</b><br>"
-                    tooltip += f"位范围: [{field.bit_offset}:{field.bit_offset + field.bit_width - 1}]<br>"
-                    tooltip += f"位宽: {field.bit_width}<br>"
+                    tooltip += f"{t('bitfield.tooltip_bit_range')}: [{field.bit_offset}:{field.bit_offset + field.bit_width - 1}]<br>"
+                    tooltip += f"{t('bitfield.tooltip_bit_width')}: {field.bit_width}<br>"
                     if hasattr(field, 'description') and field.description:
-                        tooltip += f"描述: {field.description}<br>"
+                        tooltip += f"{t('bitfield.tooltip_description')}: {field.description}<br>"
                     if hasattr(field, 'access') and field.access:
-                        tooltip += f"访问: {field.access}"
+                        tooltip += f"{t('bitfield.tooltip_access')}: {field.access}"
                     QToolTip.showText(event.globalPosition().toPoint(), tooltip, self)
                     break
         

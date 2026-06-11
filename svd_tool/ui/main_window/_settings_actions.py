@@ -38,6 +38,15 @@ class SettingsActionsMixin:
         if hasattr(self, 'i18n_manager') and self.i18n_manager:
             self.i18n_manager.set_locale(locale)
             language_name = "中文" if locale == "zh_CN" else "English"
+
+            # 更新窗口标题
+            self.setWindowTitle(t("app.title"))
+
+            # 更新状态栏左侧"就绪"文本
+            status_label = self.layout_manager.get_widget('status_label')
+            if status_label:
+                status_label.setText(t("status.ready"))
+
             self.layout_manager.update_status(t("msg.language_changed", language=language_name))
             self.logger.info(f"语言已切换为: {language_name}")
 
@@ -53,10 +62,18 @@ class SettingsActionsMixin:
             # 重新创建标签页以更新文本（但保留数据）
             self._recreate_tabs()
 
+            # 刷新数据统计（确保状态栏右侧统计也更新为新语言）
+            self.update_data_stats()
+
             # 刷新欢迎页文本
             welcome_page = self.layout_manager.get_widget('welcome_page')
             if welcome_page and hasattr(welcome_page, 'refresh_ui'):
                 welcome_page.refresh_ui()
+
+            # 刷新 AI 助手面板文本
+            if hasattr(self, 'ai_assistant') and self.ai_assistant and self.ai_assistant.panel:
+                if hasattr(self.ai_assistant.panel, 'refresh_ui'):
+                    self.ai_assistant.panel.refresh_ui()
 
     def _recreate_toolbar(self):
         """重新创建工具栏以更新语言"""

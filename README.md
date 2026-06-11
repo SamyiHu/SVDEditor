@@ -19,11 +19,14 @@
 
 ## Screenshots
 
-> Add screenshots here to showcase the GUI features
+![GUI Overview](docs/screenshots/gui_overview.png)
+*Main interface: three-level tree, address map, XML live preview*
 
-<!-- ![GUI Overview](docs/screenshots/gui_overview.png) -->
-<!-- ![Bitfield Editor](docs/screenshots/bitfield_editor.png) -->
-<!-- ![AI Assistant](docs/screenshots/ai_assistant.png) -->
+![Bitfield Editor](docs/screenshots/bitfield_editor.png)
+*Bitfield visualization and register details*
+
+![AI Assistant](docs/screenshots/ai_assistant.png)
+*Natural language interaction with SVD data*
 
 ---
 

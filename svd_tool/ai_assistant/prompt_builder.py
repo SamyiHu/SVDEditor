@@ -6,6 +6,8 @@ import json
 import logging
 from typing import Optional
 
+from ..i18n.i18n import get_i18n_manager, t
+
 logger = logging.getLogger("AIAssistant.PromptBuilder")
 
 
@@ -31,7 +33,7 @@ class PromptBuilder:
         if device_info:
             parts.append(self._build_context_section(device_info))
         else:
-            parts.append("\n当前没有打开的 SVD 文件。")
+            parts.append(t("ai.prompt.no_file", default="\n当前没有打开的 SVD 文件。"))
 
         # 其他已打开的文档
         if open_documents:
@@ -40,17 +42,17 @@ class PromptBuilder:
                 active = open_documents.get("active")
                 others = open_documents.get("others", [])
                 if active:
-                    parts.append(f"当前活跃文档: {active['name']} (doc_id: {active['doc_id']}, 路径: {active.get('file_path', '无')})")
+                    parts.append(t("ai.prompt.active_doc", default="当前活跃文档") + f": {active['name']} (doc_id: {active['doc_id']}, {t('ai.prompt.path', default='路径')}: {active.get('file_path', t('ai.prompt.none', default='无'))})")
                 if others:
                     doc_lines = []
                     for d in others:
-                        modified = " [已修改]" if d.get("modified") else ""
-                        doc_lines.append(f"  - {d['name']} (doc_id: {d['doc_id']}, 路径: {d.get('file_path', '无')}{modified})")
-                    parts.append("其他已打开的文档:\n" + "\n".join(doc_lines))
+                        modified = f" [{t('ai.prompt.modified', default='已修改')}]" if d.get("modified") else ""
+                        doc_lines.append(f"  - {d['name']} (doc_id: {d['doc_id']}, {t('ai.prompt.path', default='路径')}: {d.get('file_path', t('ai.prompt.none', default='无'))}{modified})")
+                    parts.append(t("ai.prompt.other_docs", default="其他已打开的文档") + ":\n" + "\n".join(doc_lines))
             else:
                 # 兼容旧格式
                 doc_list = ", ".join(open_documents)
-                parts.append(f"当前编辑器中还打开了以下文件（可通过 diff 操作直接比较）：{doc_list}")
+                parts.append(t("ai.prompt.other_files", default="当前编辑器中还打开了以下文件（可通过 diff 操作直接比较）：") + f" {doc_list}")
 
         # 第三层：操作格式规范
         parts.append(self._build_action_schema())
@@ -59,7 +61,12 @@ class PromptBuilder:
 
     def _build_role_prompt(self) -> str:
         """构建角色和能力描述"""
-        return """你是 SVD Editor 的 AI 助手。SVD Editor 是一个嵌入式设备描述文件（CMSIS-SVD 格式）编辑器。
+        # 检测当前 UI 语言，决定 AI 回复语言
+        i18n_mgr = get_i18n_manager()
+        locale = i18n_mgr.locale if i18n_mgr else "zh_CN"
+        lang_instruction = "- Respond in English" if locale.startswith("en") else "- 用中文回答用户问题"
+
+        return f"""你是 SVD Editor 的 AI 助手。SVD Editor 是一个嵌入式设备描述文件（CMSIS-SVD 格式）编辑器。
 
 你的能力：
 - 查看、查询当前打开的 SVD 文件内容
@@ -69,7 +76,7 @@ class PromptBuilder:
 - 导出数据
 
 交互规则：
-- 用中文回答用户问题
+{lang_instruction}
 - 当用户请求修改操作时，使用 JSON 格式返回操作指令
 - 当用户只是查询或聊天时，直接用自然语言回答
 - 如果用户的请求涉及多步骤（如修复冲突、批量修改），主动使用 continue 机制分步完成，不要只做第一步就停下来
@@ -79,10 +86,10 @@ class PromptBuilder:
         """构建 SVD 上下文快照"""
         try:
             snapshot = self.build_context_snapshot(device_info)
-            return "当前 SVD 文件上下文：\n```json\n" + snapshot + "\n```"
+            return t("ai.prompt.context_label", default="当前 SVD 文件上下文：") + "\n```json\n" + snapshot + "\n```"
         except Exception as e:
             logger.warning(f"构建上下文快照失败: {e}")
-            return "当前 SVD 文件上下文无法获取。"
+            return t("ai.prompt.context_fail", default="当前 SVD 文件上下文无法获取。")
 
     def build_context_snapshot(self, device_info) -> str:
         """构建紧凑的 SVD 数据快照（用于注入到提示词中）"""

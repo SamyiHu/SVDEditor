@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QKeyEvent
+from PyQt6 import sip
 
 from ...config.styles import get_style_scheme
 from ...i18n.i18n import t
@@ -98,11 +99,11 @@ class AIChatPanel(QDockWidget):
 
     def _show_welcome(self):
         """显示欢迎消息气泡"""
-        bubble = AssistantBubble()
-        bubble.set_content(
+        self._welcome_bubble = AssistantBubble()
+        self._welcome_bubble.set_content(
             t("ai.welcome", default="你好！我可以帮你查看、修改和验证 SVD 数据。请随时提问。")
         )
-        self._insert_bubble(bubble)
+        self._insert_bubble(self._welcome_bubble)
 
     def _create_toolbar(self) -> QWidget:
         """创建顶部工具栏"""
@@ -130,9 +131,9 @@ class AIChatPanel(QDockWidget):
         layout.addStretch()
 
         # 清空按钮
-        clear_btn = QToolButton()
-        clear_btn.setText(t("ai.clear", default="清空"))
-        clear_btn.setStyleSheet(f"""
+        self._clear_btn = QToolButton()
+        self._clear_btn.setText(t("ai.clear", default="清空"))
+        self._clear_btn.setStyleSheet(f"""
             QToolButton {{
                 background: transparent;
                 color: {c.text_secondary};
@@ -146,14 +147,14 @@ class AIChatPanel(QDockWidget):
                 border-radius: 4px;
             }}
         """)
-        clear_btn.clicked.connect(lambda: self.controller.clear_history())
-        layout.addWidget(clear_btn)
+        self._clear_btn.clicked.connect(lambda: self.controller.clear_history())
+        layout.addWidget(self._clear_btn)
 
         # 设置按钮
-        settings_btn = QToolButton()
-        settings_btn.setText("⚙")
-        settings_btn.setToolTip(t("ai.settings.title", default="AI 助手设置"))
-        settings_btn.setStyleSheet(f"""
+        self._settings_btn = QToolButton()
+        self._settings_btn.setText("⚙")
+        self._settings_btn.setToolTip(t("ai.settings.title", default="AI 助手设置"))
+        self._settings_btn.setStyleSheet(f"""
             QToolButton {{
                 background: transparent;
                 color: {c.text_secondary};
@@ -167,8 +168,8 @@ class AIChatPanel(QDockWidget):
                 border-radius: 4px;
             }}
         """)
-        settings_btn.clicked.connect(lambda: self.controller.show_settings())
-        layout.addWidget(settings_btn)
+        self._settings_btn.clicked.connect(lambda: self.controller.show_settings())
+        layout.addWidget(self._settings_btn)
 
         return toolbar
 
@@ -216,6 +217,26 @@ class AIChatPanel(QDockWidget):
 
         btn_layout.addStretch()
 
+        # 停止按钮（仅在 AI 响应时可见）
+        self._stop_btn = QPushButton(t("ai.stop", default="停止"))
+        self._stop_btn.setFixedSize(70, 28)
+        self._stop_btn.setVisible(False)
+        self._stop_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {c.error};
+                color: {c.text_white};
+                border: none;
+                border-radius: {s.radius_sm};
+                font-weight: bold;
+                font-size: 10pt;
+            }}
+            QPushButton:hover {{
+                background-color: #d9363e;
+            }}
+        """)
+        self._stop_btn.clicked.connect(self._on_stop)
+        btn_layout.addWidget(self._stop_btn)
+
         self._send_btn = QPushButton(t("ai.send", default="发送"))
         self._send_btn.setFixedSize(70, 28)
         self._send_btn.setStyleSheet(f"""
@@ -255,6 +276,11 @@ class AIChatPanel(QDockWidget):
 
         self._input_edit.clear()
         self.controller.send_message(text)
+
+    def _on_stop(self):
+        """停止 AI 响应"""
+        if self.controller.is_busy():
+            self.controller.stop_generation()
 
     def _apply_styles(self):
         """应用面板样式"""
@@ -301,6 +327,7 @@ class AIChatPanel(QDockWidget):
         """设置流式状态"""
         self._send_btn.setEnabled(not active)
         self._input_edit.setEnabled(not active)
+        self._stop_btn.setVisible(active)
 
         if active:
             # 创建新的 AI 气泡用于流式追加
@@ -309,15 +336,19 @@ class AIChatPanel(QDockWidget):
             self._insert_bubble(self._current_assistant_bubble)
         # 注意：不在这里清空 _current_assistant_bubble，由 finalize_assistant_message 负责
 
+    def _is_bubble_alive(self, bubble) -> bool:
+        """检查气泡的 C++ 对象是否仍然存活"""
+        return bubble is not None and not sip.isdeleted(bubble)
+
     def update_streaming_text(self, chunk: str):
         """更新流式文本（追加模式）"""
-        if self._current_assistant_bubble:
+        if self._is_bubble_alive(self._current_assistant_bubble):
             self._current_assistant_bubble.append_text(chunk)
             self._scroll_to_bottom()
 
     def set_streaming_text(self, text: str):
         """设置流式文本（替换模式，用于过滤后的文本）"""
-        if self._current_assistant_bubble:
+        if self._is_bubble_alive(self._current_assistant_bubble):
             self._current_assistant_bubble.set_content(text)
             self._scroll_to_bottom()
 
@@ -327,7 +358,7 @@ class AIChatPanel(QDockWidget):
         Args:
             display_text: 已经过滤掉 JSON 的纯文本，可直接显示
         """
-        if self._current_assistant_bubble:
+        if self._is_bubble_alive(self._current_assistant_bubble):
             if display_text and display_text.strip():
                 self._current_assistant_bubble.set_content(display_text)
             else:
@@ -346,6 +377,33 @@ class AIChatPanel(QDockWidget):
 
         # 显示欢迎消息
         self._show_welcome()
+
+    def refresh_ui(self):
+        """刷新面板文本（语言切换时调用）"""
+        # 更新 DockWidget 标题
+        self.setWindowTitle(t("ai.title"))
+
+        # 更新欢迎消息气泡
+        if hasattr(self, '_welcome_bubble') and self._welcome_bubble:
+            self._welcome_bubble.set_content(t("ai.welcome"))
+
+        # 更新输入框占位符
+        if hasattr(self, '_input_edit'):
+            self._input_edit.setPlaceholderText(t("ai.placeholder"))
+
+        # 更新发送按钮
+        if hasattr(self, '_send_btn'):
+            self._send_btn.setText(t("ai.send"))
+
+        # 更新工具栏按钮（保存引用以避免文本匹配）
+        if hasattr(self, '_clear_btn'):
+            self._clear_btn.setText(t("ai.clear"))
+        if hasattr(self, '_settings_btn'):
+            self._settings_btn.setToolTip(t("ai.settings.title"))
+
+        # 更新停止按钮
+        if hasattr(self, '_stop_btn'):
+            self._stop_btn.setText(t("ai.stop"))
 
     def update_model_label(self):
         """更新模型标签"""

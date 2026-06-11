@@ -18,11 +18,14 @@
 
 ## 截图
 
-> 在此添加截图展示 GUI 功能
+![GUI 概览](docs/screenshots/gui_overview.png)
+*主界面：三级树形结构、地址映射、XML 实时预览*
 
-<!-- ![GUI 概览](docs/screenshots/gui_overview.png) -->
-<!-- ![位域编辑器](docs/screenshots/bitfield_editor.png) -->
-<!-- ![AI 助手](docs/screenshots/ai_assistant.png) -->
+![位域编辑器](docs/screenshots/bitfield_editor.png)
+*位域可视化编辑与寄存器详情*
+
+![AI 助手](docs/screenshots/ai_assistant.png)
+*自然语言操作 SVD 数据*
 
 ---
 

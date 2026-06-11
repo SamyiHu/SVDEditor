@@ -35,9 +35,9 @@ class _TestConnectionWorker(QThread):
             else:
                 self.finished.emit(False, t("ai.settings.test_fail", default="连接失败：空响应"))
         except ImportError as e:
-            self.finished.emit(False, f"缺少依赖: {e}")
+            self.finished.emit(False, t("ai.settings.missing_dep", error=str(e)))
         except Exception as e:
-            self.finished.emit(False, f"失败: {str(e)[:60]}")
+            self.finished.emit(False, t("ai.settings.fail_prefix", error=str(e)[:60]))
 
 
 class AISettingsDialog(QDialog):
@@ -95,15 +95,15 @@ class AISettingsDialog(QDialog):
 
         # API 类型
         self._api_type_combo = QComboBox()
-        self._api_type_combo.addItem("OpenAI 兼容", "openai")
+        self._api_type_combo.addItem(t("ai.settings.api_type_openai"), "openai")
         self._api_type_combo.addItem("Anthropic Claude", "anthropic")
         self._api_type_combo.currentIndexChanged.connect(self._on_api_type_changed)
-        form.addRow("API 类型:", self._api_type_combo)
+        form.addRow(t("ai.settings.api_type_label"), self._api_type_combo)
 
         # Endpoint URL
         self._api_url_edit = QLineEdit()
         self._api_url_edit.setPlaceholderText("https://api.openai.com/v1")
-        form.addRow("Endpoint URL:", self._api_url_edit)
+        form.addRow(t("ai.settings.endpoint_url"), self._api_url_edit)
 
         # API Key
         key_layout = QHBoxLayout()
@@ -119,7 +119,7 @@ class AISettingsDialog(QDialog):
         self._toggle_key_btn.clicked.connect(self._toggle_key_visibility)
         key_layout.addWidget(self._toggle_key_btn)
 
-        form.addRow("API Key:", key_layout)
+        form.addRow(t("ai.settings.api_key"), key_layout)
 
         # 测试连接按钮
         test_layout = QHBoxLayout()
@@ -147,19 +147,19 @@ class AISettingsDialog(QDialog):
             "claude-sonnet-4-20250514", "claude-haiku-4-20250414", "claude-opus-4-20250514",
             "deepseek-chat", "deepseek-coder",
         ])
-        form.addRow("模型:", self._model_combo)
+        form.addRow(t("ai.settings.model_label"), self._model_combo)
 
         # Temperature — 用 QLineEdit 替代 QDoubleSpinBox
         self._temp_edit = QLineEdit("0.3")
         self._temp_edit.setValidator(QDoubleValidator(0.0, 2.0, 1))
         self._temp_edit.setPlaceholderText("0.0 ~ 2.0")
-        form.addRow("Temperature:", self._temp_edit)
+        form.addRow(t("ai.settings.temperature"), self._temp_edit)
 
         # Max Tokens — 用 QLineEdit 替代 QSpinBox
         self._max_tokens_edit = QLineEdit("2048")
         self._max_tokens_edit.setValidator(QIntValidator(256, 32768))
         self._max_tokens_edit.setPlaceholderText("256 ~ 32768")
-        form.addRow("Max Tokens:", self._max_tokens_edit)
+        form.addRow(t("ai.settings.max_tokens"), self._max_tokens_edit)
 
         # 流式
         self._streaming_check = ToggleSwitch(t("ai.settings.streaming", default="启用流式响应"))

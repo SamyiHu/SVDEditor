@@ -7,6 +7,8 @@ import logging
 import re
 from typing import Dict, Any, Optional
 
+from ..i18n.i18n import t
+
 logger = logging.getLogger("AIAssistant.CommandExecutor")
 
 
@@ -60,7 +62,7 @@ class CommandExecutor:
         if not handler:
             return {
                 "success": False,
-                "message": f"未知操作: {operation}",
+                "message": t("ai.unknown_op", op=operation),
                 "data": None
             }
 
@@ -70,7 +72,7 @@ class CommandExecutor:
             logger.error(f"执行操作 {operation} 失败: {e}", exc_info=True)
             return {
                 "success": False,
-                "message": f"操作执行失败: {str(e)}",
+                "message": t("ai.op_failed", error=str(e)),
                 "data": None
             }
 
@@ -121,7 +123,7 @@ class CommandExecutor:
         """验证 SVD 数据"""
         device = self._get_device_info()
         if not device or not device.name:
-            return {"success": False, "message": "没有打开的 SVD 文件", "data": None}
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
 
         try:
             from svd_tool.core.svd_schema_validator import SVDSchemaValidator
@@ -129,21 +131,21 @@ class CommandExecutor:
             results = validator.validate_all(device)
             summary = validator.get_summary()
 
-            msg = f"验证完成: {summary.get('errors', 0)} 个错误, {summary.get('warnings', 0)} 个警告"
+            msg = t("ai.validate_done", errors=summary.get('errors', 0), warnings=summary.get('warnings', 0))
             return {"success": not summary.get("has_errors", True), "message": msg, "data": summary}
         except Exception as e:
-            return {"success": False, "message": f"验证失败: {e}", "data": None}
+            return {"success": False, "message": t("ai.validate_fail", error=str(e)), "data": None}
 
     def _op_info(self, params: Dict) -> Dict[str, Any]:
         """获取设备信息统计"""
         device = self._get_device_info()
         if not device or not device.name:
-            return {"success": False, "message": "没有打开的 SVD 文件", "data": None}
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
 
         info = {
             "device": device.name,
             "version": device.version,
-            "vendor": device.vendor or "未指定",
+            "vendor": device.vendor or t("ai.info_vendor"),
             "cpu": device.cpu.name,
             "size": device.size,
             "statistics": {
@@ -161,23 +163,24 @@ class CommandExecutor:
                 for name, p in device.peripherals.items()
             ],
         }
-        msg = (f"设备: {device.name} | "
-               f"外设: {info['statistics']['peripherals']} | "
-               f"寄存器: {info['statistics']['registers']} | "
-               f"位域: {info['statistics']['fields']} | "
-               f"中断: {info['statistics']['interrupts']}")
+        msg = t("ai.info_msg",
+                name=device.name,
+                periphs=info['statistics']['peripherals'],
+                regs=info['statistics']['registers'],
+                fields=info['statistics']['fields'],
+                irqs=info['statistics']['interrupts'])
         return {"success": True, "message": msg, "data": info}
 
     def _op_search(self, params: Dict) -> Dict[str, Any]:
         """搜索外设/寄存器/位域"""
         device = self._get_device_info()
         if not device:
-            return {"success": False, "message": "没有打开的 SVD 文件", "data": None}
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
 
         keyword = params.get("keyword", "").lower()
         search_type = params.get("type", "all")
         if not keyword:
-            return {"success": False, "message": "请提供搜索关键词", "data": None}
+            return {"success": False, "message": t("ai.search_keyword_empty"), "data": None}
 
         results = []
 
@@ -202,14 +205,14 @@ class CommandExecutor:
                         if keyword in fname.lower():
                             results.append({"type": "field", "name": fname, "peripheral": pname, "register": rname})
 
-        msg = f"搜索 '{keyword}' 找到 {len(results)} 个结果"
+        msg = t("ai.search_result", keyword=keyword, count=len(results))
         return {"success": True, "message": msg, "data": results}
 
     def _op_conflicts(self, params: Dict) -> Dict[str, Any]:
         """检测地址冲突"""
         device = self._get_device_info()
         if not device or not device.name:
-            return {"success": False, "message": "没有打开的 SVD 文件", "data": None}
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
 
         try:
             from svd_tool.core.address_conflict_detector import AddressConflictDetector
@@ -217,7 +220,7 @@ class CommandExecutor:
             conflicts = detector.detect_all(device)
 
             if not conflicts:
-                return {"success": True, "message": "未检测到地址冲突", "data": []}
+                return {"success": True, "message": t("ai.conflicts_none"), "data": []}
 
             conflict_list = []
             for c in conflicts[:20]:
@@ -227,16 +230,16 @@ class CommandExecutor:
                     "message": c.message if hasattr(c, 'message') else str(c),
                 })
 
-            msg = f"检测到 {len(conflicts)} 个地址冲突"
+            msg = t("ai.conflicts_found", count=len(conflicts))
             return {"success": True, "message": msg, "data": conflict_list}
         except Exception as e:
-            return {"success": False, "message": f"冲突检测失败: {e}", "data": None}
+            return {"success": False, "message": t("ai.conflicts_fail", error=str(e)), "data": None}
 
     def _op_diff(self, params: Dict) -> Dict[str, Any]:
         """比较当前 SVD 与另一个文件或已打开的文档"""
         device = self._get_device_info()
         if not device or not device.name:
-            return {"success": False, "message": "没有打开的 SVD 文件", "data": None}
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
 
         other_device = None
         other_name = ""
@@ -249,10 +252,10 @@ class CommandExecutor:
                 # 返回错误，附带可用文档列表
                 open_docs = self._get_open_documents_info()
                 if not open_docs:
-                    return {"success": False, "message": "当前只有一个文件打开，无法比较。请打开第二个文件，或使用 file_path 参数指定文件路径。", "data": None}
+                    return {"success": False, "message": t("ai.diff_only_one"), "data": None}
                 return {
                     "success": False,
-                    "message": f"找不到匹配的文档。当前打开的文件：{', '.join(open_docs)}",
+                    "message": t("ai.diff_not_found", docs=', '.join(open_docs)),
                     "data": {"open_documents": open_docs}
                 }
 
@@ -263,11 +266,11 @@ class CommandExecutor:
                 file_path = file_path.strip()
             if not file_path:
                 # 没有提供路径，也没有其他打开的文档
-                return {"success": False, "message": "请提供要比较的文件路径（file_path）或文档名称（compare_with）。当前没有其他已打开的文件。", "data": None}
+                return {"success": False, "message": t("ai.diff_no_path"), "data": None}
 
             import os
             if not os.path.isfile(file_path):
-                return {"success": False, "message": f"文件不存在: {file_path}", "data": None}
+                return {"success": False, "message": t("ai.diff_file_not_found", path=file_path), "data": None}
 
             try:
                 from svd_tool.core.svd_parser import SVDParser
@@ -275,7 +278,7 @@ class CommandExecutor:
                 other_device = parser.parse_file(file_path)
                 other_name = os.path.basename(file_path)
             except Exception as e:
-                return {"success": False, "message": f"解析文件失败: {e}", "data": None}
+                return {"success": False, "message": t("ai.diff_parse_fail", error=str(e)), "data": None}
 
         try:
             from svd_tool.core.svd_differ import SVDDiffer
@@ -284,7 +287,7 @@ class CommandExecutor:
             diffs = differ.diff(device, other_device)
 
             if not diffs:
-                return {"success": True, "message": f"'{device.name}' 与 '{other_name}' 完全一致，没有差异", "data": []}
+                return {"success": True, "message": t("ai.diff_identical", a=device.name, b=other_name), "data": []}
 
             summary = differ.generate_summary(diffs)
             diff_list = []
@@ -300,7 +303,7 @@ class CommandExecutor:
 
             result = {
                 "success": True,
-                "message": f"比较 '{device.name}' 与 '{other_name}'：发现 {total_changes} 处差异（{len(diffs)} 个外设级别差异）",
+                "message": t("ai.diff_result", a=device.name, b=other_name, changes=total_changes, periphs=len(diffs)),
                 "data": {
                     "source": device.name,
                     "target": other_name,
@@ -318,7 +321,7 @@ class CommandExecutor:
 
             return result
         except Exception as e:
-            return {"success": False, "message": f"比较失败: {e}", "data": None}
+            return {"success": False, "message": t("ai.diff_fail", error=str(e)), "data": None}
 
     def _show_diff_dialog(self, current_device, other_device, document_manager):
         """弹出 SVD 差异比较对话框让用户可视化查看差异"""
@@ -387,30 +390,28 @@ class CommandExecutor:
         field = params.get("field", "").strip()
 
         if not peripheral:
-            return {"success": False, "message": "请至少指定外设名称", "data": None}
+            return {"success": False, "message": t("ai.jump_hint"), "data": None}
 
         device = self._get_device_info()
         if not device:
-            return {"success": False, "message": "没有打开的 SVD 文件", "data": None}
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
 
         if peripheral not in device.peripherals:
-            return {"success": False, "message": f"外设 '{peripheral}' 不存在", "data": None}
+            return {"success": False, "message": t("ai.periph_not_found", name=peripheral), "data": None}
 
         # 切换到外设标签页
         layout_manager = self.coordinator.get_component("layout_manager")
         if layout_manager:
             tab_widget = layout_manager.widget_manager.get_widget("tab_widget")
             if tab_widget:
-                # 找到外设标签页（通常是第2个，index=1）
-                for i in range(tab_widget.count()):
-                    if "外设" in tab_widget.tabText(i) or "Periph" in tab_widget.tabText(i):
-                        tab_widget.setCurrentIndex(i)
-                        break
+                # 外设标签页固定在 index=1
+                if tab_widget.count() > 1:
+                    tab_widget.setCurrentIndex(1)
 
         # 使用 PeripheralManager 的选择方法
         periph_manager = self.coordinator.get_component("peripheral_manager")
         if not periph_manager:
-            return {"success": False, "message": "外设管理器不可用", "data": None}
+            return {"success": False, "message": t("ai.periph_mgr_unavailable"), "data": None}
 
         target_desc = peripheral
         try:
@@ -424,9 +425,9 @@ class CommandExecutor:
                 periph_manager.select_peripheral(peripheral)
                 target_desc = peripheral
         except Exception as e:
-            return {"success": False, "message": f"跳转失败: {e}", "data": None}
+            return {"success": False, "message": t("ai.jump_fail", error=str(e)), "data": None}
 
-        return {"success": True, "message": f"已跳转到 {target_desc}", "data": {
+        return {"success": True, "message": t("ai.jump_done", target=target_desc), "data": {
             "peripheral": peripheral,
             "register": register or None,
             "field": field or None,
@@ -438,7 +439,7 @@ class CommandExecutor:
         """更新设备级属性（名称、版本、厂商、描述、作者等）"""
         device = self._get_device_info()
         if not device:
-            return {"success": False, "message": "没有打开的 SVD 文件", "data": None}
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
 
         # 合并 "updates" 字典和直接传入的字段
         direct_fields = {"name", "version", "vendor", "description", "author",
@@ -449,7 +450,7 @@ class CommandExecutor:
                 updates[key] = params[key]
 
         if not updates:
-            return {"success": False, "message": "未指定更新内容", "data": None}
+            return {"success": False, "message": t("ai.no_updates"), "data": None}
 
         old_values = {}
         updatable_fields = ["name", "version", "vendor", "description", "author",
@@ -468,21 +469,21 @@ class CommandExecutor:
         self._notify_refresh()
 
         updated = list(updates.keys())
-        return {"success": True, "message": f"已更新设备属性: {', '.join(updated)}", "data": {"updates": updated}}
+        return {"success": True, "message": t("ai.update_device_done", fields=', '.join(updated)), "data": {"updates": updated}}
 
     def _op_add_peripheral(self, params: Dict) -> Dict[str, Any]:
         """添加外设"""
         device = self._get_device_info()
         if not device:
-            return {"success": False, "message": "没有打开的 SVD 文件", "data": None}
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
 
         from svd_tool.core.data_model import Peripheral
 
         name = params.get("name", "").strip()
         if not name:
-            return {"success": False, "message": "外设名称不能为空", "data": None}
+            return {"success": False, "message": t("ai.periph_name_empty"), "data": None}
         if name in device.peripherals:
-            return {"success": False, "message": f"外设 '{name}' 已存在", "data": None}
+            return {"success": False, "message": t("ai.periph_exists", name=name), "data": None}
 
         base_address = params.get("base_address", "0x40000000")
         periph = Peripheral(
@@ -501,21 +502,21 @@ class CommandExecutor:
         self._execute_undoable(f"AI: 添加外设 '{name}'", execute, undo)
         self._notify_refresh(name)
 
-        return {"success": True, "message": f"已添加外设 '{name}' (基地址: {base_address})", "data": {"name": name}}
+        return {"success": True, "message": t("ai.add_periph_done", name=name, addr=base_address), "data": {"name": name}}
 
     def _op_update_peripheral(self, params: Dict) -> Dict[str, Any]:
         """更新外设属性"""
         device = self._get_device_info()
         if not device:
-            return {"success": False, "message": "没有打开的 SVD 文件", "data": None}
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
 
         name = params.get("name", "").strip()
         if name not in device.peripherals:
-            return {"success": False, "message": f"外设 '{name}' 不存在", "data": None}
+            return {"success": False, "message": t("ai.periph_not_found", name=name), "data": None}
 
         updates = params.get("updates", {})
         if not updates:
-            return {"success": False, "message": "未指定更新内容", "data": None}
+            return {"success": False, "message": t("ai.no_updates"), "data": None}
 
         periph = device.peripherals[name]
         old_values = {}
@@ -533,17 +534,17 @@ class CommandExecutor:
         self._execute_undoable(f"AI: 更新外设 '{name}'", lambda: None, undo)
         self._notify_refresh(name)
 
-        return {"success": True, "message": f"已更新外设 '{name}'", "data": {"name": name, "updates": list(updates.keys())}}
+        return {"success": True, "message": t("ai.update_periph_done", name=name), "data": {"name": name, "updates": list(updates.keys())}}
 
     def _op_remove_peripheral(self, params: Dict) -> Dict[str, Any]:
         """删除外设"""
         device = self._get_device_info()
         if not device:
-            return {"success": False, "message": "没有打开的 SVD 文件", "data": None}
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
 
         name = params.get("name", "").strip()
         if name not in device.peripherals:
-            return {"success": False, "message": f"外设 '{name}' 不存在", "data": None}
+            return {"success": False, "message": t("ai.periph_not_found", name=name), "data": None}
 
         import copy
         removed = device.peripherals[name]
@@ -559,27 +560,27 @@ class CommandExecutor:
         self._execute_undoable(f"AI: 删除外设 '{name}'", execute, undo)
         self._notify_refresh(name)
 
-        return {"success": True, "message": f"已删除外设 '{name}'", "data": {"name": name}}
+        return {"success": True, "message": t("ai.remove_periph_done", name=name), "data": {"name": name}}
 
     def _op_add_register(self, params: Dict) -> Dict[str, Any]:
         """添加寄存器"""
         device = self._get_device_info()
         if not device:
-            return {"success": False, "message": "没有打开的 SVD 文件", "data": None}
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
 
         from svd_tool.core.data_model import Register
 
         periph_name = params.get("peripheral", "").strip()
         if periph_name not in device.peripherals:
-            return {"success": False, "message": f"外设 '{periph_name}' 不存在", "data": None}
+            return {"success": False, "message": t("ai.periph_not_found", name=periph_name), "data": None}
 
         reg_name = params.get("name", "").strip()
         if not reg_name:
-            return {"success": False, "message": "寄存器名称不能为空", "data": None}
+            return {"success": False, "message": t("ai.reg_name_empty"), "data": None}
 
         periph = device.peripherals[periph_name]
         if reg_name in periph.registers:
-            return {"success": False, "message": f"寄存器 '{reg_name}' 已存在于 '{periph_name}'", "data": None}
+            return {"success": False, "message": t("ai.reg_exists", name=reg_name, periph=periph_name), "data": None}
 
         reg = Register(
             name=reg_name,
@@ -600,27 +601,27 @@ class CommandExecutor:
         self._execute_undoable(f"AI: 添加寄存器 '{reg_name}' 到 '{periph_name}'", execute, undo)
         self._notify_refresh(periph_name)
 
-        return {"success": True, "message": f"已添加寄存器 '{reg_name}' 到 '{periph_name}' (偏移: {reg.offset})", "data": {"name": reg_name}}
+        return {"success": True, "message": t("ai.add_reg_done", name=reg_name, periph=periph_name, offset=reg.offset), "data": {"name": reg_name}}
 
     def _op_update_register(self, params: Dict) -> Dict[str, Any]:
         """更新寄存器属性"""
         device = self._get_device_info()
         if not device:
-            return {"success": False, "message": "没有打开的 SVD 文件", "data": None}
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
 
         periph_name = params.get("peripheral", "").strip()
         reg_name = params.get("name", "").strip()
         updates = params.get("updates", {})
 
         if periph_name not in device.peripherals:
-            return {"success": False, "message": f"外设 '{periph_name}' 不存在", "data": None}
+            return {"success": False, "message": t("ai.periph_not_found", name=periph_name), "data": None}
 
         periph = device.peripherals[periph_name]
         if reg_name not in periph.registers:
-            return {"success": False, "message": f"寄存器 '{reg_name}' 不存在于 '{periph_name}'", "data": None}
+            return {"success": False, "message": t("ai.reg_not_found", name=reg_name), "data": None}
 
         if not updates:
-            return {"success": False, "message": "未指定更新内容", "data": None}
+            return {"success": False, "message": t("ai.no_updates"), "data": None}
 
         reg = periph.registers[reg_name]
         old_values = {}
@@ -638,23 +639,23 @@ class CommandExecutor:
         self._execute_undoable(f"AI: 更新寄存器 '{reg_name}'", lambda: None, undo)
         self._notify_refresh(periph_name)
 
-        return {"success": True, "message": f"已更新寄存器 '{reg_name}'", "data": {"name": reg_name}}
+        return {"success": True, "message": t("ai.update_reg_done", name=reg_name), "data": {"name": reg_name}}
 
     def _op_remove_register(self, params: Dict) -> Dict[str, Any]:
         """删除寄存器"""
         device = self._get_device_info()
         if not device:
-            return {"success": False, "message": "没有打开的 SVD 文件", "data": None}
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
 
         periph_name = params.get("peripheral", "").strip()
         reg_name = params.get("name", "").strip()
 
         if periph_name not in device.peripherals:
-            return {"success": False, "message": f"外设 '{periph_name}' 不存在", "data": None}
+            return {"success": False, "message": t("ai.periph_not_found", name=periph_name), "data": None}
 
         periph = device.peripherals[periph_name]
         if reg_name not in periph.registers:
-            return {"success": False, "message": f"寄存器 '{reg_name}' 不存在", "data": None}
+            return {"success": False, "message": t("ai.reg_not_found", name=reg_name), "data": None}
 
         import copy
         removed_copy = copy.deepcopy(periph.registers[reg_name])
@@ -669,13 +670,13 @@ class CommandExecutor:
         self._execute_undoable(f"AI: 删除寄存器 '{reg_name}'", execute, undo)
         self._notify_refresh(periph_name)
 
-        return {"success": True, "message": f"已删除寄存器 '{reg_name}' (从 '{periph_name}')", "data": {"name": reg_name}}
+        return {"success": True, "message": t("ai.remove_reg_done", name=reg_name, periph=periph_name), "data": {"name": reg_name}}
 
     def _op_add_field(self, params: Dict) -> Dict[str, Any]:
         """添加位域"""
         device = self._get_device_info()
         if not device:
-            return {"success": False, "message": "没有打开的 SVD 文件", "data": None}
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
 
         from svd_tool.core.data_model import Field
 
@@ -684,15 +685,15 @@ class CommandExecutor:
         field_name = params.get("name", "").strip()
 
         if periph_name not in device.peripherals:
-            return {"success": False, "message": f"外设 '{periph_name}' 不存在", "data": None}
+            return {"success": False, "message": t("ai.periph_not_found", name=periph_name), "data": None}
 
         periph = device.peripherals[periph_name]
         if reg_name not in periph.registers:
-            return {"success": False, "message": f"寄存器 '{reg_name}' 不存在", "data": None}
+            return {"success": False, "message": t("ai.reg_not_found", name=reg_name), "data": None}
 
         reg = periph.registers[reg_name]
         if field_name in reg.fields:
-            return {"success": False, "message": f"位域 '{field_name}' 已存在", "data": None}
+            return {"success": False, "message": t("ai.field_exists", name=field_name), "data": None}
 
         bit_offset = int(params.get("bit_offset", 0))
         bit_width = int(params.get("bit_width", 1))
@@ -716,13 +717,13 @@ class CommandExecutor:
         self._execute_undoable(f"AI: 添加位域 '{field_name}' 到 '{reg_name}'", execute, undo)
         self._notify_refresh(periph_name)
 
-        return {"success": True, "message": f"已添加位域 '{field_name}' [{bit_offset}:{bit_offset + bit_width - 1}] 到 '{reg_name}'", "data": {"name": field_name}}
+        return {"success": True, "message": t("ai.add_field_done", name=field_name, start=bit_offset, end=bit_offset + bit_width - 1, reg=reg_name), "data": {"name": field_name}}
 
     def _op_update_field(self, params: Dict) -> Dict[str, Any]:
         """更新位域属性"""
         device = self._get_device_info()
         if not device:
-            return {"success": False, "message": "没有打开的 SVD 文件", "data": None}
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
 
         periph_name = params.get("peripheral", "").strip()
         reg_name = params.get("register", "").strip()
@@ -730,18 +731,18 @@ class CommandExecutor:
         updates = params.get("updates", {})
 
         if periph_name not in device.peripherals:
-            return {"success": False, "message": f"外设 '{periph_name}' 不存在", "data": None}
+            return {"success": False, "message": t("ai.periph_not_found", name=periph_name), "data": None}
 
         periph = device.peripherals[periph_name]
         if reg_name not in periph.registers:
-            return {"success": False, "message": f"寄存器 '{reg_name}' 不存在", "data": None}
+            return {"success": False, "message": t("ai.reg_not_found", name=reg_name), "data": None}
 
         reg = periph.registers[reg_name]
         if field_name not in reg.fields:
-            return {"success": False, "message": f"位域 '{field_name}' 不存在", "data": None}
+            return {"success": False, "message": t("ai.field_not_found", name=field_name), "data": None}
 
         if not updates:
-            return {"success": False, "message": "未指定更新内容", "data": None}
+            return {"success": False, "message": t("ai.no_updates"), "data": None}
 
         fld = reg.fields[field_name]
         old_values = {}
@@ -762,28 +763,28 @@ class CommandExecutor:
         self._execute_undoable(f"AI: 更新位域 '{field_name}'", lambda: None, undo)
         self._notify_refresh(periph_name)
 
-        return {"success": True, "message": f"已更新位域 '{field_name}'", "data": {"name": field_name}}
+        return {"success": True, "message": t("ai.update_field_done", name=field_name), "data": {"name": field_name}}
 
     def _op_remove_field(self, params: Dict) -> Dict[str, Any]:
         """删除位域"""
         device = self._get_device_info()
         if not device:
-            return {"success": False, "message": "没有打开的 SVD 文件", "data": None}
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
 
         periph_name = params.get("peripheral", "").strip()
         reg_name = params.get("register", "").strip()
         field_name = params.get("name", "").strip()
 
         if periph_name not in device.peripherals:
-            return {"success": False, "message": f"外设 '{periph_name}' 不存在", "data": None}
+            return {"success": False, "message": t("ai.periph_not_found", name=periph_name), "data": None}
 
         periph = device.peripherals[periph_name]
         if reg_name not in periph.registers:
-            return {"success": False, "message": f"寄存器 '{reg_name}' 不存在", "data": None}
+            return {"success": False, "message": t("ai.reg_not_found", name=reg_name), "data": None}
 
         reg = periph.registers[reg_name]
         if field_name not in reg.fields:
-            return {"success": False, "message": f"位域 '{field_name}' 不存在", "data": None}
+            return {"success": False, "message": t("ai.field_not_found", name=field_name), "data": None}
 
         import copy
         removed_copy = copy.deepcopy(reg.fields[field_name])
@@ -798,21 +799,21 @@ class CommandExecutor:
         self._execute_undoable(f"AI: 删除位域 '{field_name}'", execute, undo)
         self._notify_refresh(periph_name)
 
-        return {"success": True, "message": f"已删除位域 '{field_name}' (从 '{reg_name}')", "data": {"name": field_name}}
+        return {"success": True, "message": t("ai.remove_field_done", name=field_name, reg=reg_name), "data": {"name": field_name}}
 
     # ==================== 多文档操作 ====================
 
     def _op_switch_document(self, params: Dict) -> Dict[str, Any]:
         """切换到指定文档"""
         if not self.main_window or not hasattr(self.main_window, 'document_manager'):
-            return {"success": False, "message": "文档管理器不可用", "data": None}
+            return {"success": False, "message": t("ai.doc_mgr_unavailable"), "data": None}
 
         dm = self.main_window.document_manager
         target = params.get("doc_id", "").strip()
         name_hint = params.get("name", "").strip()
 
         if not target and not name_hint:
-            return {"success": False, "message": "请提供 doc_id 或 name 参数", "data": None}
+            return {"success": False, "message": t("ai.doc_no_param"), "data": None}
 
         # 按 doc_id 查找
         if target and target in dm.get_all_documents():
@@ -825,7 +826,7 @@ class CommandExecutor:
                 if doc:
                     self.main_window._restore_document_state(doc)
             doc = dm.get_document(target)
-            return {"success": True, "message": f"已切换到文档: {doc.display_name}", "data": {"doc_id": target}}
+            return {"success": True, "message": t("ai.doc_switch_done", name=doc.display_name), "data": {"doc_id": target}}
 
         # 按名称模糊查找
         if name_hint:
@@ -837,24 +838,24 @@ class CommandExecutor:
                     dm.switch_to(doc_id)
                     if hasattr(self.main_window, '_restore_document_state'):
                         self.main_window._restore_document_state(doc)
-                    return {"success": True, "message": f"已切换到文档: {doc.display_name}", "data": {"doc_id": doc_id}}
+                    return {"success": True, "message": t("ai.doc_switch_done", name=doc.display_name), "data": {"doc_id": doc_id}}
 
-        return {"success": False, "message": f"找不到匹配的文档: {target or name_hint}", "data": None}
+        return {"success": False, "message": t("ai.doc_not_found", hint=target or name_hint), "data": None}
 
     def _op_save_document(self, params: Dict) -> Dict[str, Any]:
         """保存指定文档（默认保存当前文档）"""
         if not self.main_window or not hasattr(self.main_window, 'document_manager'):
-            return {"success": False, "message": "文档管理器不可用", "data": None}
+            return {"success": False, "message": t("ai.doc_mgr_unavailable"), "data": None}
 
         dm = self.main_window.document_manager
         target_id = params.get("doc_id", "").strip() or dm.active_doc_id
 
         if not target_id:
-            return {"success": False, "message": "没有可保存的文档", "data": None}
+            return {"success": False, "message": t("ai.doc_no_save"), "data": None}
 
         doc = dm.get_document(target_id)
         if not doc:
-            return {"success": False, "message": f"文档不存在: {target_id}", "data": None}
+            return {"success": False, "message": t("ai.doc_not_exist", id=target_id), "data": None}
 
         try:
             from svd_tool.core.svd_generator import SVDGenerator
@@ -863,15 +864,15 @@ class CommandExecutor:
 
             save_path = params.get("file_path", "").strip() or doc.file_path
             if not save_path:
-                return {"success": False, "message": f"文档 '{doc.display_name}' 没有保存路径，请指定 file_path", "data": None}
+                return {"success": False, "message": t("ai.doc_no_path", name=doc.display_name), "data": None}
 
             with open(save_path, 'w', encoding='utf-8') as f:
                 f.write(svd_xml)
 
             dm.save_document(target_id, file_path=save_path if params.get("file_path") else None)
-            return {"success": True, "message": f"已保存文档 '{doc.display_name}' 到 {save_path}", "data": {"doc_id": target_id, "path": save_path}}
+            return {"success": True, "message": t("ai.doc_save_done", name=doc.display_name, path=save_path), "data": {"doc_id": target_id, "path": save_path}}
         except Exception as e:
-            return {"success": False, "message": f"保存失败: {e}", "data": None}
+            return {"success": False, "message": t("ai.doc_save_fail", error=str(e)), "data": None}
 
     def _op_batch_save(self, params: Dict) -> Dict[str, Any]:
         """批量保存文档
@@ -882,7 +883,7 @@ class CommandExecutor:
             all: true — 保存所有文档
         """
         if not self.main_window or not hasattr(self.main_window, 'document_manager'):
-            return {"success": False, "message": "文档管理器不可用", "data": None}
+            return {"success": False, "message": t("ai.doc_mgr_unavailable"), "data": None}
 
         dm = self.main_window.document_manager
         paths = params.get("paths", {})
@@ -897,7 +898,7 @@ class CommandExecutor:
             docs_to_save = dm.get_modified_documents()
 
         if not docs_to_save:
-            return {"success": True, "message": "没有需要保存的文档", "data": {"saved": [], "failed": []}}
+            return {"success": True, "message": t("ai.doc_no_save"), "data": {"saved": [], "failed": []}}
 
         from svd_tool.core.svd_generator import SVDGenerator
         saved = []
@@ -906,12 +907,12 @@ class CommandExecutor:
         for doc_id in docs_to_save:
             doc = dm.get_document(doc_id)
             if not doc:
-                failed.append({"doc_id": doc_id, "error": "文档不存在"})
+                failed.append({"doc_id": doc_id, "error": t("ai.doc_not_exist", id=doc_id)})
                 continue
             new_path = paths.get(doc_id, "").strip() if paths else ""
             save_path = new_path or doc.file_path
             if not save_path:
-                failed.append({"doc_id": doc_id, "name": doc.display_name, "error": "没有保存路径"})
+                failed.append({"doc_id": doc_id, "name": doc.display_name, "error": t("ai.doc_no_path_batch")})
                 continue
             try:
                 generator = SVDGenerator(doc.device_info, skip_derived_registers=getattr(self.main_window, 'skip_derived_registers', True))
@@ -924,5 +925,5 @@ class CommandExecutor:
             except Exception as e:
                 failed.append({"doc_id": doc_id, "name": doc.display_name, "error": str(e)})
 
-        msg = f"批量保存完成: {len(saved)} 成功, {len(failed)} 失败"
+        msg = t("ai.doc_batch_done", saved=len(saved), failed=len(failed))
         return {"success": len(failed) == 0, "message": msg, "data": {"saved": saved, "failed": failed}}
