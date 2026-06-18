@@ -71,7 +71,9 @@ class DocumentTabBar(QWidget):
         self._tab_bar.setMovable(True)  # 允许拖拽排序
         self._tab_bar.setExpanding(False)
         self._tab_bar.setUsesScrollButtons(True)
-        self._tab_bar.setElideMode(Qt.TextElideMode.ElideMiddle)
+        # 从右侧折叠（而非中间）：型号相近时（如 STM32F103C8 / STM32F103CB）
+        # 保留开头的共同前缀，仅折叠末尾，便于区分，不易混淆
+        self._tab_bar.setElideMode(Qt.TextElideMode.ElideRight)
         
         # 新建标签按钮
         self._new_btn = QToolButton()
@@ -111,7 +113,7 @@ class DocumentTabBar(QWidget):
                 padding: 5px 12px;
                 margin-right: 1px;
                 min-width: 80px;
-                max-width: 220px;
+                max-width: 500px;
             }}
             QTabBar::tab:selected {{
                 background: {c.tab_selected};

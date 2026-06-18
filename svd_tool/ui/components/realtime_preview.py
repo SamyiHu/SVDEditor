@@ -1703,8 +1703,14 @@ class RealtimePreviewWidget(QWidget):
         self.refresh_preview(immediate=False)
     
     def on_device_info_updated(self, device_info):
-        """设备信息更新回调"""
-        self.refresh_preview(immediate=True)
+        """设备信息更新回调
+
+        走防抖路径而非 immediate=True：
+        CPU 信息（mpu_present/fpu_present 等）的改动无需立即同步全量重生成
+        XML（大文件约 400ms 阻塞），交给防抖定时器合并刷新即可，与基本信息
+        页其它控件（名称/版本/外设等）保持一致。修复 FPU/MPU 开关切换卡顿。
+        """
+        self.refresh_preview()
     
     def on_selection_changed(self):
         """选择变化回调（来自状态管理器）"""
