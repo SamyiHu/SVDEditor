@@ -35,6 +35,13 @@ def main():
     app.setApplicationName("SVD工具")
     app.setOrganizationName("SVDTool")
 
+    # 设置应用主图标（窗口标题栏 / 任务栏 / Alt+Tab）
+    try:
+        from svd_tool.config.icons import MaterialIconProvider
+        app.setWindowIcon(MaterialIconProvider.instance().app_logo())
+    except Exception as e:
+        logger.debug(f"设置应用图标失败（可忽略）: {e}")
+
     # 创建主窗口
     logger.debug("开始创建主窗口...")
     window = MainWindow()

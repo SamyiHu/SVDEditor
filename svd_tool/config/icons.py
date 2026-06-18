@@ -4,7 +4,7 @@
 所有图标基于 Material Icons (https://fonts.google.com/icons)
 """
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QPainterPath, QPen
-from PyQt6.QtCore import Qt, QRect, QSize
+from PyQt6.QtCore import Qt, QRect, QRectF, QSize
 
 
 # ==================== Material Design SVG Path Data ====================
@@ -443,6 +443,72 @@ class MaterialIconProvider:
 
     def toggle_panel(self) -> QIcon:
         return self._get("toggle_panel", ICON_COLORS["grey"])
+
+    # ==================== 应用主图标 ====================
+
+    def app_logo(self) -> QIcon:
+        """渲染 SVD Editor 应用主图标（芯片 + 位域 die）
+
+        设计：蓝色芯片主体 + 四向引脚 + 中心白色 die + die 内 3 个蓝色 bit 格
+        （呼应 SVD 位域寄存器编辑器的核心主题），多分辨率，纯代码绘制。
+        """
+        icon = QIcon()
+        for scale in [1, 2, 3]:
+            px_size = 64 * scale
+            icon.addPixmap(self._render_app_logo_pixmap(px_size))
+        return icon
+
+    def _render_app_logo_pixmap(self, size: int) -> QPixmap:
+        """渲染应用主图标的 QPixmap（按 size 像素分辨率）"""
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # ---- 配色（与项目 Material 蓝主色一致）----
+        chip_color = QColor("#1565C0")     # Blue 800 — 芯片主体
+        chip_dark = QColor("#0D47A1")      # Blue 900 — 引脚
+        die_color = QColor("#E3F2FD")      # Blue 50  — 中心 die
+        bit_color = QColor("#1976D2")      # Blue 700 — 位域格子
+
+        # 基于 64x64 逻辑画布绘制，缩放到目标分辨率
+        painter.setWindow(0, 0, 64, 64)
+        painter.setViewport(0, 0, size, size)
+        painter.setPen(Qt.PenStyle.NoPen)
+
+        # ---- 引脚（先画，位于芯片下层四周）----
+        painter.setBrush(chip_dark)
+        pin_w = 3.0   # 引脚宽
+        pin_h = 6.0   # 引脚长
+        gap = 5.0     # 引脚间距
+        # 上 / 下
+        for x in (16, 16 + gap, 16 + 2 * gap, 16 + 3 * gap, 16 + 4 * gap):
+            painter.drawRect(QRectF(x, 4.5, pin_w, pin_h))
+            painter.drawRect(QRectF(x, 64 - 4.5 - pin_h, pin_w, pin_h))
+        # 左 / 右
+        for y in (16, 16 + gap, 16 + 2 * gap, 16 + 3 * gap, 16 + 4 * gap):
+            painter.drawRect(QRectF(4.5, y, pin_h, pin_w))
+            painter.drawRect(QRectF(64 - 4.5 - pin_h, y, pin_h, pin_w))
+
+        # ---- 芯片主体（圆角方形）----
+        painter.setBrush(chip_color)
+        painter.drawRoundedRect(QRectF(10, 10, 44, 44), 5.0, 5.0)
+
+        # ---- 中心 die（白色基底）----
+        painter.setBrush(die_color)
+        painter.drawRoundedRect(QRectF(20, 20, 24, 24), 2.5, 2.5)
+
+        # ---- die 内位域格子（3 段，呼应 bit field 编辑器）----
+        painter.setBrush(bit_color)
+        # 中间三段等分 24x24 区域，纵向带 2px 间隙
+        bit_h = (24 - 2 * 3) / 3.0
+        for i in range(3):
+            y = 20 + 2 + i * (bit_h + 2)
+            painter.drawRoundedRect(QRectF(22, y, 20, bit_h), 1.2, 1.2)
+
+        painter.end()
+        return pixmap
 
 
 # ==================== 兼容旧接口 ====================
