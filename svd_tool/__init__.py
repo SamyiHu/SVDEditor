@@ -3,10 +3,10 @@
 SVD工具包
 """
 
-__version__ = "2.1.0"
+__version__ = "V1.0"
 __author__ = "SamyiHu"
 __author_url__ = "https://github.com/SamyiHu"
-__license__ = "Apache-2.0"
+__license__ = "GPL-3.0"
 __description__ = "A powerful CMSIS SVD file generation and parsing tool"
 
 from .core.data_model import (
