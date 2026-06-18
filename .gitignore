@@ -103,3 +103,15 @@ docs/使用说明书.md
 docs/维护手册.md
 SVD_Editor_使用说明书.docx
 SVD_Editor_维护文档.docx
+
+# Build tools / third-party binaries (UPX 等，不纳入版本控制)
+tools/
+
+# Temporary build logs & one-off scripts
+_b*.txt
+_bd*.txt
+_buildout*.txt
+_perf*.py
+_test_*.py
+_test_spec.py
+_logo_preview.png
