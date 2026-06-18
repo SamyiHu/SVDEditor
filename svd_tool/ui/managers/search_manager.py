@@ -605,24 +605,23 @@ class SearchManager(QObject):
 
         # 结果列表
         results_list = QListWidget()
-        results_list.setAlternatingRowColors(True)
+        # 关闭交替行底色：彩色/浅色文字落浅灰底上会对比不足看不清，
+        # 统一用干净的白底 + 深色文字，对比度最高、最清晰
         results_list.setStyleSheet(f"""
             QListWidget {{
                 border: 1px solid {_c.border_light};
                 border-radius: 4px;
                 padding: 2px;
-                background-color: {_c.background_secondary if hasattr(_c, 'background_secondary') else _c.background};
+                background-color: {_c.surface};
             }}
             QListWidget::item {{
                 padding: 4px 8px;
                 border-bottom: 1px solid {_c.border_light};
+                color: {_c.text_primary};
             }}
             QListWidget::item:selected {{
-                background-color: {_c.accent};
+                background-color: {_c.accent_pressed};
                 color: white;
-            }}
-            QListWidget::item:alternate {{
-                background-color: {_c.row_alternate if hasattr(_c, 'row_alternate') else 'transparent'};
             }}
         """)
         results_layout.addWidget(results_list, 1)
@@ -639,6 +638,14 @@ class SearchManager(QObject):
             if not text:
                 return
 
+            # 重建前记录当前选中项，便于重建后恢复，避免输入过程中选中态被反复打断
+            prev_selected_key = None
+            cur_item = results_list.currentItem()
+            if cur_item:
+                d = cur_item.data(Qt.ItemDataRole.UserRole)
+                if d:
+                    prev_selected_key = (d.get('path'), d.get('match_field'), d.get('match_text'))
+
             _search_results_data = self.structured_search(text)
             count_label.setText(
                 f'找到 <b>{len(_search_results_data)}</b> 个结果')
@@ -651,21 +658,26 @@ class SearchManager(QObject):
             level_labels = {
                 'peripheral': '外设', 'register': '寄存器', 'field': '位域', 'interrupt': '中断'
             }
-            level_colors = {
-                'peripheral': _c.accent, 'register': _c.success, 'field': _c.warning,
-                'interrupt': getattr(_c, 'search_interrupt_color', _c.accent)
-            }
 
-            for r in _search_results_data:
+            restore_row = -1
+            for idx, r in enumerate(_search_results_data):
                 icon = level_icons.get(r['level'], '')
                 label = level_labels.get(r['level'], r['level'])
-                color = level_colors.get(r['level'], _c.text_primary)
+                # 文字统一用 text_primary（深色），避免彩色文字落到浅灰交替底上对比不足看不清；
+                # 等级区分交给左侧 emoji 图标（📦外设/📋寄存器/🔹位域/⚡中断，自带颜色）
                 item = QListWidgetItem(
                     f"{icon} [{label}] {r['path']}  ← {r['match_field']}: {r['match_text']}"
                 )
-                item.setForeground(QBrush(QColor(color)))
+                item.setForeground(QBrush(QColor(_c.text_primary)))
                 item.setData(Qt.ItemDataRole.UserRole, r)
                 results_list.addItem(item)
+                # 定位要恢复的选中项
+                if restore_row == -1 and prev_selected_key == (
+                        r.get('path'), r.get('match_field'), r.get('match_text')):
+                    restore_row = idx
+
+            if restore_row >= 0:
+                results_list.setCurrentRow(restore_row)
 
         def show_help():
             """显示搜索语法帮助"""
@@ -769,11 +781,11 @@ class SearchManager(QObject):
         results_list.itemDoubleClicked.connect(on_result_double_clicked)
         help_btn.clicked.connect(show_help)
 
-        # 快捷搜索: 输入时自动搜索（延迟）
+        # 快捷搜索: 输入时自动搜索（延迟 600ms，缓解输入过程中列表反复重建打断操作）
         from PyQt6.QtCore import QTimer
         search_timer = QTimer()
         search_timer.setSingleShot(True)
-        search_timer.setInterval(400)
+        search_timer.setInterval(600)
         search_timer.timeout.connect(do_search)
         search_edit.textChanged.connect(lambda: search_timer.start())
 

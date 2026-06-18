@@ -197,20 +197,24 @@ class TabBuilder:
             _scheme = get_style_scheme()
             _c = _scheme.colors
 
-            # 筛选行
+            # 筛选行 —— 关键词输入（替代旧的单选下拉框）
             filter_row = QHBoxLayout()
             filter_row.setSpacing(8)
 
-            filter_label = QLabel(t("label.filter_periph", default="筛选外设:"))
+            filter_label = QLabel(t("label.filter_keyword", default="关键词统计:"))
             filter_label.setStyleSheet(f"color: {_c.text_secondary}; font-size: 9pt;")
             filter_row.addWidget(filter_label)
 
-            periph_filter_combo = QComboBox()
-            periph_filter_combo.addItem(t("value.all", default="全部"), "__all__")
-            periph_filter_combo.setMinimumWidth(160)
+            periph_filter_combo = QLineEdit()
+            periph_filter_combo.setPlaceholderText(t("placeholder.filter_keyword", default="输入关键词，如 GPIO / USART"))
+            periph_filter_combo.setMinimumWidth(260)
             periph_filter_combo.setFixedHeight(28)
-            filter_row.addWidget(periph_filter_combo)
-            filter_row.addStretch()
+            filter_row.addWidget(periph_filter_combo, 1)
+
+            keyword_match_label = QLabel("")
+            keyword_match_label.setObjectName("keyword_match_label")
+            keyword_match_label.setStyleSheet(f"color: {_c.text_secondary}; font-size: 9pt;")
+            filter_row.addWidget(keyword_match_label)
             summary_outer.addLayout(filter_row)
 
             # 卡片行
@@ -296,6 +300,54 @@ class TabBuilder:
             summary_layout.addWidget(irq_card)
 
             summary_outer.addLayout(summary_layout)
+
+            # === 关键词统计结果区（多组展示，无关键词时隐藏） ===
+            keyword_container = QWidget()
+            keyword_container.setObjectName("keyword_stats_container")
+            keyword_container_layout = QVBoxLayout(keyword_container)
+            keyword_container_layout.setContentsMargins(0, 4, 0, 0)
+            keyword_container_layout.setSpacing(4)
+
+            from PyQt6.QtWidgets import QAbstractItemView
+            keyword_table = QTableWidget(0, 4)
+            keyword_table.setObjectName("keyword_stats_table")
+            keyword_table.setHorizontalHeaderLabels([
+                t("label.col_peripheral", default="外设"),
+                t("label.col_registers", default="寄存器"),
+                t("label.col_fields", default="位域"),
+                t("label.col_interrupts", default="中断"),
+            ])
+            keyword_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+            keyword_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+            keyword_table.verticalHeader().setVisible(False)
+            keyword_table.horizontalHeader().setStretchLastSection(False)
+            keyword_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+            for col in (1, 2, 3):
+                keyword_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+            keyword_table.setAlternatingRowColors(True)
+            keyword_table.setStyleSheet(f"""
+                QTableWidget {{
+                    border: 1px solid {_c.border_light};
+                    border-radius: 4px;
+                    background-color: {_c.surface};
+                    gridline-color: {_c.border_light};
+                }}
+                QTableWidget::item {{ padding: 4px 8px; }}
+                QHeaderView::section {{
+                    background-color: {_c.header_background};
+                    padding: 4px 8px;
+                    border: none;
+                    border-right: 1px solid {_c.border_light};
+                    font-size: 9pt;
+                    color: {_c.text_secondary};
+                }}
+            """)
+            # 限高，内容多时内部滚动
+            keyword_table.setMaximumHeight(220)
+            keyword_container_layout.addWidget(keyword_table)
+            keyword_container.hide()  # 默认隐藏，输入关键词后显示
+            summary_outer.addWidget(keyword_container)
+
             layout.addWidget(summary_group)
             layout.addStretch(1)
 
@@ -324,6 +376,9 @@ class TabBuilder:
                 'field_count_label': field_count_label,
                 'irq_count_label': irq_count_label,
                 'data_summary_filter': periph_filter_combo,
+                'keyword_match_label': keyword_match_label,
+                'keyword_stats_container': keyword_container,
+                'keyword_stats_table': keyword_table,
             }
             return tab, widgets
 

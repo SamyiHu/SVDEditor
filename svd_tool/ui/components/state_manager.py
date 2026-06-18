@@ -809,6 +809,41 @@ class StateManager:
             'fields': field_count,
             'interrupts': interrupt_count
         }
+
+    def get_data_stats_by_keyword(self, keyword: str) -> List[Dict[str, Any]]:
+        """按关键词过滤外设并统计每个匹配外设的数据
+
+        匹配规则：外设 name（大小写不敏感）包含 keyword 即计入。
+        空关键词返回空列表（由调用方决定回退到全局统计）。
+
+        Returns:
+            List[Dict]: 每项 {'name', 'registers', 'fields', 'interrupts'}，按名称排序
+        """
+        if not self.device_info or not keyword:
+            return []
+        kw = keyword.strip().lower()
+        if not kw:
+            return []
+
+        results: List[Dict[str, Any]] = []
+        for name, periph in self.device_info.peripherals.items():
+            if kw not in name.lower():
+                continue
+            # 使用 all_registers() 把簇内寄存器一并计入
+            regs = periph.all_registers()
+            reg_count = len(regs)
+            field_count = 0
+            for reg in regs.values():
+                field_count += len(reg.fields)
+            irq_count = len(periph.interrupts) if hasattr(periph, 'interrupts') else 0
+            results.append({
+                'name': name,
+                'registers': reg_count,
+                'fields': field_count,
+                'interrupts': irq_count,
+            })
+        results.sort(key=lambda x: x['name'])
+        return results
     
     # ===================== 数据验证 =====================
     def validate_device_info(self) -> List[str]:

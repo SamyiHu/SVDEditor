@@ -14,14 +14,16 @@ from ...i18n.i18n import t
 class UIUpdater:
     """UI更新器"""
 
-    def __init__(self, widget_manager):
+    def __init__(self, widget_manager, main_window=None):
         """
         初始化UI更新器
 
         Args:
             widget_manager: 控件管理器实例
+            main_window: 主窗口实例（用于访问 state_manager 等顶层组件）
         """
         self.widget_manager = widget_manager
+        self.main_window = main_window
         self.logger = logging.getLogger("UIUpdater")
 
     def update_data_stats(self, stats: Dict[str, int]):
@@ -36,37 +38,83 @@ class UIUpdater:
             text = t("status.data_stats", peripherals=stats.get('peripherals', 0), registers=stats.get('registers', 0), fields=stats.get('fields', 0), interrupts=stats.get('interrupts', 0))
             label.setText(text)
 
-        # 获取筛选控件
-        filter_combo = self.widget_manager.get_widget('data_summary_filter')
-
-        # 获取当前筛选的外设名
-        selected_periph = None
-        if filter_combo and isinstance(filter_combo, QComboBox):
-            selected_periph = filter_combo.currentData()
-            # 更新筛选下拉框的选项列表
-            self._update_filter_options(filter_combo, stats)
-
-        # 根据筛选计算统计数据
-        display_stats = stats
-        if selected_periph and selected_periph != "__all__":
-            display_stats = self._get_filtered_stats(selected_periph, stats)
-
-        # 更新基本信息页面的统计卡片
+        # 更新基本信息页面的统计卡片（全局总数）
         periph_label = self.widget_manager.get_widget('periph_count_label')
         if periph_label:
-            periph_label.setText(str(display_stats.get('peripherals', 0)))
+            periph_label.setText(str(stats.get('peripherals', 0)))
 
         reg_label = self.widget_manager.get_widget('reg_count_label')
         if reg_label:
-            reg_label.setText(str(display_stats.get('registers', 0)))
+            reg_label.setText(str(stats.get('registers', 0)))
 
         field_label = self.widget_manager.get_widget('field_count_label')
         if field_label:
-            field_label.setText(str(display_stats.get('fields', 0)))
+            field_label.setText(str(stats.get('fields', 0)))
 
         irq_label = self.widget_manager.get_widget('irq_count_label')
         if irq_label:
-            irq_label.setText(str(display_stats.get('interrupts', 0)))
+            irq_label.setText(str(stats.get('interrupts', 0)))
+
+        # 数据变化后，按当前关键词重新刷新关键词统计表
+        filter_edit = self.widget_manager.get_widget('data_summary_filter')
+        keyword = filter_edit.text().strip() if filter_edit is not None else ""
+        self.update_data_stats_by_keyword(keyword)
+
+    def update_data_stats_by_keyword(self, keyword: str):
+        """根据关键词刷新数据汇总下方的多组统计表
+
+        空关键词 -> 隐藏表格，回退到全局卡片；
+        有关键词 -> 显示匹配外设的逐项统计（多组）。
+        """
+        container = self.widget_manager.get_widget('keyword_stats_container')
+        table = self.widget_manager.get_widget('keyword_stats_table')
+        match_label = self.widget_manager.get_widget('keyword_match_label')
+        if table is None:
+            return
+
+        keyword = (keyword or "").strip()
+
+        # 拿 state_manager（通过 main_window 引用）
+        state_mgr = getattr(self, 'main_window', None)
+        if state_mgr:
+            state_mgr = getattr(state_mgr, 'state_manager', None)
+
+        # 空关键词：清空并隐藏
+        if not keyword or not state_mgr or not getattr(state_mgr, 'device_info', None):
+            table.setRowCount(0)
+            if container is not None:
+                container.hide()
+            if match_label is not None:
+                match_label.setText("")
+            return
+
+        rows = state_mgr.get_data_stats_by_keyword(keyword)
+        # 重建表格
+        table.setRowCount(0)
+        for r in rows:
+            row = table.rowCount()
+            table.insertRow(row)
+            table.setItem(row, 0, QTableWidgetItem(r['name']))
+            table.setItem(row, 1, QTableWidgetItem(str(r['registers'])))
+            table.setItem(row, 2, QTableWidgetItem(str(r['fields'])))
+            table.setItem(row, 3, QTableWidgetItem(str(r['interrupts'])))
+            # 数值列居中
+            for col in (1, 2, 3):
+                table.item(row, col).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        if container is not None:
+            container.setVisible(table.rowCount() > 0)
+        if match_label is not None:
+            if rows:
+                # 汇总：匹配外设数 + 合计寄存器/位域
+                tot_reg = sum(r['registers'] for r in rows)
+                tot_field = sum(r['fields'] for r in rows)
+                match_label.setText(
+                    t("status.keyword_matched", count=len(rows),
+                      regs=tot_reg, fields=tot_field,
+                      default=f"匹配 {len(rows)} 个外设，合计 {tot_reg} 寄存器 / {tot_field} 位域"))
+            else:
+                match_label.setText(t("status.keyword_no_match", default="无匹配外设"))
 
     def _update_filter_options(self, combo: QComboBox, stats: Dict[str, int]):
         """更新筛选下拉框选项"""

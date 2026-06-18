@@ -30,6 +30,8 @@ class ColorScheme:
     table_background: str = "#FFFFFF"
     header_background: str = "#F0F2F5"
     visualization_background: str = "#F0F2F5"
+    row_alternate: str = "#F2F4F7"      # 列表/表格交替行底色（与 background 区分）
+    background_secondary: str = "#FFFFFF"  # 次级容器背景（搜索结果列表等）
 
     # ===== 边框颜色 =====
     border: str = "#D9D9D9"
@@ -1108,6 +1110,8 @@ class DarkColorScheme(ColorScheme):
     table_background: str = "#252526"
     header_background: str = "#2D2D2D"
     visualization_background: str = "#1E1E1E"
+    row_alternate: str = "#262626"      # 列表/表格交替行底色（略亮于 surface）
+    background_secondary: str = "#252526"  # 次级容器背景（搜索结果列表等）
 
     # ===== 边框颜色 =====
     border: str = "#3C3C3C"

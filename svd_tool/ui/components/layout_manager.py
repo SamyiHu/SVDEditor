@@ -37,7 +37,7 @@ class LayoutManager:
         # 初始化子组件
         self.widget_manager = WidgetManager()
         self.tab_builder = TabBuilder(main_window)
-        self.ui_updater = UIUpdater(self.widget_manager)
+        self.ui_updater = UIUpdater(self.widget_manager, main_window)
 
         # 如果WidgetManager需要访问main_window，可通过方法参数传递或在UIUpdater中处理
 
@@ -209,13 +209,19 @@ class LayoutManager:
         tab, widgets = self.tab_builder.create_basic_info_tab(tab_widget)
         # 注册控件到widget_manager
         self.widget_manager.register_widgets(widgets)
-        # 连接数据汇总筛选信号
-        filter_combo = widgets.get('data_summary_filter')
-        if filter_combo:
-            from PyQt6.QtWidgets import QComboBox
-            filter_combo.currentIndexChanged.connect(
-                lambda: self.ui_updater.update_data_stats_by_filter()
+        # 连接数据汇总关键词统计信号（带防抖，避免输入时频繁重建表格）
+        filter_edit = widgets.get('data_summary_filter')
+        if filter_edit is not None:
+            from PyQt6.QtCore import QTimer
+            kw_timer = QTimer()
+            kw_timer.setSingleShot(True)
+            kw_timer.setInterval(300)
+            kw_timer.timeout.connect(
+                lambda: self.ui_updater.update_data_stats_by_keyword(filter_edit.text())
             )
+            # 持有引用防止 GC
+            filter_edit._kw_timer = kw_timer
+            filter_edit.textEdited.connect(lambda: kw_timer.start())
         return tab
 
     def create_peripheral_tab(self, tab_widget):
