@@ -20,6 +20,17 @@ def print_bilingual(zh_text, en_text):
     """Print bilingual text / 打印双语文本"""
     print(f"{zh_text} / {en_text}")
 
+def ask(prompt: str) -> str:
+    """交互式输入，非交互环境（stdin 已关闭/管道 EOF）下返回空串而非崩溃。
+
+    让 build.py 能在管道/CI 中通过喂入预设选择运行，同时保留双击运行时的交互体验。
+    """
+    try:
+        return input(prompt)
+    except EOFError:
+        print("")
+        return ""
+
 def run_build_script(script_name, args=None):
     """Run build script / 运行构建脚本"""
     script_path = Path(__file__).parent / "build_tools" / script_name
@@ -66,7 +77,7 @@ def main():
     print("="*60)
     print()
 
-    script_choice = input("您想运行哪个构建脚本？(1 或 2) / Which build script would you like to run? (1 or 2): ").strip()
+    script_choice = ask("您想运行哪个构建脚本？(1 或 2) / Which build script would you like to run? (1 or 2): ").strip()
 
     if script_choice == '1':
         print_bilingual("\n运行专业构建脚本...", "\nRunning professional build script...")
@@ -83,7 +94,7 @@ def main():
         print_bilingual("  或", "  or")
         print("  cd build_tools")
         print("  python build_windows.py")
-        input("\n按回车键退出... / Press Enter to exit...")
+        ask("\n按回车键退出... / Press Enter to exit...")
         return
 
     if success:
@@ -91,7 +102,7 @@ def main():
     else:
         print_bilingual("\n构建失败，请检查错误信息", "\nBuild failed, please check error messages")
 
-    input("\n按回车键退出... / Press Enter to exit...")
+    ask("\n按回车键退出... / Press Enter to exit...")
 
 if __name__ == '__main__':
     main()

@@ -205,6 +205,14 @@ a = Analysis(
         'inspect',
         'json',
         'warnings',
+
+        # AI 助手依赖：ai_assistant/backend.py 用函数内 try/except 懒加载 import，
+        # PyInstaller 静态分析追踪不到，需在此显式声明，否则打包版 AI 功能不可用。
+        'openai', 'anthropic',
+        'httpx', 'httpcore',
+        'anyio', 'sniffio', 'distro',
+        'pydantic', 'pydantic_core',
+        'tqdm', 'jiter',
     ],
     hookspath=[],
     hooksconfig={{}},
@@ -229,6 +237,30 @@ a = Analysis(
         'curses',
         'ensurepip',
         'venv',
+        # ---- 以下为体积优化新增：SVD 编辑器用不到的 Qt 子模块 ----
+        'PyQt6.QtPdf',          # PDF 渲染（约 Qt6Pdf.dll + qpdf.dll）
+        'PyQt6.QtPdfWidgets',
+        'PyQt6.QtOpenGL',       # OpenGL 绑定（含 opengl32sw.dll 软件渲染，约15-20MB）
+        'PyQt6.QtOpenGLWidgets',
+        'PyQt6.QtPrintSupport', # 打印支持
+        'PyQt6.QtMultimedia',
+        'PyQt6.QtMultimediaWidgets',
+        'PyQt6.QtSql',
+        'PyQt6.QtTest',
+        'PyQt6.QtBluetooth',
+        'PyQt6.QtNetwork',      # 网络（AI助手用 httpx，不走 QtNetwork）
+        'PyQt6.QtPositioning',
+        'PyQt6.QtSensors',
+        'PyQt6.QtSerialPort',
+        'PyQt6.QtWebChannel',
+        'PyQt6.QtWebSockets',
+        'PyQt6.QtXml',          # Qt XML C++ 模块（项目用 Python xml.etree）
+        # ---- 体积优化：排除 Pillow 图像库（约 -12.5MB）----
+        # SVD 编辑器是纯文本/树形数据编辑，项目代码零 import PIL。
+        # Pillow 是被 openai 依赖链附带拖进来的，排除它不影响 AI 助手
+        # （openai 用 httpx 传输 JSON，不依赖 PIL 做图像处理）。
+        # 注：AI 助手的 openai/pydantic/httpx/crypto 等依赖链保留，确保 AI 功能可用。
+        'PIL', 'Pillow',
     ],
 
     # 减少误报的设置
@@ -237,6 +269,29 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
+# ==================== 体积优化：剔除无用 Qt 二进制 ====================
+# excludes only drops Python binding modules; the matching Qt DLL/plugin
+# binaries are still collected. Filter them out explicitly here.
+_qt_binary_blacklist = [
+    'opengl32sw',     # software OpenGL renderer, ~15-20MB (unused by QWidget app)
+    'Qt6Pdf', 'Qt6PdfWidgets', 'qpdf',  # PDF support
+    'Qt6PrintSupport',  # printing
+    'Qt6Multimedia', 'Qt6MultimediaWidgets',
+    'd3dcompiler',    # Qt-bundled DirectX shader compiler (multiple versions)
+    # unused image format plugins (keep qico/qsvg/qgif/qjpeg)
+    'qicns', 'qtga', 'qtiff', 'qwbmp', 'qwebp', 'qjp2',
+    # headless platform plugins (desktop app only needs qwindows)
+    'qminimal', 'qoffscreen',
+    # Qt TLS/network backends (project does not use QtNetwork)
+    'qopenssl', 'qschannel', 'qtlsbackend',
+]
+def _should_drop_binary(name):
+    base = name.lower()
+    return any(bad.lower() in base for bad in _qt_binary_blacklist)
+
+a.binaries = [b for b in a.binaries if not _should_drop_binary(b[0])]
+a.datas = [d for d in a.datas if not _should_drop_binary(d[0])]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 '''
@@ -256,7 +311,16 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
+    # UPX 排除清单：只排除压缩后易破坏/触发误报的关键项。
+    # python 主 DLL（解释器本体）压缩后偶发启动崩溃，排除；
+    # VC 运行时带数字签名，压缩会破坏签名导致杀软误报，排除；
+    # Qt 的 SSL/TLS 插件压缩后握手异常，排除。其余 Qt6/第三方 DLL 正常压缩。
+    upx_exclude=[
+        'python3*.dll', 'python*.dll',
+        'vcruntime*.dll', 'VCRUNTIME*.dll', 'msvcp*.dll', 'ucrtbase.dll',
+        'qopenssl', 'qschannel', 'qtlsbackend',
+        'pydoc_data',
+    ],
     runtime_tmpdir=None,
     console={console},
     disable_windowed_traceback=False,
@@ -282,7 +346,12 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
+    upx_exclude=[
+        'python3*.dll', 'python*.dll',
+        'vcruntime*.dll', 'VCRUNTIME*.dll', 'msvcp*.dll', 'ucrtbase.dll',
+        'qopenssl', 'qschannel', 'qtlsbackend',
+        'pydoc_data',
+    ],
     runtime_tmpdir=None,
     console={console},
     disable_windowed_traceback=False,
@@ -378,6 +447,31 @@ VSVersionInfo(
             print(f"模式: {'单文件' if onefile else '目录'}")
             print(f"控制台: {'显示' if console else '隐藏'}")
             print(f"{'='*60}")
+
+            # UPX 可用性检测（spec 里写了 upx=True，但本机若没装 upx.exe 则静默不压缩）
+            import shutil as _shutil
+            upx_path = _shutil.which('upx')
+            upx_source = "PATH"
+            # 自动发现项目自带的 UPX（tools/upx-*/upx.exe），免去手动加 PATH 的麻烦
+            # 注意：self.project_root 指向 build_tools/，真正的项目根是其 parent
+            if not upx_path:
+                tools_dir = self.project_root.parent / 'tools'
+                if tools_dir.exists():
+                    for sub in tools_dir.iterdir():
+                        candidate = sub / 'upx.exe' if sub.is_dir() else None
+                        if candidate and candidate.exists():
+                            upx_path = str(candidate)
+                            upx_source = "项目自带"
+                            # 加入 PATH，让 PyInstaller 的 upx_dir 自动发现机制能找到
+                            os.environ['PATH'] = str(sub) + os.pathsep + os.environ.get('PATH', '')
+                            break
+            if upx_path:
+                print(f"[UPX] 已检测到（来源: {upx_source}）: {upx_path}")
+                print("       将压缩安全的二进制（已排除 Qt/Python 核心以防压坏插件）")
+            else:
+                print("[UPX] 未找到 upx.exe —— 将跳过二进制压缩（EXE 体积会偏大）。")
+                print("       如需进一步减小体积，请从 https://github.com/upx/upx/releases 下载 upx，")
+                print("       解压到项目 tools\\ 目录（脚本会自动发现）或加入系统 PATH。")
 
             # 清理之前的构建
             if clean:
@@ -578,6 +672,18 @@ Python版本: {platform.python_version()}
         print("  3. 发布文件存储在 release/ 目录")
         print("  4. 根目录保持整洁")
 
+def ask(prompt: str) -> str:
+    """交互式输入，非交互环境（stdin 已关闭/管道 EOF）下返回空串而非崩溃。
+
+    用于支持在管道/CI 中通过喂入预设选择运行构建，同时保留双击运行时的交互体验。
+    """
+    try:
+        return input(prompt)
+    except EOFError:
+        # 非交互环境：返回空串，由各菜单的默认分支处理
+        print("")
+        return ""
+
 def main():
     """主函数"""
     import argparse
@@ -615,26 +721,26 @@ def main():
         print("2. 构建32位版本")
         print("3. 构建64位版本")
         
-        arch_choice = input("\n请选择架构 (1-3): ").strip()
-        
+        arch_choice = ask("\n请选择架构 (1-3): ").strip()
+
         target_arch = current_arch
         if arch_choice == '2':
             target_arch = '32bit'
             if current_arch != '32bit':
                 print("警告: 当前Python不是32位，构建可能失败")
-                confirm = input("继续构建? (y/n): ").lower()
+                confirm = ask("继续构建? (y/n): ").lower()
                 if confirm != 'y':
                     return
         elif arch_choice == '3':
             target_arch = '64bit'
             if current_arch != '64bit':
                 print("警告: 当前Python不是64位，构建可能失败")
-                confirm = input("继续构建? (y/n): ").lower()
+                confirm = ask("继续构建? (y/n): ").lower()
                 if confirm != 'y':
                     return
         elif arch_choice != '1':
             print("无效选择，使用当前系统架构")
-        
+
         # 构建选项
         print(f"\n目标架构: {target_arch}")
         print("\n构建选项:")
@@ -642,9 +748,9 @@ def main():
         print("2. 构建便携目录版本")
         print("3. 构建调试版本 (显示控制台)")
         print("4. 构建所有版本")
-        
-        choice = input("\n请选择构建模式 (1-4): ").strip()
-        
+
+        choice = ask("\n请选择构建模式 (1-4): ").strip()
+
         if choice == '1':
             # 单文件版本
             builder.build(arch=target_arch, console=False, onefile=True)
@@ -660,8 +766,9 @@ def main():
             builder.build(arch=target_arch, console=False, onefile=True)
             builder.build(arch=target_arch, console=False, onefile=False)
         else:
-            print("无效选择")
-            return
+            # 非交互环境（空串）或无效输入：默认单文件版本，而非直接退出
+            print("使用默认：单文件版本")
+            builder.build(arch=target_arch, console=False, onefile=True)
     else:
         # 使用命令行参数
         target_arch = args.arch if args.arch != 'auto' else current_arch
@@ -692,7 +799,7 @@ def main():
     # 打印总结
     builder.print_summary()
 
-    input("\n按回车键退出... / Press Enter to exit...")
+    ask("\n按回车键退出... / Press Enter to exit...")
 
 if __name__ == '__main__':
     main()
