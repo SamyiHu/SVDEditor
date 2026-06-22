@@ -200,12 +200,17 @@ class ChainRulesDialog(QDialog):
         act_header = self.actions_table.horizontalHeader()
         if act_header:
             # 目标外设/寄存器/位域：可交互拉伸，均分剩余空间
-            act_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-            act_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-            act_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+            # 目标外设/寄存器/位域：Interactive（初始宽度固定，用户可拖拽调整）。
+            # 不用 Stretch：这三个名字通常较短，给固定较窄宽度可把空间让给第4列
+            # （属性+值），避免第4列装两个下拉框时溢出重叠。
+            for col in (0, 1, 2):
+                act_header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+            self.actions_table.setColumnWidth(0, 110)
+            self.actions_table.setColumnWidth(1, 110)
+            self.actions_table.setColumnWidth(2, 110)
             # 目标操作：下拉框，按内容自适应
             act_header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-            # 属性+值：拉伸填充（内部属性下拉自适应、值输入拉伸）
+            # 属性+值：拉伸填充，吃掉前3列让出的所有剩余空间
             act_header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
             # 给下拉框列设最小宽度，避免中文表头被压扁
             act_header.setMinimumSectionSize(90)
@@ -213,8 +218,8 @@ class ChainRulesDialog(QDialog):
         self.actions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.actions_table.verticalHeader().setVisible(False)
         self.actions_table.cellChanged.connect(self._on_action_cell_changed)
-        # 统一行高，避免 cellWidget 与文本格高度不一致导致错位
-        self.actions_table.verticalHeader().setDefaultSectionSize(36)
+        # 统一行高：40px 给下拉框留足垂直空间，避免下边缘被单元格裁切
+        self.actions_table.verticalHeader().setDefaultSectionSize(40)
         self.actions_table.setMinimumHeight(160)
         actions_layout.addWidget(self.actions_table)
 
@@ -361,7 +366,12 @@ class ChainRulesDialog(QDialog):
     def _make_property_combo(self, layer: str, current_prop: str = "") -> QComboBox:
         """构造属性下拉框（按目标层过滤可选属性）"""
         combo = QComboBox()
-        combo.setMinimumHeight(24)
+        # AdjustToContents 让宽度按最长选项自适应（避免"访问"截断成"访讧"），
+        # 但必须设上限：否则"访问权限"等长选项会把下拉框撑得过宽，
+        # 在列宽不足时溢出并与右侧值控件重叠。设最大宽度兜底。
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        combo.setMinimumWidth(90)
+        combo.setMaximumWidth(140)
         combo.addItem("", "")
         for prop in _PROPS_BY_LAYER.get(layer, []):
             combo.addItem(t(f"chain.prop_{prop}", default=prop), prop)
@@ -374,7 +384,6 @@ class ChainRulesDialog(QDialog):
     def _make_operation_combo(self, current_op: str = "delete") -> QComboBox:
         """构造目标操作下拉框"""
         combo = QComboBox()
-        combo.setMinimumHeight(24)
         for op in _OPERATION_TYPES:
             combo.addItem(t(f"chain.operation_{op}", default=t(f"chain.action_{op}", default=op)), op)
         idx = _OPERATION_TYPES.index(current_op) if current_op in _OPERATION_TYPES else 0
@@ -443,7 +452,9 @@ class ChainRulesDialog(QDialog):
         """
         if prop == "access":
             combo = QComboBox()
-            combo.setMinimumHeight(24)
+            # 自适应内容宽度（避免"读写一次"截断），但设上限防溢出重叠
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+            combo.setMaximumWidth(110)
             for v in _ACCESS_VALUES:
                 i18n_key = _ACCESS_I18N_KEYS.get(v)
                 label = t(i18n_key, default=v) if i18n_key else v
@@ -455,9 +466,8 @@ class ChainRulesDialog(QDialog):
             return combo
         else:
             edit = QLineEdit(current_value)
-            edit.setMinimumHeight(24)
-            # 非 access 属性允许使用变量/通配，提示性占位
-            edit.setPlaceholderText(t("chain.col_value"))
+            # 不设 placeholder：删除操作禁用时，灰显的"值"占位文字会显得像"缺一块空白"，
+            # 干净的空文本框禁用后视觉更清晰。
             return edit
 
     def _refresh_row_value_input(self, row: int):
@@ -519,16 +529,16 @@ class ChainRulesDialog(QDialog):
         container = QWidget()
         lay = QHBoxLayout(container)
         lay.setContentsMargins(2, 0, 2, 0)
-        lay.setSpacing(6)
+        lay.setSpacing(8)  # 属性下拉与值控件之间的间隔
 
         prop_combo = self._make_property_combo(layer, current_prop)
         # 注意：currentIndexChanged 会把 index 作为位置参数传给槽，
         # 不能用 lambda _r=row:（会被信号参数覆盖），需用 *_ 吞掉信号参数
         prop_combo.currentIndexChanged.connect(lambda *_, _r=row: self._refresh_row_value_input(_r))
-        lay.addWidget(prop_combo)
+        lay.addWidget(prop_combo, stretch=0)  # 属性下拉按内容宽，不拉伸
 
         value_holder = self._make_value_holder(current_prop, current_value)
-        lay.addWidget(value_holder)
+        lay.addWidget(value_holder, stretch=1)  # 值控件吃剩余空间
 
         self._row_widgets[row] = {
             "prop": prop_combo,
@@ -783,14 +793,19 @@ class ChainRulesDialog(QDialog):
         def add_target_group(reg_suffix="", field_prefix=""):
             row_widget = QWidget()
             row_layout = QHBoxLayout(row_widget)
-            row_layout.setContentsMargins(0, 2, 0, 2)
+            row_layout.setContentsMargins(0, 3, 0, 3)
             row_layout.addWidget(QLabel(t("chain.reg_suffix")))
             reg_edit = QLineEdit(reg_suffix)
             reg_edit.setMaximumWidth(80)
+            # 用 padding 撑高而非 minimumHeight：后者会把内容区填满，
+            # 导致原生样式的 1px 下边框（下划线）被挤出可绘制区域而被裁切。
+            # padding 给文字留垂直空间的同时，边框仍完整保留在控件边界内。
+            reg_edit.setStyleSheet("QLineEdit { padding: 3px 4px; }")
             row_layout.addWidget(reg_edit)
             row_layout.addWidget(QLabel(t("chain.field_prefix")))
             field_edit = QLineEdit(field_prefix)
             field_edit.setMaximumWidth(80)
+            field_edit.setStyleSheet("QLineEdit { padding: 3px 4px; }")
             row_layout.addWidget(field_edit)
             target_groups_list.append((reg_edit, field_edit, row_widget))
             target_rows_layout.addWidget(row_widget)
