@@ -185,6 +185,14 @@ class EditActionsMixin:
         self.state_manager.pause_notifications()
 
         try:
+            # 先执行连锁操作（在数据还完整时）
+            chain_results = self.chain_rules_engine.execute_chain(
+                self.state_manager.device_info,
+                current_peripheral, reg_name, "", "delete")
+            chain_messages = [r['message'] for r in chain_results if r.get('success')]
+            for msg in chain_messages:
+                self.logger.info(f"连锁操作: {msg}")
+
             # 使用StateManager删除寄存器
             self.state_manager.delete_register(current_peripheral, reg_name)
         finally:
@@ -195,8 +203,16 @@ class EditActionsMixin:
         self.state_manager.set_selection(register=None, field=None)
 
         # 更新状态
-        self.layout_manager.update_status(t("status.register_deleted", name=reg_name))
+        status_msg = t("status.register_deleted", name=reg_name)
+        if chain_messages:
+            status_msg += " " + t("status.chain_items", count=len(chain_messages))
+        self.layout_manager.update_status(status_msg)
         self.logger.info(f"删除寄存器: {reg_name}")
+
+        # 显示连锁结果
+        if chain_messages:
+            QMessageBox.information(self, t("msg.chain_operation", default="连锁操作"),
+                t("msg.chain_result", default="已同步删除以下关联项:\n") + "\n".join(chain_messages))
 
         # 发射数据变化信号
         self.data_changed.emit()
@@ -248,8 +264,16 @@ class EditActionsMixin:
 
         # 批量删除寄存器
         deleted_count = 0
+        chain_messages = []
         for reg_name in valid_registers:
             try:
+                # 先执行连锁规则（在数据还完整时）
+                chain_results = self.chain_rules_engine.execute_chain(
+                    self.state_manager.device_info,
+                    current_peripheral, reg_name, "", "delete")
+                for r in chain_results:
+                    if r.get('success'):
+                        chain_messages.append(r['message'])
                 self.state_manager.delete_register(current_peripheral, reg_name)
                 deleted_count += 1
             except Exception as e:
@@ -263,8 +287,16 @@ class EditActionsMixin:
 
         # 更新状态
         if deleted_count > 0:
-            self.layout_manager.update_status(t("status.registers_batch_deleted", count=deleted_count))
+            status_msg = t("status.registers_batch_deleted", count=deleted_count)
+            if chain_messages:
+                status_msg += " " + t("status.chain_items", count=len(chain_messages))
+            self.layout_manager.update_status(status_msg)
             self.logger.info(f"批量删除 {deleted_count} 个寄存器")
+
+        # 显示连锁结果
+        if chain_messages:
+            QMessageBox.information(self, t("msg.chain_operation", default="连锁操作"),
+                t("msg.chain_result", default="已同步删除以下关联项:\n") + "\n".join(chain_messages))
 
         # 发射数据变化信号
         self.data_changed.emit()
@@ -463,7 +495,7 @@ class EditActionsMixin:
 
             # 执行连锁操作
             chain_results = self.chain_rules_engine.execute_chain(
-                self.state_manager.device_info, "field",
+                self.state_manager.device_info,
                 current_peripheral, current_register, field_name, "delete")
             chain_messages = []
             for r in chain_results:
@@ -954,7 +986,7 @@ class EditActionsMixin:
                 try:
                     # 先执行连锁规则（在数据还完整时）
                     chain_results = self.chain_rules_engine.execute_chain(
-                        self.state_manager.device_info, "field", periph, reg, field_name, "delete")
+                        self.state_manager.device_info, periph, reg, field_name, "delete")
                     for r in chain_results:
                         if r['success']:
                             chain_messages.append(r['message'])

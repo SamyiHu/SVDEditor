@@ -8,7 +8,7 @@ import logging
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field, asdict
 
-from .chain_rules import ChainRule, ChainAction, ChainRulesEngine
+from .chain_rules import ChainRule, ChainAction, ChainRulesEngine, _migrate_rule_data
 
 logger = logging.getLogger("chain_rule_templates")
 
@@ -52,7 +52,6 @@ def _make_builtin_templates() -> List[ChainRuleTemplate]:
             ChainRule(
                 name="删除GPIO MODE位域时同步删除对应的OSPEEDR和OTYPER位域",
                 enabled=True,
-                source_type="field",
                 source_peripheral="GPIO*",
                 source_register="MODER",
                 source_field="MODE*",
@@ -62,14 +61,14 @@ def _make_builtin_templates() -> List[ChainRuleTemplate]:
                         target_peripheral="$PERIPHERAL",
                         target_register="OSPEEDR",
                         target_field="OSPEED*",
-                        action="delete",
+                        operation="delete",
                         description="同步删除输出速度配置"
                     ),
                     ChainAction(
                         target_peripheral="$PERIPHERAL",
                         target_register="OTYPER",
                         target_field="OT*",
-                        action="delete",
+                        operation="delete",
                         description="同步删除输出类型配置"
                     ),
                 ],
@@ -77,7 +76,6 @@ def _make_builtin_templates() -> List[ChainRuleTemplate]:
             ChainRule(
                 name="删除GPIO引脚的复用功能配置",
                 enabled=True,
-                source_type="field",
                 source_peripheral="GPIO*",
                 source_register="AFR*",
                 source_field="AF*",
@@ -87,7 +85,7 @@ def _make_builtin_templates() -> List[ChainRuleTemplate]:
                         target_peripheral="$PERIPHERAL",
                         target_register="MODER",
                         target_field="MODE*",
-                        action="delete",
+                        operation="delete",
                         description="同步删除模式配置"
                     ),
                 ],
@@ -106,7 +104,6 @@ def _make_builtin_templates() -> List[ChainRuleTemplate]:
             ChainRule(
                 name="删除外设时清除时钟使能位",
                 enabled=True,
-                source_type="peripheral",
                 source_peripheral="*",
                 trigger="delete",
                 actions=[
@@ -114,7 +111,7 @@ def _make_builtin_templates() -> List[ChainRuleTemplate]:
                         target_peripheral="RCC",
                         target_register="*ENR*",
                         target_field="",
-                        action="delete",
+                        operation="delete",
                         description="提示：请手动确认并清除RCC时钟使能位"
                     ),
                 ],
@@ -132,7 +129,6 @@ def _make_builtin_templates() -> List[ChainRuleTemplate]:
             ChainRule(
                 name="删除外设时清除NVIC中断使能",
                 enabled=True,
-                source_type="peripheral",
                 source_peripheral="*",
                 trigger="delete",
                 actions=[
@@ -140,7 +136,7 @@ def _make_builtin_templates() -> List[ChainRuleTemplate]:
                         target_peripheral="NVIC",
                         target_register="ISER",
                         target_field="",
-                        action="delete",
+                        operation="delete",
                         description="提示：请手动确认并清除NVIC中断使能位"
                     ),
                 ],
@@ -159,7 +155,6 @@ def _make_builtin_templates() -> List[ChainRuleTemplate]:
             ChainRule(
                 name="删除外设时清除DMA请求映射",
                 enabled=True,
-                source_type="peripheral",
                 source_peripheral="*",
                 trigger="delete",
                 actions=[
@@ -167,7 +162,7 @@ def _make_builtin_templates() -> List[ChainRuleTemplate]:
                         target_peripheral="DMA*",
                         target_register="*",
                         target_field="",
-                        action="delete",
+                        operation="delete",
                         description="提示：请手动确认并清除DMA通道配置"
                     ),
                 ],
@@ -251,10 +246,12 @@ class ChainRuleTemplateManager:
 
             rules = []
             for rule_data in data.get('rules', []):
+                # 兼容旧格式模板文件
+                migrated = _migrate_rule_data(rule_data) if "source_type" in rule_data else dict(rule_data)
                 actions = []
-                for act_data in rule_data.get('actions', []):
+                for act_data in migrated.get('actions', []):
                     actions.append(ChainAction(**act_data))
-                rule_data_copy = dict(rule_data)
+                rule_data_copy = dict(migrated)
                 rule_data_copy['actions'] = actions
                 rules.append(ChainRule(**rule_data_copy))
 

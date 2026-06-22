@@ -16,6 +16,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
 from ...core.chain_rules import ChainRule, ChainAction
+from ...core.constants import ACCESS_OPTIONS
 from ...config.styles import get_style_scheme
 from ...i18n.i18n import t
 from ..widgets.toggle_switch import ToggleSwitch
@@ -23,10 +24,40 @@ from ..widgets.labeled_slider import LabeledSlider
 
 logger = logging.getLogger("ChainRulesDialog")
 
-# 动作类型选项
-_ACTION_TYPES = ["delete", "modify", "add"]
+# 目标操作选项
+_OPERATION_TYPES = ["delete", "modify", "add"]
 _TRIGGER_TYPES = ["delete", "modify", "add"]
-_SOURCE_TYPES = ["peripheral", "register", "field"]
+
+# 目标层级（决定可选属性集合）
+_TARGET_LAYERS = ["field", "register", "peripheral"]
+
+# 各层级可修改的属性名（与 data_model 字段对应）
+_PROPS_BY_LAYER: dict = {
+    "field": [
+        "access", "description", "display_name", "reset_value",
+        "bit_offset", "bit_width", "name",
+    ],
+    "register": [
+        "access", "description", "display_name", "reset_value",
+        "reset_mask", "size", "offset", "name",
+    ],
+    "peripheral": [
+        "description", "display_name", "group_name",
+        "base_address", "name",
+    ],
+}
+
+# access 属性的合法枚举值（去掉首项"无"，来自 core/constants.py 的 ACCESS_OPTIONS）
+_ACCESS_VALUES = [v for v in ACCESS_OPTIONS if v and v != "无"]
+
+# 枚举值 → i18n 键 的映射（用于值下拉框的本地化显示）
+_ACCESS_I18N_KEYS = {
+    "read-write": "access.read_write",
+    "read-only": "access.read_only",
+    "write-only": "access.write_only",
+    "writeOnce": "access.write_once",
+    "read-writeOnce": "access.read_write_once",
+}
 
 
 class ChainRulesDialog(QDialog):
@@ -36,6 +67,9 @@ class ChainRulesDialog(QDialog):
         super().__init__(parent)
         self.engine = engine
         self._current_rule_index: int = -1
+        # 行级控件引用：row -> {"prop": QComboBox, "container": QWidget, "value_holder": QWidget}
+        # value_holder 随属性类型在 QLineEdit/QComboBox 间切换
+        self._row_widgets: dict = {}
 
         self.setWindowTitle(t("dialog.chain_rules"))
         self.setMinimumSize(950, 650)
@@ -118,15 +152,10 @@ class ChainRulesDialog(QDialog):
         self.name_edit = QLineEdit()
         config_form.addRow(t("chain.rule_name"), self.name_edit)
 
-        self.trigger_combo = QComboBox()
-        for trig in _TRIGGER_TYPES:
-            self.trigger_combo.addItem(t(f"chain.trigger_{trig}"), trig)
-        config_form.addRow(t("chain.trigger_label"), self.trigger_combo)
-
-        self.source_type_combo = QComboBox()
-        for st in _SOURCE_TYPES:
-            self.source_type_combo.addItem(t(f"chain.source_{st}"), st)
-        config_form.addRow(t("label.source_type"), self.source_type_combo)
+        # --- 源 ---
+        source_hint = QLabel(t("label.source") + "  (" + t("label.no_limit_layer") + ")")
+        source_hint.setStyleSheet(f"color: {_c.text_secondary}; font-size: 9pt;")
+        config_form.addRow(source_hint)
 
         self.source_periph = QLineEdit()
         self.source_periph.setPlaceholderText(t("chain.wildcard_hint"))
@@ -140,34 +169,53 @@ class ChainRulesDialog(QDialog):
         self.source_field.setPlaceholderText(t("chain.no_limit"))
         config_form.addRow(t("label.source_field"), self.source_field)
 
+        # --- 触发条件 ---
+        self.trigger_combo = QComboBox()
+        for trig in _TRIGGER_TYPES:
+            self.trigger_combo.addItem(t(f"chain.trigger_{trig}"), trig)
+        config_form.addRow(t("chain.trigger_label"), self.trigger_combo)
+
         self.rule_enabled = ToggleSwitch(t("label.enabled"))
         self.rule_enabled.setChecked(True)
         config_form.addRow(self.rule_enabled)
 
         right_layout.addWidget(config_group)
 
-        # 连锁动作组
-        actions_group = QGroupBox(t("chain.actions"))
+        # 目标操作组
+        actions_group = QGroupBox(t("label.target"))
         actions_layout = QVBoxLayout(actions_group)
         actions_layout.setContentsMargins(8, 20, 8, 8)
         actions_layout.setSpacing(6)
 
-        self.actions_table = QTableWidget(0, 4)
+        # 5列：目标外设 | 目标寄存器 | 目标位域 | 目标操作 | 属性+值
+        # （原"属性"和"值"两列合并为一列，内嵌属性下拉+值输入控件）
+        self.actions_table = QTableWidget(0, 5)
         self.actions_table.setHorizontalHeaderLabels([
             t("chain.col_target_periph"),
             t("chain.col_target_reg"),
             t("chain.col_target_field"),
-            t("chain.col_action_type"),
+            t("chain.col_operation"),
+            t("chain.col_property") + " / " + t("chain.col_value"),
         ])
         act_header = self.actions_table.horizontalHeader()
         if act_header:
+            # 目标外设/寄存器/位域：可交互拉伸，均分剩余空间
             act_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
             act_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
             act_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-            act_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+            # 目标操作：下拉框，按内容自适应
+            act_header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+            # 属性+值：拉伸填充（内部属性下拉自适应、值输入拉伸）
+            act_header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+            # 给下拉框列设最小宽度，避免中文表头被压扁
+            act_header.setMinimumSectionSize(90)
         self.actions_table.setAlternatingRowColors(True)
         self.actions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.actions_table.verticalHeader().setVisible(False)
+        self.actions_table.cellChanged.connect(self._on_action_cell_changed)
+        # 统一行高，避免 cellWidget 与文本格高度不一致导致错位
+        self.actions_table.verticalHeader().setDefaultSectionSize(36)
+        self.actions_table.setMinimumHeight(160)
         actions_layout.addWidget(self.actions_table)
 
         act_btn_bar = QHBoxLayout()
@@ -260,17 +308,14 @@ class ChainRulesDialog(QDialog):
         idx = _TRIGGER_TYPES.index(rule.trigger) if rule.trigger in _TRIGGER_TYPES else 0
         self.trigger_combo.setCurrentIndex(idx)
 
-        # 设置源类型
-        idx = _SOURCE_TYPES.index(rule.source_type) if rule.source_type in _SOURCE_TYPES else 0
-        self.source_type_combo.setCurrentIndex(idx)
-
         self.source_periph.setText(rule.source_peripheral)
         self.source_reg.setText(rule.source_register)
         self.source_field.setText(rule.source_field)
         self.rule_enabled.setChecked(rule.enabled)
 
-        # 填充动作表格
+        # 填充动作表格（清空时同步清理行级控件引用 dict）
         self.actions_table.setRowCount(0)
+        self._row_widgets = {}
         for action in rule.actions:
             self._add_action_row_data(action)
 
@@ -303,6 +348,195 @@ class ChainRulesDialog(QDialog):
 
     # ==================== 动作表格操作 ====================
 
+    def _detect_target_layer(self, periph: str, reg: str, field: str) -> str:
+        """根据填了哪些目标层推断层级，用于选择可用属性集合"""
+        if field.strip():
+            return "field"
+        if reg.strip():
+            return "register"
+        if periph.strip():
+            return "peripheral"
+        return "field"
+
+    def _make_property_combo(self, layer: str, current_prop: str = "") -> QComboBox:
+        """构造属性下拉框（按目标层过滤可选属性）"""
+        combo = QComboBox()
+        combo.setMinimumHeight(24)
+        combo.addItem("", "")
+        for prop in _PROPS_BY_LAYER.get(layer, []):
+            combo.addItem(t(f"chain.prop_{prop}", default=prop), prop)
+        if current_prop:
+            idx = combo.findData(current_prop)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+        return combo
+
+    def _make_operation_combo(self, current_op: str = "delete") -> QComboBox:
+        """构造目标操作下拉框"""
+        combo = QComboBox()
+        combo.setMinimumHeight(24)
+        for op in _OPERATION_TYPES:
+            combo.addItem(t(f"chain.operation_{op}", default=t(f"chain.action_{op}", default=op)), op)
+        idx = _OPERATION_TYPES.index(current_op) if current_op in _OPERATION_TYPES else 0
+        combo.setCurrentIndex(idx)
+        return combo
+
+    def _refresh_row_editability(self, row: int):
+        """根据目标操作类型刷新属性+值列的可用状态。
+
+        语义：仅 modify 需要属性；modify 和 add 都需要值；delete 都不需要。
+        实现上对第 4 列容器内的属性下拉单独控制（仅 modify 启用），
+        对值控件按 modify/add 启用、delete 禁用。
+        """
+        op_combo = self.actions_table.cellWidget(row, 3)
+        widgets = self._row_widgets.get(row)
+        if not op_combo or not widgets:
+            return
+        op = op_combo.currentData() or "delete"
+        prop_combo = widgets.get("prop")
+        value_holder = widgets.get("value_holder")
+        # 属性下拉：仅 modify 启用
+        if prop_combo:
+            prop_combo.setEnabled(op == "modify")
+        # 值控件：modify / add 启用，delete 禁用
+        if value_holder:
+            value_holder.setEnabled(op in ("modify", "add"))
+
+    def _on_action_cell_changed(self, row: int, col: int):
+        """当动作表格单元格内容变化时，刷新对应行的属性可选项"""
+        if col in (0, 1, 2):  # 目标外设、寄存器、位域列
+            self._refresh_row_property_options(row)
+
+    def _refresh_row_property_options(self, row: int):
+        """根据当前填写的目标层，刷新属性下拉可选项"""
+        periph = self.actions_table.item(row, 0)
+        reg = self.actions_table.item(row, 1)
+        field = self.actions_table.item(row, 2)
+        p_text = periph.text() if periph else ""
+        r_text = reg.text() if reg else ""
+        f_text = field.text() if field else ""
+        layer = self._detect_target_layer(p_text, r_text, f_text)
+
+        widgets = self._row_widgets.get(row)
+        if not widgets:
+            return
+        prop_combo = widgets.get("prop")
+        if not isinstance(prop_combo, QComboBox):
+            return
+        # 保留当前选中值
+        current_prop = prop_combo.currentData() or ""
+        # 重建可选项（屏蔽信号，避免触发值控件误切换）
+        prop_combo.blockSignals(True)
+        prop_combo.clear()
+        prop_combo.addItem("", "")
+        for prop in _PROPS_BY_LAYER.get(layer, []):
+            prop_combo.addItem(t(f"chain.prop_{prop}", default=prop), prop)
+        idx = prop_combo.findData(current_prop)
+        prop_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        prop_combo.blockSignals(False)
+
+    def _make_value_holder(self, prop: str, current_value: str = "") -> QWidget:
+        """构造值控件：access 属性用下拉框，其余用文本框。
+
+        返回的控件引用记入 _row_widgets[row]["value_holder"]，类型可能是
+        QComboBox 或 QLineEdit，由 _get_row_value 统一取值。
+        """
+        if prop == "access":
+            combo = QComboBox()
+            combo.setMinimumHeight(24)
+            for v in _ACCESS_VALUES:
+                i18n_key = _ACCESS_I18N_KEYS.get(v)
+                label = t(i18n_key, default=v) if i18n_key else v
+                combo.addItem(label, v)
+            if current_value:
+                idx = combo.findData(current_value)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+            return combo
+        else:
+            edit = QLineEdit(current_value)
+            edit.setMinimumHeight(24)
+            # 非 access 属性允许使用变量/通配，提示性占位
+            edit.setPlaceholderText(t("chain.col_value"))
+            return edit
+
+    def _refresh_row_value_input(self, row: int):
+        """属性下拉变化时，按属性类型重建值控件。
+
+        值保留策略：仅在同类控件（下拉↔下拉 / 文本框↔文本框）间切换时
+        保留旧值；跨类型切换（如下拉→文本框）时清空，避免枚举值
+        （如 read-only）作为自由文本残留。
+        """
+        widgets = self._row_widgets.get(row)
+        if not widgets:
+            return
+        prop_combo = widgets.get("prop")
+        container = widgets.get("container")
+        old_holder = widgets.get("value_holder")
+        layout = container.layout() if container else None
+        if not prop_combo or not container or layout is None:
+            return
+
+        new_prop = prop_combo.currentData() or ""
+        old_is_combo = isinstance(old_holder, QComboBox)
+        new_is_combo = (new_prop == "access")
+        # 仅当新旧控件同为下拉或同为文本框时才保留值
+        if old_holder is not None and (old_is_combo == new_is_combo):
+            old_value = self._get_widget_value(old_holder)
+        else:
+            old_value = ""
+
+        new_holder = self._make_value_holder(new_prop, old_value)
+
+        # 替换布局里的值控件（index=1，属性下拉是 index=0）
+        if old_holder is not None:
+            layout.removeWidget(old_holder)
+            old_holder.deleteLater()
+        layout.addWidget(new_holder)
+        widgets["value_holder"] = new_holder
+
+        # 继承当前的启用状态（操作类型决定）
+        self._refresh_row_editability(row)
+
+    @staticmethod
+    def _get_widget_value(widget: Optional[QWidget]) -> str:
+        """统一从值控件取值（QComboBox→currentData，QLineEdit→text）"""
+        if isinstance(widget, QComboBox):
+            return widget.currentData() or ""
+        if isinstance(widget, QLineEdit):
+            return widget.text()
+        return ""
+
+    def _make_property_value_widget(self, row: int, layer: str,
+                                    current_prop: str = "", current_value: str = "") -> QWidget:
+        """构造第 4 列「属性 + 值」合并容器。
+
+        布局：[属性下拉] [值控件]
+        值控件类型随属性变化（access→下拉，其它→文本框），
+        由 prop_combo.currentIndexChanged -> _refresh_row_value_input 驱动切换。
+        控件引用记入 self._row_widgets[row]，便于后续取值/重建。
+        """
+        container = QWidget()
+        lay = QHBoxLayout(container)
+        lay.setContentsMargins(2, 0, 2, 0)
+        lay.setSpacing(6)
+
+        prop_combo = self._make_property_combo(layer, current_prop)
+        # 注意：currentIndexChanged 会把 index 作为位置参数传给槽，
+        # 不能用 lambda _r=row:（会被信号参数覆盖），需用 *_ 吞掉信号参数
+        prop_combo.currentIndexChanged.connect(lambda *_, _r=row: self._refresh_row_value_input(_r))
+        lay.addWidget(prop_combo)
+
+        value_holder = self._make_value_holder(current_prop, current_value)
+        lay.addWidget(value_holder)
+
+        self._row_widgets[row] = {
+            "prop": prop_combo,
+            "container": container,
+            "value_holder": value_holder,
+        }
+        return container
+
     def _add_action_row(self):
         """添加一个空动作行"""
         row = self.actions_table.rowCount()
@@ -310,32 +544,65 @@ class ChainRulesDialog(QDialog):
         self.actions_table.setItem(row, 0, QTableWidgetItem(""))
         self.actions_table.setItem(row, 1, QTableWidgetItem(""))
         self.actions_table.setItem(row, 2, QTableWidgetItem(""))
-        # 动作类型下拉框
-        combo = QComboBox()
-        for act in _ACTION_TYPES:
-            combo.addItem(t(f"chain.action_{act}"), act)
-        self.actions_table.setCellWidget(row, 3, combo)
+
+        # 目标操作下拉
+        op_combo = self._make_operation_combo("delete")
+        # 用 *_ 吞掉 currentIndexChanged 传来的 index 参数（详见 _make_property_value_widget 注释）
+        op_combo.currentIndexChanged.connect(lambda *_, _r=row: self._refresh_row_editability(_r))
+        self.actions_table.setCellWidget(row, 3, op_combo)
+
+        # 第 4 列：属性 + 值 合并容器（默认 field 层）
+        pv_widget = self._make_property_value_widget(row, "field")
+        self.actions_table.setCellWidget(row, 4, pv_widget)
+
+        self._refresh_row_editability(row)
 
     def _add_action_row_data(self, action: ChainAction):
         """添加已有动作数据行"""
         row = self.actions_table.rowCount()
         self.actions_table.insertRow(row)
-        self.actions_table.setItem(row, 0, QTableWidgetItem(action.target_peripheral))
-        self.actions_table.setItem(row, 1, QTableWidgetItem(action.target_register))
-        self.actions_table.setItem(row, 2, QTableWidgetItem(action.target_field))
-        # 动作类型下拉框
-        combo = QComboBox()
-        for act in _ACTION_TYPES:
-            combo.addItem(t(f"chain.action_{act}"), act)
-        act_idx = _ACTION_TYPES.index(action.action) if action.action in _ACTION_TYPES else 0
-        combo.setCurrentIndex(act_idx)
-        self.actions_table.setCellWidget(row, 3, combo)
+        # 填充文本单元格时屏蔽 cellChanged，避免逐格触发属性下拉重建
+        self.actions_table.blockSignals(True)
+        try:
+            self.actions_table.setItem(row, 0, QTableWidgetItem(action.target_peripheral))
+            self.actions_table.setItem(row, 1, QTableWidgetItem(action.target_register))
+            self.actions_table.setItem(row, 2, QTableWidgetItem(action.target_field))
+        finally:
+            self.actions_table.blockSignals(False)
+
+        # 目标操作下拉
+        op_combo = self._make_operation_combo(action.operation or "delete")
+        op_combo.currentIndexChanged.connect(lambda *_, _r=row: self._refresh_row_editability(_r))
+        self.actions_table.setCellWidget(row, 3, op_combo)
+
+        # 第 4 列：属性 + 值 合并容器（按已填目标层确定属性可选项）
+        layer = self._detect_target_layer(action.target_peripheral, action.target_register, action.target_field)
+        pv_widget = self._make_property_value_widget(
+            row, layer, action.property_name, action.value)
+        self.actions_table.setCellWidget(row, 4, pv_widget)
+
+        self._refresh_row_editability(row)
 
     def _del_action_row(self):
-        """删除选中的动作行"""
+        """删除选中的动作行（按当前选中行）"""
         row = self.actions_table.currentRow()
         if row >= 0:
-            self.actions_table.removeRow(row)
+            self._remove_action_row(row)
+
+    def _remove_action_row(self, row: int):
+        """删除指定行并清理行级控件引用 dict。
+
+        removeRow 会让后续行的行号前移，_row_widgets 的键也要同步重排，
+        否则行号错位会导致后续操作（取值/重建）打到错误的行。
+        """
+        self.actions_table.removeRow(row)
+        # 删除被移除行的引用，并把后续行号前移
+        if row in self._row_widgets:
+            del self._row_widgets[row]
+        shifted = {}
+        for r, w in self._row_widgets.items():
+            shifted[r - 1 if r > row else r] = w
+        self._row_widgets = shifted
 
     def _collect_actions(self) -> list:
         """从表格收集动作列表"""
@@ -344,19 +611,27 @@ class ChainRulesDialog(QDialog):
             periph = self.actions_table.item(row, 0)
             reg = self.actions_table.item(row, 1)
             field = self.actions_table.item(row, 2)
-            combo = self.actions_table.cellWidget(row, 3)
+            op_combo = self.actions_table.cellWidget(row, 3)
+            widgets = self._row_widgets.get(row, {})
 
             p_text = periph.text().strip() if periph else ""
             r_text = reg.text().strip() if reg else ""
             f_text = field.text().strip() if field else ""
-            a_text = combo.currentData() if combo else "delete"
+            op_text = op_combo.currentData() if op_combo else "delete"
+            prop_combo = widgets.get("prop")
+            value_holder = widgets.get("value_holder")
+            prop_text = prop_combo.currentData() if isinstance(prop_combo, QComboBox) else ""
+            v_text = self._get_widget_value(value_holder).strip() if value_holder else ""
 
-            if p_text or r_text:
+            # 至少要有一个目标层
+            if p_text or r_text or f_text:
                 actions.append(ChainAction(
                     target_peripheral=p_text or "*",
                     target_register=r_text,
                     target_field=f_text,
-                    action=a_text,
+                    operation=op_text,
+                    property_name=prop_text,
+                    value=v_text,
                 ))
         return actions
 
@@ -374,7 +649,6 @@ class ChainRulesDialog(QDialog):
             rule = ChainRule(
                 name=self.name_edit.text() or t("chain.unnamed"),
                 enabled=self.rule_enabled.isChecked(),
-                source_type=self.source_type_combo.currentData() or "field",
                 source_peripheral=self.source_periph.text(),
                 source_register=self.source_reg.text(),
                 source_field=self.source_field.text(),
@@ -593,7 +867,7 @@ class ChainRulesDialog(QDialog):
                                 target_peripheral="*",
                                 target_register=reg_name,
                                 target_field=field_name,
-                                action=trigger,
+                                operation=trigger,
                                 description=f"{trigger} {reg_name}.{field_name}"
                             ))
 
@@ -605,7 +879,6 @@ class ChainRulesDialog(QDialog):
                                trigger=t(f"chain.trigger_{trigger}", default=trigger),
                                name=name),
                         enabled=True,
-                        source_type="field",
                         source_peripheral=src_pattern,
                         source_register="*" + name,
                         source_field=name,

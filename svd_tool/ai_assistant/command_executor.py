@@ -30,6 +30,11 @@ class CommandExecutor:
             "conflicts": self._op_conflicts,
             "diff": self._op_diff,
             "jump": self._op_jump,
+            # 片段查询工具（function-calling 专用，按需取 SVD 片段）
+            "get_peripheral": self._op_get_peripheral,
+            "get_register": self._op_get_register,
+            "get_field": self._op_get_field,
+            "list_interrupts": self._op_list_interrupts,
             "update_device": self._op_update_device,
             "add_peripheral": self._op_add_peripheral,
             "update_peripheral": self._op_update_peripheral,
@@ -172,7 +177,7 @@ class CommandExecutor:
         return {"success": True, "message": msg, "data": info}
 
     def _op_search(self, params: Dict) -> Dict[str, Any]:
-        """搜索外设/寄存器/位域"""
+        """搜索外设/寄存器/位域（支持分页，避免大文件返回上千条）"""
         device = self._get_device_info()
         if not device:
             return {"success": False, "message": t("ai.no_file_open"), "data": None}
@@ -182,7 +187,19 @@ class CommandExecutor:
         if not keyword:
             return {"success": False, "message": t("ai.search_keyword_empty"), "data": None}
 
-        results = []
+        # 分页参数：默认上限 50 条，防止巨型 SVD 单次返回过多
+        try:
+            limit = int(params.get("limit", 50))
+        except (TypeError, ValueError):
+            limit = 50
+        try:
+            offset = int(params.get("offset", 0))
+        except (TypeError, ValueError):
+            offset = 0
+        limit = max(1, min(limit, 200))
+        offset = max(0, offset)
+
+        all_results = []
 
         if search_type in ("all", "peripheral"):
             for name, periph in device.peripherals.items():
@@ -190,23 +207,35 @@ class CommandExecutor:
                     entry = {"type": "peripheral", "name": name}
                     if periph.derived_from:
                         entry["derived_from"] = periph.derived_from
-                    results.append(entry)
+                    all_results.append(entry)
 
         if search_type in ("all", "register"):
             for pname, periph in device.peripherals.items():
                 for rname in periph.registers:
                     if keyword in rname.lower():
-                        results.append({"type": "register", "name": rname, "peripheral": pname})
+                        all_results.append({"type": "register", "name": rname, "peripheral": pname})
 
         if search_type in ("all", "field"):
             for pname, periph in device.peripherals.items():
                 for rname, reg in periph.registers.items():
                     for fname in reg.fields:
                         if keyword in fname.lower():
-                            results.append({"type": "field", "name": fname, "peripheral": pname, "register": rname})
+                            all_results.append({"type": "field", "name": fname, "peripheral": pname, "register": rname})
 
-        msg = t("ai.search_result", keyword=keyword, count=len(results))
-        return {"success": True, "message": msg, "data": results}
+        total = len(all_results)
+        page = all_results[offset:offset + limit]
+        msg = t("ai.search_result", keyword=keyword, count=total)
+        return {
+            "success": True,
+            "message": msg,
+            "data": {
+                "results": page,
+                "total": total,
+                "offset": offset,
+                "limit": limit,
+                "has_more": offset + limit < total,
+            },
+        }
 
     def _op_conflicts(self, params: Dict) -> Dict[str, Any]:
         """检测地址冲突"""
@@ -220,7 +249,7 @@ class CommandExecutor:
             conflicts = detector.detect_all(device)
 
             if not conflicts:
-                return {"success": True, "message": t("ai.conflicts_none"), "data": []}
+                return {"success": True, "message": t("ai.conflicts_none"), "data": {"conflicts": [], "total": 0}}
 
             conflict_list = []
             for c in conflicts[:20]:
@@ -231,7 +260,11 @@ class CommandExecutor:
                 })
 
             msg = t("ai.conflicts_found", count=len(conflicts))
-            return {"success": True, "message": msg, "data": conflict_list}
+            return {
+                "success": True,
+                "message": msg,
+                "data": {"conflicts": conflict_list, "total": len(conflicts), "shown": len(conflict_list)},
+            }
         except Exception as e:
             return {"success": False, "message": t("ai.conflicts_fail", error=str(e)), "data": None}
 
@@ -432,6 +465,170 @@ class CommandExecutor:
             "register": register or None,
             "field": field or None,
         }}
+
+    # ==================== 片段查询工具（function-calling 专用） ====================
+    # 以下工具用于让 AI 按需取 SVD 片段，替代旧的"全文塞 system prompt"。
+    # 设计原则：分层下发——get_peripheral 不含位域、get_register 不含 enumerated_values，
+    # get_field 才返回完整位域（含枚举值）。避免单次返回过大。
+
+    def _op_get_peripheral(self, params: Dict) -> Dict[str, Any]:
+        """获取指定外设的元信息及寄存器列表（不含位域细节）。
+
+        合并 clusters 内的寄存器（用 all_registers），并在每条标注 cluster 来源。
+        """
+        device = self._get_device_info()
+        if not device:
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
+
+        name = params.get("name", "").strip()
+        if name not in device.peripherals:
+            return {"success": False, "message": t("ai.periph_not_found", name=name), "data": None}
+
+        periph = device.peripherals[name]
+        # all_registers 合并 clusters；同时记录每个寄存器是否来自 cluster
+        reg_list = []
+        for rname, reg in periph.registers.items():
+            reg_list.append({
+                "name": rname,
+                "offset": reg.offset,
+                "size": reg.size,
+                "access": reg.access or "",
+                "reset_value": reg.reset_value,
+                "description": reg.description,
+                "from_cluster": "",
+            })
+        for cname, cluster in periph.clusters.items():
+            for rname, reg in cluster.all_registers().items():
+                reg_list.append({
+                    "name": rname,
+                    "offset": reg.offset,
+                    "size": reg.size,
+                    "access": reg.access or "",
+                    "reset_value": reg.reset_value,
+                    "description": reg.description,
+                    "from_cluster": cname,
+                })
+
+        data = {
+            "name": periph.name,
+            "base_address": periph.base_address,
+            "description": periph.description,
+            "group_name": periph.group_name,
+            "derived_from": periph.derived_from or "",
+            "register_count": len(reg_list),
+            "registers": reg_list,
+        }
+        return {"success": True, "message": t("ai.get_periph_done", name=name, count=len(reg_list)), "data": data}
+
+    def _op_get_register(self, params: Dict) -> Dict[str, Any]:
+        """获取指定寄存器的元信息及位域列表（不含 enumerated_values）。"""
+        device = self._get_device_info()
+        if not device:
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
+
+        periph_name = params.get("peripheral", "").strip()
+        reg_name = params.get("register", "").strip() or params.get("name", "").strip()
+        if periph_name not in device.peripherals:
+            return {"success": False, "message": t("ai.periph_not_found", name=periph_name), "data": None}
+
+        periph = device.peripherals[periph_name]
+        # 优先顶层 registers，找不到再查 clusters
+        reg = periph.registers.get(reg_name)
+        cluster_source = ""
+        if reg is None:
+            for cname, cluster in periph.clusters.items():
+                regs = cluster.all_registers()
+                if reg_name in regs:
+                    reg = regs[reg_name]
+                    cluster_source = cname
+                    break
+        if reg is None:
+            return {"success": False, "message": t("ai.reg_not_found", name=reg_name), "data": None}
+
+        field_list = []
+        for fname, fld in reg.fields.items():
+            field_list.append({
+                "name": fname,
+                "bit_offset": fld.bit_offset,
+                "bit_width": fld.bit_width,
+                "access": fld.access or "",
+                "reset_value": fld.reset_value,
+                "description": fld.description,
+            })
+
+        data = {
+            "peripheral": periph_name,
+            "name": reg.name,
+            "offset": reg.offset,
+            "size": reg.size,
+            "access": reg.access or "",
+            "reset_value": reg.reset_value,
+            "reset_mask": getattr(reg, "reset_mask", ""),
+            "description": reg.description,
+            "derived_from": getattr(reg, "derived_from", "") or "",
+            "from_cluster": cluster_source,
+            "field_count": len(field_list),
+            "fields": field_list,
+        }
+        return {"success": True, "message": t("ai.get_reg_done", periph=periph_name, name=reg_name, count=len(field_list)), "data": data}
+
+    def _op_get_field(self, params: Dict) -> Dict[str, Any]:
+        """获取单个位域的完整信息（含 enumerated_values）。"""
+        device = self._get_device_info()
+        if not device:
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
+
+        periph_name = params.get("peripheral", "").strip()
+        reg_name = params.get("register", "").strip()
+        field_name = params.get("field", "").strip() or params.get("name", "").strip()
+        if periph_name not in device.peripherals:
+            return {"success": False, "message": t("ai.periph_not_found", name=periph_name), "data": None}
+
+        periph = device.peripherals[periph_name]
+        reg = periph.registers.get(reg_name)
+        if reg is None:
+            for cluster in periph.clusters.values():
+                regs = cluster.all_registers()
+                if reg_name in regs:
+                    reg = regs[reg_name]
+                    break
+        if reg is None:
+            return {"success": False, "message": t("ai.reg_not_found", name=reg_name), "data": None}
+        if field_name not in reg.fields:
+            return {"success": False, "message": t("ai.field_not_found", name=field_name), "data": None}
+
+        fld = reg.fields[field_name]
+        data = {
+            "peripheral": periph_name,
+            "register": reg_name,
+            "name": fld.name,
+            "bit_offset": fld.bit_offset,
+            "bit_width": fld.bit_width,
+            "access": fld.access or "",
+            "reset_value": fld.reset_value,
+            "description": fld.description,
+            "display_name": getattr(fld, "display_name", ""),
+            "enumerated_values": getattr(fld, "enumerated_values", []),
+        }
+        return {"success": True, "message": t("ai.get_field_done", name=field_name), "data": data}
+
+    def _op_list_interrupts(self, params: Dict) -> Dict[str, Any]:
+        """列出设备的中断（名称/值/描述/关联外设）。"""
+        device = self._get_device_info()
+        if not device:
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
+
+        irq_list = []
+        for name, irq in device.interrupts.items():
+            irq_list.append({
+                "name": name,
+                "value": irq.value,
+                "description": irq.description,
+                "peripheral": irq.peripheral,
+                "peripherals": irq.peripherals,
+            })
+        data = {"total": len(irq_list), "interrupts": irq_list}
+        return {"success": True, "message": t("ai.list_irq_done", count=len(irq_list)), "data": data}
 
     # ==================== 修改操作 ====================
 

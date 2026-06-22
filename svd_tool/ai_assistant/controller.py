@@ -1,52 +1,24 @@
 """
 AI 助手控制器
-顶层协调器，管理后端、执行器、聊天记录和 UI 面板
+顶层协调器，管理后端、执行器、聊天记录和 UI 面板。
+
+改造为真正的 function-calling 循环：用户消息 → AgentLoop（多轮工具调用）→ 最终文本回答。
+工具结果回灌给 AI 继续推理，替代旧的"全文塞 system prompt + 文本里嵌 JSON 动作"机制。
 """
-import json
 import logging
-import re
 from typing import Optional
 
-from PyQt6.QtCore import QThread, pyqtSignal, QObject
+from PyQt6.QtCore import QObject
 
 from .config import AIConfig, AIConfigManager
 from .backend import AIBackend, create_backend
 from .command_executor import CommandExecutor
 from .prompt_builder import PromptBuilder
 from .chat_history import ChatHistory
+from .agent_loop import AgentLoop
 from ..i18n.i18n import t
 
 logger = logging.getLogger("AIAssistant.Controller")
-
-
-class _StreamingWorker(QThread):
-    """流式 AI 响应工作线程"""
-    chunk_received = pyqtSignal(str)
-    stream_finished = pyqtSignal(str)
-    error_occurred = pyqtSignal(str)
-
-    def __init__(self, backend: AIBackend, messages: list, config: AIConfig, use_stream: bool = True):
-        super().__init__()
-        self.backend = backend
-        self.messages = messages
-        self.config = config
-        self.use_stream = use_stream
-
-    def run(self):
-        try:
-            if self.use_stream:
-                full_response = ""
-                for chunk in self.backend.chat_stream(self.messages, self.config):
-                    full_response += chunk
-                    self.chunk_received.emit(chunk)
-                self.stream_finished.emit(full_response)
-            else:
-                response = self.backend.chat(self.messages, self.config)
-                self.stream_finished.emit(response)
-        except ImportError as e:
-            self.error_occurred.emit(str(e))
-        except Exception as e:
-            self.error_occurred.emit(t("ai.error.request_failed", error=str(e)))
 
 
 class AIAssistantController(QObject):
@@ -71,7 +43,7 @@ class AIAssistantController(QObject):
         self.panel = None
 
         # 工作线程
-        self._worker: Optional[_StreamingWorker] = None
+        self._worker: Optional[AgentLoop] = None
 
         # 初始化后端
         self._init_backend()
@@ -132,11 +104,7 @@ class AIAssistantController(QObject):
             self.logger.info("AI 配置已更新")
 
     def send_message(self, text: str):
-        """发送用户消息（从 UI 输入）
-
-        Args:
-            text: 用户输入的文本
-        """
+        """发送用户消息（从 UI 输入）"""
         if not text.strip():
             return
 
@@ -159,11 +127,11 @@ class AIAssistantController(QObject):
         if self.panel:
             self.panel.append_user_message(text)
 
-        # 发送消息（内部逻辑）
-        self._send_message_internal()
+        # 启动 agent loop
+        self._start_agent_loop()
 
-    def _send_message_internal(self):
-        """内部发送消息（不添加用户历史和气泡，用于 continuation）"""
+    def _start_agent_loop(self):
+        """启动 function-calling 主循环"""
         if not self.backend:
             self._init_backend()
             if not self.backend:
@@ -175,24 +143,27 @@ class AIAssistantController(QObject):
         # 构建完整消息列表
         messages = self._build_messages()
 
-        # 初始化流式缓冲区
-        self._streaming_buffer = ""
-
-        # 启动工作线程
-        self._worker = _StreamingWorker(
-            self.backend,
-            messages,
-            self.config,
-            self.config.enable_streaming
+        # 启动 AgentLoop（启用工具）
+        self._worker = AgentLoop(
+            backend=self.backend,
+            messages=messages,
+            config=self.config,
+            executor=self.executor,
+            use_stream=self.config.enable_streaming,
+            enable_tools=True,
+            parent=self,
         )
+        self._worker.round_started.connect(self._on_round_started)
         self._worker.chunk_received.connect(self._on_chunk_received)
-        self._worker.stream_finished.connect(self._on_stream_finished)
+        self._worker.round_text_finished.connect(self._on_round_text_finished)
+        self._worker.action_executed.connect(self._on_action_executed)
+        self._worker.finished_loop.connect(self._on_loop_finished)
         self._worker.error_occurred.connect(self._on_error)
         self._worker.start()
 
     def _build_messages(self) -> list:
         """构建发送给 AI 的完整消息列表"""
-        # 构建系统提示词（含当前 SVD 上下文）
+        # 构建系统提示词（含当前 SVD 上下文摘要）
         state_manager = self.coordinator.get_component("state_manager")
         device_info = state_manager.device_info if state_manager else None
 
@@ -237,161 +208,80 @@ class AIAssistantController(QObject):
 
         return messages
 
+    # ==================== AgentLoop 信号处理 ====================
+
+    def _on_round_started(self):
+        """一轮开始：重置本轮状态（气泡延迟到首个非空 chunk 才创建，避免空气泡）。"""
+        self._round_text_buffer = ""
+        self._current_round_has_bubble = False
+
     def _on_chunk_received(self, chunk: str):
-        """流式接收到一个文本块 — 累积并过滤 JSON 后显示"""
-        if not hasattr(self, '_streaming_buffer'):
-            self._streaming_buffer = ""
-        self._streaming_buffer += chunk
+        """实时文本片段：首次非空时为本轮创建独立气泡，之后追加。"""
+        if not self.panel:
+            return
+        # 本轮首个非空 chunk：新建气泡
+        if not getattr(self, "_current_round_has_bubble", False) and chunk:
+            self.panel.new_streaming_bubble()
+            self._current_round_has_bubble = True
+            self._round_text_buffer = ""
+        if self._current_round_has_bubble:
+            self._round_text_buffer += chunk
+            self.panel.set_streaming_text(self._round_text_buffer)
+
+    def _on_round_text_finished(self, text: str):
+        """本轮文本收集完毕。
+
+        无需额外操作：有文本的轮已在 chunk 阶段创建并填充了气泡；
+        空文本轮没有气泡。后续的工具结果卡片会自然插到本气泡下方。
+        """
+        # 记录本轮最终文本（用于存历史），保留 _current_round_has_bubble 状态
+        self._last_round_text = text
+
+    def _on_action_executed(self, operation: str, result: dict):
+        """工具执行完毕 —— 显示动作结果（插到最底，在本轮气泡之后）"""
         if self.panel:
-            clean = self._clean_streaming_text(self._streaming_buffer)
-            self.panel.set_streaming_text(clean)
+            self.panel.append_action_result(operation, result)
 
-    def _on_stream_finished(self, full_response: str):
-        """流式响应完成"""
-        # 解析 AI 响应，提取动作和显示文本
-        action_data = self._extract_json(full_response)
-        display_text = self._extract_display_text(full_response, action_data)
-        actions_taken = []
+    def _on_loop_finished(self, final_text: str, last_tool_calls: list, all_tool_results: list):
+        """AgentLoop 完成 —— 存历史 + 结束流式（不再覆盖气泡内容）。
 
-        # 执行动作
-        if action_data and "actions" in action_data:
-            for action in action_data.get("actions", []):
-                result = self.executor.execute(action)
-                actions_taken.append({
-                    "operation": action.get("operation"),
-                    "result": result
-                })
-                if self.panel:
-                    self.panel.append_action_result(action.get("operation", ""), result)
+        每轮文本已在各自气泡显示，这里只负责：
+        1. 把整个 agent 交互存入 chat_history（供下次请求上下文）
+        2. 兜底处理最后一个气泡（若为空则移除）
+        3. 恢复输入控件状态
+        """
+        # 存历史：assistant（最后一轮文本 + 工具调用）+ 所有工具结果
+        if last_tool_calls:
+            self.chat_history.add_message(
+                "assistant", final_text,
+                tool_calls=last_tool_calls,
+            )
+            for tr in all_tool_results:
+                self.chat_history.add_message(
+                    "tool", tr["content"],
+                    tool_call_id=tr["tool_call_id"],
+                    name=tr["name"],
+                )
+        else:
+            self.chat_history.add_message("assistant", final_text)
 
-            # 检查是否需要继续执行（多步骤任务）
-            if action_data.get("continue"):
-                self._schedule_continuation(action_data.get("continuation_prompt", ""))
-
-        # 添加到历史（保存原始响应）
-        self.chat_history.add_message("assistant", full_response, actions_taken)
-
-        # 先确定化消息（更新或移除气泡），再恢复输入
         if self.panel:
-            self.panel.finalize_assistant_message(display_text)
-            self.panel.set_streaming(False)
+            # 兜底：若最后一个气泡无内容则移除；否则保留（内容已在 chunk 阶段填充）
+            self.panel.finalize_assistant_message(final_text)
+            self.panel.end_streaming()
+
+        # 清理本轮状态
+        self._round_text_buffer = ""
+        self._current_round_has_bubble = False
 
     def _on_error(self, error_msg: str):
         """请求出错"""
         if self.panel:
             self.panel.finalize_assistant_message("")
-            self.panel.set_streaming(False)
+            self.panel.end_streaming()
             self.panel.append_system_message(t("ai.error.prefix", error=error_msg))
-
-    def _clean_streaming_text(self, text: str) -> str:
-        """实时去除流式文本中的 JSON 内容，仅保留用户可读的自然语言部分"""
-        import re
-
-        # 1. 移除已闭合的 ```json...``` 或 ```...``` 代码块
-        cleaned = re.sub(r'```(?:json)?\s*\n.*?```', '', text, flags=re.DOTALL)
-
-        # 2. 如果存在未闭合的 ``` 代码块开头（流式过程中），截断之
-        unclosed = re.search(r'```(?:json)?\s*\n.*$', cleaned, re.DOTALL)
-        if unclosed:
-            cleaned = cleaned[:unclosed.start()]
-
-        return cleaned.strip()
-
-    def _extract_display_text(self, full_response: str, action_data: Optional[dict]) -> str:
-        """从 AI 响应中提取用户可见的干净文本（不含 JSON）
-
-        优先级：
-        1. 如果有 action_data，取 explanation 字段
-        2. 否则去掉 JSON 代码块，返回剩余自然语言部分
-        """
-        if action_data:
-            explanation = action_data.get("explanation", "").strip()
-            if explanation:
-                return explanation
-
-        # 没有 action_data 时，去掉 JSON 代码块
-        import re
-        cleaned = re.sub(r'```(?:json)?\s*\n?.*?```', '', full_response, flags=re.DOTALL).strip()
-        if cleaned:
-            return cleaned
-
-        # 全是 JSON 没有自然语言时，生成简单描述
-        if action_data:
-            actions = action_data.get("actions", [])
-            if actions:
-                ops = [a.get("operation", "?") for a in actions]
-                return t("ai.executing", ops=', '.join(ops))
-
-        return full_response.strip()
-
-    def _schedule_continuation(self, continuation_prompt: str):
-        """调度多步骤任务的下一步（不显示用户气泡，直接内部续发）"""
-        from PyQt6.QtCore import QTimer
-        prompt = continuation_prompt or t("ai.continue_task")
-        # 将 continuation_prompt 作为用户消息加入历史（供 API 上下文），但不显示气泡
-        self.chat_history.add_message("user", prompt)
-        QTimer.singleShot(500, self._send_message_internal)
-
-    def _extract_json(self, text: str) -> Optional[dict]:
-        """从文本中提取 JSON（支持 markdown 代码块和残缺 JSON 修复）"""
-        # 尝试提取 ```json ... ``` 包裹的内容
-        json_match = re.search(r'```(?:json)?\s*\n?(.*?)```', text, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(1).strip()
-        else:
-            # 尝试从文本中找最外层 { ... }
-            brace_match = re.search(r'\{.*\}', text, re.DOTALL)
-            if brace_match:
-                json_str = brace_match.group(0).strip()
-            else:
-                json_str = text.strip()
-
-        # 第一次尝试：直接解析
-        try:
-            data = json.loads(json_str)
-            if isinstance(data, dict):
-                return data
-        except json.JSONDecodeError:
-            pass
-
-        # 第二次尝试：修复常见的残缺 JSON
-        repaired = self._try_repair_json(json_str)
-        if repaired:
-            try:
-                data = json.loads(repaired)
-                if isinstance(data, dict):
-                    return data
-            except json.JSONDecodeError:
-                pass
-
-        return None
-
-    def _try_repair_json(self, s: str) -> Optional[str]:
-        """尝试修复常见的 AI 输出 JSON 问题"""
-        if not s:
-            return None
-
-        # 去掉尾部不完整的内容：找到最后一个 } 并截断
-        last_brace = s.rfind('}')
-        if last_brace > 0:
-            s = s[:last_brace + 1]
-
-        # 补全未闭合的括号
-        open_braces = s.count('{') - s.count('}')
-        open_brackets = s.count('[') - s.count(']')
-        if open_braces > 0:
-            s += '}' * open_braces
-        if open_brackets > 0:
-            s += ']' * open_brackets
-
-        # 修复缺少引号的 key:  word:  -> "word":
-        s = re.sub(r'(?<=[\{,\[]) *\b(\w+)\b *:', r' "\1":', s)
-
-        # 修复缺少引号的 value（简单字符串）: : value -> : "value"
-        # 只处理紧跟在 : 后面、不是数字/布尔/null/"/{/[/ 的情况
-        s = re.sub(r': *([^"\d\-\{\[\]tfn][^,\}\]\n]*?)([,\}\]])', r': "\1"\2', s)
-
-        return s
+        self._round_text_buffer = ""
+        self._current_round_has_bubble = False
 
     def clear_history(self):
         """清空聊天记录"""
@@ -407,14 +297,16 @@ class AIAssistantController(QObject):
         """停止当前 AI 生成"""
         if self._worker and self._worker.isRunning():
             self.logger.info("用户请求停止生成")
+            self._worker.request_stop()
             self._worker.quit()
             self._worker.wait(2000)
             if self.panel:
                 self.panel.finalize_assistant_message("")
-                self.panel.set_streaming(False)
+                self.panel.end_streaming()
 
     def shutdown(self):
         """关闭 AI 助手"""
         if self._worker and self._worker.isRunning():
+            self._worker.request_stop()
             self._worker.quit()
             self._worker.wait(3000)

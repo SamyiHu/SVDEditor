@@ -43,7 +43,8 @@ class ToggleSwitch(QWidget):
         else:
             total_w = self.TRACK_WIDTH
 
-        self.setFixedSize(total_w, self.TRACK_HEIGHT)
+        self.setFixedHeight(max(self.TRACK_HEIGHT, 24))
+        self.setMinimumWidth(total_w)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
@@ -111,12 +112,14 @@ class ToggleSwitch(QWidget):
         w = self.TRACK_WIDTH
         h = self.TRACK_HEIGHT
         r = h / 2
+        # 垂直居中轨道
+        track_y = (self.height() - h) / 2
 
         # 轨道背景
         track_color = self._track_color_on if self._checked else self._track_color_off
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(track_color)
-        painter.drawRoundedRect(QRectF(0, 0, w, h), r, r)
+        painter.drawRoundedRect(QRectF(0, track_y, w, h), r, r)
 
         # 滑块
         margin = self.HANDLE_MARGIN
@@ -127,12 +130,12 @@ class ToggleSwitch(QWidget):
         # 阴影
         painter.setBrush(QColor(0, 0, 0, 30))
         painter.drawRoundedRect(
-            QRectF(handle_x + 1, margin + 1, handle_d, handle_d),
+            QRectF(handle_x + 1, track_y + margin + 1, handle_d, handle_d),
             handle_d / 2, handle_d / 2)
         # 本体
         painter.setBrush(self._handle_color)
         painter.drawRoundedRect(
-            QRectF(handle_x, margin, handle_d, handle_d),
+            QRectF(handle_x, track_y + margin, handle_d, handle_d),
             handle_d / 2, handle_d / 2)
 
         # 标签文字
@@ -140,7 +143,7 @@ class ToggleSwitch(QWidget):
             painter.setPen(QColor(90, 90, 90))
             painter.setFont(QFont("Microsoft YaHei", 9))
             text_x = w + 6
-            text_y = h / 2 + 3  # 垂直居中
+            text_y = self.height() / 2 + 4  # 垂直居中
             painter.drawText(int(text_x), int(text_y), self._label)
 
         painter.end()

@@ -324,17 +324,27 @@ class AIChatPanel(QDockWidget):
         self._insert_bubble(bubble)
 
     def set_streaming(self, active: bool):
-        """设置流式状态"""
+        """设置流式状态（仅切换按钮，不预建气泡）。
+
+        气泡由 new_streaming_bubble 按需创建（每轮文本开始时），避免空气泡。
+        """
         self._send_btn.setEnabled(not active)
         self._input_edit.setEnabled(not active)
         self._stop_btn.setVisible(active)
-
         if active:
-            # 创建新的 AI 气泡用于流式追加
-            self._current_assistant_bubble = AssistantBubble()
-            self._current_assistant_bubble.set_content("")
-            self._insert_bubble(self._current_assistant_bubble)
-        # 注意：不在这里清空 _current_assistant_bubble，由 finalize_assistant_message 负责
+            # 进入流式状态：清空当前气泡引用，等待 new_streaming_bubble 按需创建
+            self._current_assistant_bubble = None
+
+    def new_streaming_bubble(self):
+        """创建并插入一个新的 AI 流式气泡，返回引用。
+
+        由 controller 在每轮首个非空文本 chunk 到来时调用，保证每轮文本
+        显示为独立气泡（工具结果卡片自然夹在相邻两轮气泡之间）。
+        """
+        self._current_assistant_bubble = AssistantBubble()
+        self._current_assistant_bubble.set_content("")
+        self._insert_bubble(self._current_assistant_bubble)
+        return self._current_assistant_bubble
 
     def _is_bubble_alive(self, bubble) -> bool:
         """检查气泡的 C++ 对象是否仍然存活"""
@@ -353,19 +363,27 @@ class AIChatPanel(QDockWidget):
             self._scroll_to_bottom()
 
     def finalize_assistant_message(self, display_text: str):
-        """最终确定助手消息（流式完成后）
+        """最终确定助手消息（流式完成后）。
 
-        Args:
-            display_text: 已经过滤掉 JSON 的纯文本，可直接显示
+        改造后：不再用 display_text 覆盖已显示的气泡内容（每轮文本已在各自气泡显示）。
+        仅处理"当前轮气泡为空时移除它"的兜底，并清理引用。
         """
         if self._is_bubble_alive(self._current_assistant_bubble):
-            if display_text and display_text.strip():
-                self._current_assistant_bubble.set_content(display_text)
-            else:
-                # 空消息：从布局中移除气泡，避免显示空白
+            # 若最后一个气泡没有任何内容（极端：最后一轮只有空文本），移除它
+            if not display_text or not display_text.strip():
                 self._messages_layout.removeWidget(self._current_assistant_bubble)
                 self._current_assistant_bubble.deleteLater()
             self._current_assistant_bubble = None
+
+    def end_streaming(self):
+        """结束流式状态（不触碰气泡，仅恢复输入控件）。
+
+        供 controller 在 loop_finished 时调用，与 finalize_assistant_message 配合：
+        后者处理最后气泡的兜底，本方法恢复 UI 状态。
+        """
+        self._send_btn.setEnabled(True)
+        self._input_edit.setEnabled(True)
+        self._stop_btn.setVisible(False)
 
     def clear_chat(self):
         """清空聊天"""

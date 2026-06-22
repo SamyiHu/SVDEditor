@@ -11,10 +11,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from PyQt6.QtWidgets import QApplication
 from svd_tool.ui.main_window_refactored import MainWindowRefactored as MainWindow
-from svd_tool.utils.logger import get_logger
+from svd_tool.utils.logger import get_logger, get_log_file_path
 
 # 获取日志实例
 logger = get_logger("main")
+
+# 启动时打印日志文件路径，方便用户事后查找（文件日志若被环境变量关闭则跳过）
+if logger.is_file_logging_enabled():
+    logger.info(f"日志文件: {get_log_file_path()}")
 
 
 def main():
