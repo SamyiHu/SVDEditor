@@ -321,11 +321,14 @@ class MenuBarBuilder:
 
         tools_menu.addSeparator()
         
-        # 连锁操作开关
+        # 连锁操作开关（全局总开关，唯一入口）
         self.main_window.toggle_chain_action = QAction(
             t("menu.tools.chain_enabled"), self.parent)
         self.main_window.toggle_chain_action.setCheckable(True)
-        self.main_window.toggle_chain_action.setChecked(True)
+        # 从 engine 读真实状态，而非硬编码 True
+        engine = getattr(self.main_window, "chain_rules_engine", None)
+        self.main_window.toggle_chain_action.setChecked(
+            engine.enabled if engine is not None else True)
         self.main_window.toggle_chain_action.triggered.connect(
             lambda checked: setattr(self.main_window.chain_rules_engine, 'enabled', checked))
         tools_menu.addAction(self.main_window.toggle_chain_action)

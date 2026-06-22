@@ -84,13 +84,9 @@ class ChainRulesDialog(QDialog):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
 
-        # === 顶部：全局开关 ===
-        top_bar = QHBoxLayout()
-        self.global_toggle = ToggleSwitch(t("label.chain_enabled"))
-        self.global_toggle.setChecked(self.engine.enabled if self.engine else True)
-        top_bar.addWidget(self.global_toggle)
-        top_bar.addStretch()
-        layout.addLayout(top_bar)
+        # 注：全局总开关（engine.enabled）由主窗口菜单"工具→启用连锁操作"控制，
+        # 此处不再重复放置 global_toggle，避免与菜单入口功能重复、让人困惑。
+        # 单条规则的启用状态由下方"规则配置"区的 rule_enabled 开关控制。
 
         # === 主分割器 ===
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -111,13 +107,12 @@ class ChainRulesDialog(QDialog):
 
         self.rules_tree = QTreeWidget()
         self.rules_tree.setHeaderLabels([
-            t("chain.col_name"), t("chain.col_trigger"), t("chain.col_enabled")
+            t("chain.col_name"), t("chain.col_trigger")
         ])
         header = self.rules_tree.header()
         if header:
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
             header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self.rules_tree.setAlternatingRowColors(True)
         self.rules_tree.setSelectionBehavior(QTreeWidget.SelectionBehavior.SelectRows)
         self.rules_tree.currentItemChanged.connect(self._on_rule_selected)
@@ -285,8 +280,6 @@ class ChainRulesDialog(QDialog):
         item.setText(0, rule.name)
         trigger_text = t(f"chain.trigger_{rule.trigger}", default=rule.trigger)
         item.setText(1, trigger_text)
-        enabled_text = "ON" if rule.enabled else "OFF"
-        item.setText(2, enabled_text)
         self.rules_tree.addTopLevelItem(item)
 
     def _update_rule_count(self):
@@ -671,10 +664,8 @@ class ChainRulesDialog(QDialog):
             if item:
                 item.setText(0, rule.name)
                 item.setText(1, t(f"chain.trigger_{rule.trigger}", default=rule.trigger))
-                item.setText(2, "ON" if rule.enabled else "OFF")
 
-        # 保存全局开关
-        self.engine.enabled = self.global_toggle.isChecked()
+        # 保存规则（全局 enabled 状态由主窗口菜单维护，此处不改）
         self.engine.save_rules()
         self.accept()
 
