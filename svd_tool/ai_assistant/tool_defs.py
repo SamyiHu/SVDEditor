@@ -134,12 +134,12 @@ def _build_tool_catalog() -> List[Dict[str, Any]]:
         },
         {
             "name": "update_peripheral",
-            "description": "更新外设属性（描述/基地址/分组等）。",
+            "description": "更新外设属性。updates 可含 name(改名)、description、base_address、group_name、display_name。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name": {"type": "string"},
-                    "updates": {"type": "object"},
+                    "name": {"type": "string", "description": "当前外设名"},
+                    "updates": {"type": "object", "description": '要修改的字段；改名时用 {"name": "新名"}'},
                 },
                 "required": ["name"],
             },
@@ -175,13 +175,13 @@ def _build_tool_catalog() -> List[Dict[str, Any]]:
         },
         {
             "name": "update_register",
-            "description": "更新寄存器属性。",
+            "description": "更新寄存器属性。updates 可含 name(改名)、description、offset、size、access、reset_value、display_name。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "peripheral": {"type": "string"},
-                    "name": {"type": "string"},
-                    "updates": {"type": "object"},
+                    "name": {"type": "string", "description": "当前寄存器名"},
+                    "updates": {"type": "object", "description": '要修改的字段；改名时用 {"name": "新名"}'},
                 },
                 "required": ["peripheral", "name"],
             },
@@ -220,14 +220,14 @@ def _build_tool_catalog() -> List[Dict[str, Any]]:
         },
         {
             "name": "update_field",
-            "description": "更新位域属性。",
+            "description": "更新位域属性。updates 可含 name(改名)、description、bit_offset、bit_width、access、reset_value、display_name。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "peripheral": {"type": "string"},
                     "register": {"type": "string"},
-                    "name": {"type": "string"},
-                    "updates": {"type": "object"},
+                    "name": {"type": "string", "description": "当前位域名"},
+                    "updates": {"type": "object", "description": '要修改的字段；改名时用 {"name": "新名"}'},
                 },
                 "required": ["peripheral", "register", "name"],
             },

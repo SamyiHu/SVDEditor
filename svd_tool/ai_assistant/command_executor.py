@@ -731,6 +731,38 @@ class CommandExecutor:
             return {"success": False, "message": t("ai.no_updates"), "data": None}
 
         periph = device.peripherals[name]
+        new_name = str(updates.get("name", "")).strip()
+
+        # 改名：复用 state_manager.rename_peripheral（已处理 dict-key 迁移、顺序保持、撤销）
+        rename_done = False
+        if new_name and new_name != name:
+            state_manager = self.coordinator.get_component("state_manager")
+            if state_manager and hasattr(state_manager, "rename_peripheral"):
+                try:
+                    state_manager.rename_peripheral(name, new_name)
+                    rename_done = True
+                except ValueError as e:
+                    return {"success": False, "message": str(e), "data": None}
+            else:
+                # 兜底：state_manager 不可用时直接迁移（无撤销）
+                if new_name in device.peripherals:
+                    return {"success": False,
+                            "message": t("ai.periph_exists", name=new_name), "data": None}
+                order = list(device.peripherals.keys())
+                old_periph = device.peripherals.pop(name)
+                old_periph.name = new_name
+                new_periphs = {}
+                for k in order:
+                    new_periphs[new_name if k == name else k] = device.peripherals.get(k, old_periph if k == name else None)
+                device.peripherals.clear()
+                device.peripherals.update({k: v for k, v in new_periphs.items() if v is not None})
+                rename_done = True
+
+        # 改名后，periph 引用仍有效（对象未变，仅 key 变了）；用新 name 定位
+        effective_name = new_name if rename_done else name
+        periph = device.peripherals[effective_name]
+
+        # 其它可改属性（改名已单独处理，这里不动 name）
         old_values = {}
         updatable_fields = ["description", "base_address", "group_name", "display_name"]
 
@@ -743,10 +775,11 @@ class CommandExecutor:
             for key, val in old_values.items():
                 setattr(periph, key, val)
 
-        self._execute_undoable(f"AI: 更新外设 '{name}'", lambda: None, undo)
-        self._notify_refresh(name)
+        self._execute_undoable(f"AI: 更新外设 '{effective_name}'", lambda: None, undo)
+        self._notify_refresh(effective_name)
 
-        return {"success": True, "message": t("ai.update_periph_done", name=name), "data": {"name": name, "updates": list(updates.keys())}}
+        return {"success": True, "message": t("ai.update_periph_done", name=effective_name),
+                "data": {"name": effective_name, "updates": list(updates.keys()), "renamed": rename_done}}
 
     def _op_remove_peripheral(self, params: Dict) -> Dict[str, Any]:
         """删除外设"""
@@ -836,6 +869,50 @@ class CommandExecutor:
             return {"success": False, "message": t("ai.no_updates"), "data": None}
 
         reg = periph.registers[reg_name]
+        new_name = str(updates.get("name", "")).strip()
+
+        # 改名：需要同步迁移 dict key（registers 以 name 为 key），保持顺序并支持撤销。
+        # 单纯 setattr(reg, "name", ...) 会导致 dict key 与对象 name 不一致，查找错乱。
+        rename_done = False
+        if new_name and new_name != reg_name:
+            if new_name in periph.registers:
+                return {"success": False,
+                        "message": t("ai.reg_exists", name=new_name, periph=periph_name), "data": None}
+
+            # 保存旧顺序，构造 execute/undo
+            reg_order = list(periph.registers.keys())
+
+            def _rename_execute():
+                old_reg = periph.registers.pop(reg_name)
+                old_reg.name = new_name
+                # 重建 dict 保持顺序
+                new_regs = {}
+                for k in reg_order:
+                    if k == reg_name:
+                        new_regs[new_name] = old_reg
+                    else:
+                        new_regs[k] = periph.registers[k]
+                # 清掉剩余（已 pop 的）再覆盖
+                periph.registers.clear()
+                periph.registers.update(new_regs)
+
+            def _rename_undo():
+                cur = periph.registers.pop(new_name)
+                cur.name = reg_name
+                restored = {}
+                for k in reg_order:
+                    if k == reg_name:
+                        restored[reg_name] = cur
+                    else:
+                        restored[k] = periph.registers[k]
+                periph.registers.clear()
+                periph.registers.update(restored)
+
+            self._execute_undoable(f"AI: 重命名寄存器 '{reg_name}' -> '{new_name}'",
+                                   _rename_execute, _rename_undo)
+            rename_done = True
+
+        # 其它可改属性（改名已单独处理，这里不动 name）
         old_values = {}
         updatable_fields = ["description", "offset", "size", "access", "reset_value", "display_name"]
 
@@ -851,7 +928,9 @@ class CommandExecutor:
         self._execute_undoable(f"AI: 更新寄存器 '{reg_name}'", lambda: None, undo)
         self._notify_refresh(periph_name)
 
-        return {"success": True, "message": t("ai.update_reg_done", name=reg_name), "data": {"name": reg_name}}
+        result_name = new_name if rename_done else reg_name
+        return {"success": True, "message": t("ai.update_reg_done", name=result_name),
+                "data": {"name": result_name, "renamed": rename_done}}
 
     def _op_remove_register(self, params: Dict) -> Dict[str, Any]:
         """删除寄存器"""
@@ -957,6 +1036,46 @@ class CommandExecutor:
             return {"success": False, "message": t("ai.no_updates"), "data": None}
 
         fld = reg.fields[field_name]
+        new_name = str(updates.get("name", "")).strip()
+
+        # 改名：同步迁移 dict key（fields 以 name 为 key），保持顺序并支持撤销。
+        rename_done = False
+        if new_name and new_name != field_name:
+            if new_name in reg.fields:
+                return {"success": False,
+                        "message": t("ai.field_exists", name=new_name), "data": None}
+
+            field_order = list(reg.fields.keys())
+
+            def _rename_execute():
+                old_fld = reg.fields.pop(field_name)
+                old_fld.name = new_name
+                new_fields = {}
+                for k in field_order:
+                    if k == field_name:
+                        new_fields[new_name] = old_fld
+                    else:
+                        new_fields[k] = reg.fields[k]
+                reg.fields.clear()
+                reg.fields.update(new_fields)
+
+            def _rename_undo():
+                cur = reg.fields.pop(new_name)
+                cur.name = field_name
+                restored = {}
+                for k in field_order:
+                    if k == field_name:
+                        restored[field_name] = cur
+                    else:
+                        restored[k] = reg.fields[k]
+                reg.fields.clear()
+                reg.fields.update(restored)
+
+            self._execute_undoable(f"AI: 重命名位域 '{field_name}' -> '{new_name}'",
+                                   _rename_execute, _rename_undo)
+            rename_done = True
+
+        # 其它可改属性（改名已单独处理，这里不动 name）
         old_values = {}
         updatable_fields = ["description", "bit_offset", "bit_width", "access", "reset_value", "display_name"]
 
@@ -975,7 +1094,9 @@ class CommandExecutor:
         self._execute_undoable(f"AI: 更新位域 '{field_name}'", lambda: None, undo)
         self._notify_refresh(periph_name)
 
-        return {"success": True, "message": t("ai.update_field_done", name=field_name), "data": {"name": field_name}}
+        result_name = new_name if rename_done else field_name
+        return {"success": True, "message": t("ai.update_field_done", name=result_name),
+                "data": {"name": result_name, "renamed": rename_done}}
 
     def _op_remove_field(self, params: Dict) -> Dict[str, Any]:
         """删除位域"""
