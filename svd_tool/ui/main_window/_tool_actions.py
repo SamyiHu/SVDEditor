@@ -78,6 +78,10 @@ class ToolActionsMixin:
 
         # 更新状态管理器
         self.state_manager.device_info = merged_device
+
+        # 清空选择。注意：device_info 整体替换后预览的行号映射缓存已失效，
+        # clear_selection() 触发的高亮回调此时会命中「缓存为空」分支，
+        # 该分支已改为异步重建（见 realtime_preview.highlight_element），不再同步阻塞。
         self.state_manager.clear_selection()
 
         # 通知状态变更
@@ -87,14 +91,16 @@ class ToolActionsMixin:
         if hasattr(self, 'coordinator') and self.coordinator:
             self.coordinator.emit_event("device_info_updated", merged_device)
 
+        # 立即触发一次预览异步重建（走后台线程，不阻塞主线程）。
+        # 合并是低频重要操作，需确保预览及时刷新；coordinator 事件走防抖定时器
+        # 且受窗口可见性检查影响，这里显式 immediate=True 保证可靠性。
+        if self.preview_manager:
+            self.preview_manager.refresh_preview(immediate=True)
+
         # 刷新 UI
         self.peripheral_manager.update_peripheral_tree()
         self.update_data_stats()
         self._update_interrupt_table()
-
-        # 更新预览
-        if self.preview_manager:
-            self.preview_manager.refresh_preview(immediate=True)
 
         # 更新基础信息
         if hasattr(self.layout_manager, 'update_basic_info'):

@@ -1755,12 +1755,16 @@ class RealtimePreviewWidget(QWidget):
             
             if not selection:
                 return
-            
-            # 如果element_ranges为空，先更新预览（即使窗口不可见）
+
+            # 如果 element_ranges 为空（缓存未就绪），异步触发重建并跳过本次高亮。
+            # 旧实现在此同步调用 _force_update_preview()，会在主线程里全量生成 XML
+            # （大文件数百毫秒），是「合并导入完成」「文档切换」等场景卡顿的根因。
+            # 异步路径（_update_preview → 后台线程 → _on_xml_result_ready）会自动
+            # 填充 element_ranges 并在 current_selection 有值时重新高亮。
             if not self.element_ranges:
-                self._force_update_preview()
-                if not self.element_ranges:
-                    return
+                self.current_selection = selection
+                self.refresh_preview(immediate=True)
+                return
             
             # 更新当前选择
             self.current_selection = selection
