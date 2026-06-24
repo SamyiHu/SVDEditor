@@ -45,6 +45,10 @@ class CommandExecutor:
             "add_field": self._op_add_field,
             "update_field": self._op_update_field,
             "remove_field": self._op_remove_field,
+            # 中断操作（增删改复用 state_manager，保证外设 interrupts 列表双向同步 + 撤销）
+            "add_interrupt": self._op_add_interrupt,
+            "update_interrupt": self._op_update_interrupt,
+            "remove_interrupt": self._op_remove_interrupt,
             # 多文档操作
             "switch_document": self._op_switch_document,
             "save_document": self._op_save_document,
@@ -644,6 +648,134 @@ class CommandExecutor:
             })
         data = {"total": len(irq_list), "interrupts": irq_list}
         return {"success": True, "message": t("ai.list_irq_done", count=len(irq_list)), "data": data}
+
+    # ==================== 中断操作（增删改，复用 state_manager） ====================
+    # 中断比寄存器/位域多一层复杂性：device.interrupts 与各 peripheral.interrupts
+    # 列表需双向同步。state_manager 已完整实现该同步逻辑（含撤销），这里直接复用，
+    # 避免与手动编辑的中断逻辑产生差异。
+
+    def _op_add_interrupt(self, params: Dict) -> Dict[str, Any]:
+        """添加中断"""
+        device = self._get_device_info()
+        if not device:
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
+
+        from svd_tool.core.data_model import Interrupt
+
+        name = str(params.get("name", "")).strip()
+        if not name:
+            return {"success": False, "message": t("ai.irq_name_empty", default="中断名称不能为空"), "data": None}
+        if name in device.interrupts:
+            return {"success": False, "message": t("ai.irq_exists", name=name, default="中断 '{name}' 已存在"), "data": None}
+
+        try:
+            value = int(params.get("value", 0))
+        except (TypeError, ValueError):
+            value = 0
+
+        peripherals = params.get("peripherals", [])
+        if isinstance(peripherals, str):
+            peripherals = [peripherals]
+        # 兼容 peripheral（单数）字段
+        single = params.get("peripheral", "").strip()
+        if single and single not in peripherals:
+            peripherals.insert(0, single)
+
+        irq = Interrupt(
+            name=name,
+            value=value,
+            description=str(params.get("description", "")),
+            peripheral=peripherals[0] if peripherals else "",
+            peripherals=list(peripherals),
+        )
+
+        state_manager = self.coordinator.get_component("state_manager")
+        if state_manager and hasattr(state_manager, "add_interrupt"):
+            state_manager.add_interrupt(irq)
+        else:
+            device.interrupts[name] = irq
+        self._notify_refresh()
+
+        return {"success": True,
+                "message": t("ai.add_irq_done", name=name, value=value,
+                             default="已添加中断 '{name}' (IRQ {value})"),
+                "data": {"name": name, "value": value}}
+
+    def _op_update_interrupt(self, params: Dict) -> Dict[str, Any]:
+        """更新中断（支持改名、改 value/description/peripherals）"""
+        device = self._get_device_info()
+        if not device:
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
+
+        name = str(params.get("name", "")).strip()
+        if name not in device.interrupts:
+            return {"success": False, "message": t("ai.irq_not_found", name=name, default="中断 '{name}' 不存在"), "data": None}
+
+        updates = params.get("updates", {})
+        if not updates:
+            return {"success": False, "message": t("ai.no_updates"), "data": None}
+
+        old_irq = device.interrupts[name]
+        new_name = str(updates.get("name", name)).strip()
+        if new_name != name and new_name in device.interrupts:
+            return {"success": False, "message": t("ai.irq_exists", name=new_name, default="中断 '{name}' 已存在"), "data": None}
+
+        try:
+            new_value = int(updates.get("value", old_irq.value))
+        except (TypeError, ValueError):
+            new_value = old_irq.value
+
+        if "peripherals" in updates:
+            peripherals = updates["peripherals"]
+            if isinstance(peripherals, str):
+                peripherals = [peripherals]
+            peripherals = list(peripherals)
+        else:
+            peripherals = list(old_irq.peripherals)
+
+        from svd_tool.core.data_model import Interrupt
+        updated = Interrupt(
+            name=new_name,
+            value=new_value,
+            description=str(updates.get("description", old_irq.description)),
+            peripheral=peripherals[0] if peripherals else "",
+            peripherals=peripherals,
+        )
+
+        state_manager = self.coordinator.get_component("state_manager")
+        if state_manager and hasattr(state_manager, "update_interrupt"):
+            state_manager.update_interrupt(name, updated)
+        else:
+            # 兜底：直接替换（无外设同步、无撤销）
+            if new_name != name:
+                del device.interrupts[name]
+            device.interrupts[new_name] = updated
+        self._notify_refresh()
+
+        return {"success": True,
+                "message": t("ai.update_irq_done", name=new_name, default="已更新中断 '{name}'"),
+                "data": {"name": new_name, "renamed": new_name != name}}
+
+    def _op_remove_interrupt(self, params: Dict) -> Dict[str, Any]:
+        """删除中断"""
+        device = self._get_device_info()
+        if not device:
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
+
+        name = str(params.get("name", "")).strip()
+        if name not in device.interrupts:
+            return {"success": False, "message": t("ai.irq_not_found", name=name, default="中断 '{name}' 不存在"), "data": None}
+
+        state_manager = self.coordinator.get_component("state_manager")
+        if state_manager and hasattr(state_manager, "delete_interrupt"):
+            state_manager.delete_interrupt(name)
+        else:
+            del device.interrupts[name]
+        self._notify_refresh()
+
+        return {"success": True,
+                "message": t("ai.remove_irq_done", name=name, default="已删除中断 '{name}'"),
+                "data": {"name": name}}
 
     # ==================== 修改操作 ====================
 

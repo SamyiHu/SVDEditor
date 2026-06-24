@@ -247,6 +247,48 @@ def _build_tool_catalog() -> List[Dict[str, Any]]:
             },
             "category": "write",
         },
+        # ---------- 中断写操作 ----------
+        {
+            "name": "add_interrupt",
+            "description": "添加一个中断。需指定名称和中断号(value)，可选描述和关联外设。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "中断名称，如 EXTI0"},
+                    "value": {"type": "integer", "description": "中断号，如 6"},
+                    "description": {"type": "string"},
+                    "peripheral": {"type": "string", "description": "关联的单个外设名（可选）"},
+                    "peripherals": {"type": "array", "items": {"type": "string"}, "description": "关联的多个外设名（多外设共用中断时用）"},
+                },
+                "required": ["name", "value"],
+            },
+            "category": "write",
+        },
+        {
+            "name": "update_interrupt",
+            "description": "更新中断属性。updates 可含 name(改名)、value、description、peripherals。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "当前中断名"},
+                    "updates": {"type": "object", "description": '要修改的字段；改名用 {"name": "新名"}'},
+                },
+                "required": ["name"],
+            },
+            "category": "write",
+        },
+        {
+            "name": "remove_interrupt",
+            "description": "删除一个中断。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                },
+                "required": ["name"],
+            },
+            "category": "write",
+        },
         # ---------- UI 副作用工具（回灌极简确认） ----------
         {
             "name": "jump",
