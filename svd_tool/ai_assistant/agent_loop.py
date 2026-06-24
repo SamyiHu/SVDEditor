@@ -20,13 +20,11 @@ from .tool_defs import dispatch as tool_dispatch
 
 logger = logging.getLogger("svd_tool.ai_assistant.AgentLoop")
 
-# 防失控：单次"预算"内的工具调用轮数。批量任务（如一次生成多个 SVD 文档）
-# 单条消息可能需要 20~40+ 轮，达此预算时不直接截断，而是问用户是否继续；
-# 选择继续则累加预算并从断点接着跑（复用已回灌的工具结果）。
-# 同时通过 chat_history 裁剪 + controller 的 _compact_tool_results 控制上下文膨胀。
+# 工具调用预算的兜底默认值。实际预算由配置 max_tool_iterations 决定：
+#   0 = 无限制（一直跑到 AI 不再调工具或用户停止，适合大型批量任务）；
+#   >0 = 每跑完这么多轮弹框问用户是否继续（防失控），续跑时按此值累加预算。
+# _ITER_BUDGET 仅在配置缺失/异常时兜底。
 _ITER_BUDGET = 30
-# 用户每次选"继续"时追加的预算轮数
-_ITER_BUDGET_INCREMENT = 30
 
 
 class AgentLoop(QThread):
@@ -60,6 +58,8 @@ class AgentLoop(QThread):
         self.use_stream = use_stream
         self.enable_tools = enable_tools
         self._stop_requested = False
+        # 工具调用预算：0=无限制，>0=每跑完这么多轮问用户是否继续
+        self._max_tool_iterations = int(getattr(config, "max_tool_iterations", 0) or 0)
         # 用户续跑决策同步：工作线程在预算耗尽时阻塞等待 controller 的回传
         self._cont_mutex = QMutex()
         self._cont_cond = QWaitCondition()
@@ -116,7 +116,12 @@ class AgentLoop(QThread):
         all_tool_results: list = []  # [{tool_call_id, name, content}]
 
         iteration = 0
-        budget = _ITER_BUDGET  # 当前可用预算（可被用户"继续"累加）
+        # 预算语义：0=无限制（用一个极大值，使 iteration<budget 恒成立，永不触发续跑弹框）；
+        # >0=每跑完这么多轮问用户是否继续。
+        if self._max_tool_iterations > 0:
+            budget = self._max_tool_iterations
+        else:
+            budget = float('inf')  # 无限制
         truncated_by_budget = False
 
         while iteration < budget:
@@ -211,10 +216,12 @@ class AgentLoop(QThread):
                 })
 
             # 预算耗尽：询问用户是否继续，而不是静默截断。
+            # （无限制模式下 budget=inf，此条件永不成立，不会弹框）
             if iteration >= budget and not self._stop_requested:
                 decision = self._ask_continuation(iteration)
                 if decision == "continue":
-                    budget += _ITER_BUDGET_INCREMENT
+                    # 续跑时追加的预算量 = 用户配置的预算值
+                    budget += (self._max_tool_iterations or _ITER_BUDGET)
                     logger.info(f"用户选择继续，预算累加至 {budget}，已执行 {iteration} 轮")
                 else:
                     truncated_by_budget = True

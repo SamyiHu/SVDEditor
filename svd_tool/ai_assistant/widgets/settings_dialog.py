@@ -190,6 +190,13 @@ class AISettingsDialog(QDialog):
         self._history_edit.setPlaceholderText("10 ~ 200")
         form.addRow(t("ai.settings.max_history", default="历史消息数:"), self._history_edit)
 
+        # 工具调用轮数预算 — 0 表示无限制
+        self._tool_iter_edit = QLineEdit("0")
+        self._tool_iter_edit.setValidator(QIntValidator(0, 9999))
+        self._tool_iter_edit.setPlaceholderText(t(
+            "ai.settings.tool_iter_hint", default="0=无限制，或填每轮预算（如 50）"))
+        form.addRow(t("ai.settings.tool_iter", default="工具调用预算:"), self._tool_iter_edit)
+
         # 自定义系统提示词
         self._system_prompt_edit = QPlainTextEdit()
         self._system_prompt_edit.setMaximumHeight(80)
@@ -225,6 +232,7 @@ class AISettingsDialog(QDialog):
         # 高级
         self._timeout_edit.setText(str(self.config.request_timeout))
         self._history_edit.setText(str(self.config.max_history_messages))
+        self._tool_iter_edit.setText(str(self.config.max_tool_iterations))
         self._system_prompt_edit.setPlainText(self.config.system_prompt_extra)
 
     def _safe_float(self, text: str, default: float, lo: float, hi: float) -> float:
@@ -255,6 +263,7 @@ class AISettingsDialog(QDialog):
             enable_streaming=self._streaming_check.isChecked(),
             max_history_messages=self._safe_int(self._history_edit.text(), 50, 10, 200),
             request_timeout=self._safe_int(self._timeout_edit.text(), 60, 10, 600),
+            max_tool_iterations=self._safe_int(self._tool_iter_edit.text(), 0, 0, 9999),
             system_prompt_extra=self._system_prompt_edit.toPlainText().strip(),
         )
 
