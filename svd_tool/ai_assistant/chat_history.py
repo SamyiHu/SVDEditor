@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
-logger = logging.getLogger("AIAssistant.ChatHistory")
+logger = logging.getLogger("svd_tool.ai_assistant.ChatHistory")
 
 
 @dataclass

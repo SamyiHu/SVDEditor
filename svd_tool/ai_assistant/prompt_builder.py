@@ -11,7 +11,7 @@ from typing import Optional
 
 from ..i18n.i18n import get_i18n_manager, t
 
-logger = logging.getLogger("AIAssistant.PromptBuilder")
+logger = logging.getLogger("svd_tool.ai_assistant.PromptBuilder")
 
 
 class PromptBuilder:

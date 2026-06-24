@@ -11,17 +11,22 @@ Function-calling 主循环（QThread）
 import json
 import logging
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal, QMutex, QWaitCondition
 
 from .config import AIConfig
 from .backend import AIBackend
 from .command_executor import CommandExecutor
 from .tool_defs import dispatch as tool_dispatch
 
-logger = logging.getLogger("AIAssistant.AgentLoop")
+logger = logging.getLogger("svd_tool.ai_assistant.AgentLoop")
 
-# 防失控：单次用户请求最多允许的工具调用轮数
-_MAX_ITERATIONS = 12
+# 防失控：单次"预算"内的工具调用轮数。批量任务（如一次生成多个 SVD 文档）
+# 单条消息可能需要 20~40+ 轮，达此预算时不直接截断，而是问用户是否继续；
+# 选择继续则累加预算并从断点接着跑（复用已回灌的工具结果）。
+# 同时通过 chat_history 裁剪 + controller 的 _compact_tool_results 控制上下文膨胀。
+_ITER_BUDGET = 30
+# 用户每次选"继续"时追加的预算轮数
+_ITER_BUDGET_INCREMENT = 30
 
 
 class AgentLoop(QThread):
@@ -38,6 +43,9 @@ class AgentLoop(QThread):
     action_executed = pyqtSignal(str, dict)
     # 整个循环完成：final_text(最后一轮文本，用于存历史), assistant_tool_calls, tool_results
     finished_loop = pyqtSignal(str, list, list)
+    # 到达预算上限，请求用户决定是否继续（携带已完成的轮数）。
+    # controller 据此弹框；用户的选择通过 set_continuation_decision() 回传。
+    continuation_requested = pyqtSignal(int)
     # 出错
     error_occurred = pyqtSignal(str)
 
@@ -52,10 +60,37 @@ class AgentLoop(QThread):
         self.use_stream = use_stream
         self.enable_tools = enable_tools
         self._stop_requested = False
+        # 用户续跑决策同步：工作线程在预算耗尽时阻塞等待 controller 的回传
+        self._cont_mutex = QMutex()
+        self._cont_cond = QWaitCondition()
+        self._cont_decision: str = ""  # "continue" / "stop" / ""（未决定）
 
     def request_stop(self):
-        """请求停止（由外部调用，循环会在当前轮结束后退出）"""
+        """请求停止（由外部调用，循环会在当前轮结束后退出）。
+
+        同时唤醒可能在等待续跑决策的循环，避免死锁。
+        """
         self._stop_requested = True
+        # 若此刻正阻塞在"等待用户续跑决策"，立即唤醒并按停止处理
+        self._cont_mutex.lock()
+        try:
+            self._cont_decision = "stop"
+            self._cont_cond.wakeAll()
+        finally:
+            self._cont_mutex.unlock()
+
+    def set_continuation_decision(self, decision: str):
+        """回传用户的续跑决策（由 controller 在主线程调用）。
+
+        Args:
+            decision: "continue" 累加预算继续；"stop" 停止生成
+        """
+        self._cont_mutex.lock()
+        try:
+            self._cont_decision = decision
+            self._cont_cond.wakeAll()
+        finally:
+            self._cont_mutex.unlock()
 
     def run(self):
         try:
@@ -67,7 +102,12 @@ class AgentLoop(QThread):
             self.error_occurred.emit(str(e))
 
     def _run_loop(self):
-        """主循环：反复请求直到模型不再调用工具"""
+        """主循环：反复请求直到模型不再调用工具，或用户在预算耗尽时选择停止。
+
+        到达预算上限时不直接截断，而是发 continuation_requested 信号阻塞等待
+        用户决定；选"继续"则累加预算并从断点接着跑（messages 工作副本里已有
+        上一批 tool 结果，自然续上），选"停止"则按停止流程结束。
+        """
         # tools 参数：第一次传工具定义；后续轮也传（让模型可继续调用）
         tools_arg = True if self.enable_tools else None
 
@@ -75,7 +115,11 @@ class AgentLoop(QThread):
         last_tool_calls: list = []
         all_tool_results: list = []  # [{tool_call_id, name, content}]
 
-        for iteration in range(_MAX_ITERATIONS):
+        iteration = 0
+        budget = _ITER_BUDGET  # 当前可用预算（可被用户"继续"累加）
+        truncated_by_budget = False
+
+        while iteration < budget:
             if self._stop_requested:
                 break
 
@@ -106,31 +150,45 @@ class AgentLoop(QThread):
                 self.error_occurred.emit(str(e))
                 return
 
+            iteration += 1
             round_text = "".join(round_text_parts).strip()
             last_text = round_text
-            last_tool_calls = round_tool_calls
+
+            # 收集阶段若被停止或流式中断，本轮 tool_call 可能残缺（缺 id/name）。
+            # 过滤掉无效项；若已请求停止则整轮丢弃，避免把不完整的 tool_calls 写入历史。
+            valid_tool_calls = [tc for tc in round_tool_calls
+                                if tc.get("id") and tc.get("name")]
+            if self._stop_requested:
+                valid_tool_calls = []
+            last_tool_calls = valid_tool_calls
 
             # 本轮文本收集完毕（在执行工具前发出，让 controller 确认本轮气泡状态）
             self.round_text_finished.emit(round_text)
 
-            if not round_tool_calls:
-                # 本轮无工具调用 → 对话完成
+            if not valid_tool_calls:
+                # 本轮无（有效）工具调用 → 对话完成
                 break
 
             # 把本轮 assistant 消息（含 tool_calls）追加到 messages
             self.messages.append({
                 "role": "assistant",
                 "content": round_text,
-                "tool_calls": round_tool_calls,
+                "tool_calls": valid_tool_calls,
             })
 
-            # 执行每个工具调用，追加 tool 结果消息
-            for tc in round_tool_calls:
-                if self._stop_requested:
-                    break
+            # 执行每个工具调用，追加 tool 结果消息。
+            # 关键：即使用户已请求停止，也必须为本轮每个 tool_call 都补一条 tool 结果，
+            # 否则 assistant(tool_calls) 与 tool 消息无法一一配对，下一次请求会被 API
+            # 以 400 "tool_call ids did not have response messages" 拒绝。
+            for tc in valid_tool_calls:
                 name = tc["name"]
                 params = tc.get("arguments", {}) or {}
-                result = tool_dispatch(name, params, self.executor)
+                if self._stop_requested:
+                    # 停止后不再真正执行工具，补"已取消"结果以维持配对
+                    result = {"success": False,
+                              "message": "用户已停止生成，工具调用未执行", "data": None}
+                else:
+                    result = tool_dispatch(name, params, self.executor)
                 # UI 反馈
                 self.action_executed.emit(name, result)
                 # 回灌内容：紧凑 JSON（含 success/message/data）
@@ -151,9 +209,47 @@ class AgentLoop(QThread):
                     "content": result_str,
                     "operation": name,
                 })
-        else:
-            # 达到最大轮数仍未结束
-            logger.warning(f"AgentLoop 达到最大轮数 {_MAX_ITERATIONS}，强制停止")
 
-        # 结束：发出最终文本 + 用于存历史的 tool_calls/tool_results
+            # 预算耗尽：询问用户是否继续，而不是静默截断。
+            if iteration >= budget and not self._stop_requested:
+                decision = self._ask_continuation(iteration)
+                if decision == "continue":
+                    budget += _ITER_BUDGET_INCREMENT
+                    logger.info(f"用户选择继续，预算累加至 {budget}，已执行 {iteration} 轮")
+                else:
+                    truncated_by_budget = True
+                    break
+
+        if truncated_by_budget:
+            hint = (f"⏹ 已完成 {iteration} 轮工具调用后用户选择停止。"
+                    f"未完成的部分，可发送\"继续\"让我接着做。")
+            last_text = (last_text + "\n\n" + hint).strip() if last_text else hint
+            logger.warning(f"AgentLoop 在用户选择下停止，已完成 {iteration} 轮")
+
+        # 结束：发出最终文本 + 用于存历史的 tool_calls/tool_results。
+        # 截断/停止时：最后完整执行的那一轮的 tool_calls 与 tool_results 已配对，
+        # 不会产生悬空历史。仅当收集阶段异常退出时 last_tool_calls 才可能不完整，
+        # 那种情况由 controller 的 _sanitize_messages_for_api 兜底。
         self.finished_loop.emit(last_text, last_tool_calls, all_tool_results)
+
+    def _ask_continuation(self, completed: int) -> str:
+        """预算耗尽时阻塞等待用户决定是否继续。
+
+        通过 continuation_requested 信号通知 controller（主线程）弹框询问，
+        本工作线程用 QWaitCondition 阻塞，直到 controller 调用
+        set_continuation_decision() 或 request_stop() 唤醒。
+
+        Returns:
+            "continue" 或 "stop"
+        """
+        self.continuation_requested.emit(completed)
+        self._cont_mutex.lock()
+        try:
+            if self._cont_decision == "":
+                self._cont_cond.wait(self._cont_mutex)
+            decision = self._cont_decision or "stop"
+            # 消费决策，重置以便下次询问复用
+            self._cont_decision = ""
+        finally:
+            self._cont_mutex.unlock()
+        return decision

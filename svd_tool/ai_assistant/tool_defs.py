@@ -17,7 +17,7 @@ Function-calling 工具定义注册表
 import logging
 from typing import Any, Dict, List
 
-logger = logging.getLogger("AIAssistant.ToolDefs")
+logger = logging.getLogger("svd_tool.ai_assistant.ToolDefs")
 
 
 # ==================== 工具 schema 定义 ====================

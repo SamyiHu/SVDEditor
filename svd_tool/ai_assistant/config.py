@@ -8,7 +8,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 
-logger = logging.getLogger("AIAssistant.Config")
+logger = logging.getLogger("svd_tool.ai_assistant.Config")
 
 # 默认配置路径
 _CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".svd_tool")
@@ -31,7 +31,9 @@ class AIConfig:
 
     # 会话配置
     max_history_messages: int = 50
-    request_timeout: int = 60
+    # 请求超时（秒）。批量任务上下文大、模型推理慢，60s 偏紧易在中途断流；
+    # 提高到 120。流式场景下此值约束"两个 chunk 之间的最长间隔"。
+    request_timeout: int = 120
 
     # 自定义系统提示词补充
     system_prompt_extra: str = ""

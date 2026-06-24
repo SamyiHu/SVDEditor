@@ -18,7 +18,7 @@ from typing import List, Dict, Any, Iterator, Optional
 
 from .config import AIConfig
 
-logger = logging.getLogger("AIAssistant.Backend")
+logger = logging.getLogger("svd_tool.ai_assistant.Backend")
 
 
 class AIBackend(ABC):
@@ -68,10 +68,12 @@ class OpenAICompatibleBackend(AIBackend):
             import openai
         except ImportError:
             raise ImportError("未安装 openai 库。请运行: pip install openai")
+        # 兜底：老配置文件里可能存着 60s，批量任务下偏紧会中途断流。
+        timeout = max(config.request_timeout, 120)
         return openai.OpenAI(
             api_key=config.api_key,
             base_url=config.api_base_url,
-            timeout=config.request_timeout,
+            timeout=timeout,
         )
 
     def chat_stream(self, messages: List[Dict[str, Any]], config: AIConfig,

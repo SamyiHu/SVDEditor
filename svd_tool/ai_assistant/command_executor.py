@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional
 
 from ..i18n.i18n import t
 
-logger = logging.getLogger("AIAssistant.CommandExecutor")
+logger = logging.getLogger("svd_tool.ai_assistant.CommandExecutor")
 
 
 class CommandExecutor:
@@ -106,21 +106,36 @@ class CommandExecutor:
             execute_fn()
 
     def _notify_refresh(self, peripheral_name: Optional[str] = None):
-        """通知 UI 刷新"""
-        state_manager = self.coordinator.get_component("state_manager")
-        if state_manager:
-            state_manager._notify_state_change()
+        """通知 UI 刷新。
 
-        if peripheral_name:
-            self.coordinator.notify_peripheral_updated(peripheral_name)
+        CommandExecutor 在 AgentLoop 工作线程里运行，而 state_manager 的
+        _notify_state_change 内部会启动 QTimer、layout_manager 直接操作 QWidget。
+        跨线程操作 GUI 对象（尤其 QTimer.start / QWidget）是未定义行为，批量任务下
+        高频触发可能导致死锁或 Qt 告警刷屏。这里统一用 QTimer.singleShot(0, ...)
+        把所有 GUI 相关调用派发回主线程执行。
+        """
+        from PyQt6.QtCore import QTimer
 
-        # 刷新基本信息页面
-        layout_manager = self.coordinator.get_component("layout_manager")
-        if layout_manager and hasattr(layout_manager, 'update_basic_info'):
+        def _do_refresh():
             try:
-                layout_manager.update_basic_info(state_manager.device_info)
+                state_manager = self.coordinator.get_component("state_manager")
+                if state_manager:
+                    state_manager._notify_state_change()
+
+                if peripheral_name:
+                    self.coordinator.notify_peripheral_updated(peripheral_name)
+
+                # 刷新基本信息页面
+                layout_manager = self.coordinator.get_component("layout_manager")
+                if layout_manager and hasattr(layout_manager, 'update_basic_info') and state_manager:
+                    try:
+                        layout_manager.update_basic_info(state_manager.device_info)
+                    except Exception:
+                        pass
             except Exception:
-                pass
+                logger.debug("UI 刷新失败（可忽略）", exc_info=True)
+
+        QTimer.singleShot(0, _do_refresh)
 
     # ==================== 只读操作 ====================
 
