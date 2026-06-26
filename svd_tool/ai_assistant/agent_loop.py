@@ -185,35 +185,47 @@ class AgentLoop(QThread):
             # 关键：即使用户已请求停止，也必须为本轮每个 tool_call 都补一条 tool 结果，
             # 否则 assistant(tool_calls) 与 tool 消息无法一一配对，下一次请求会被 API
             # 以 400 "tool_call ids did not have response messages" 拒绝。
-            for tc in valid_tool_calls:
-                name = tc["name"]
-                params = tc.get("arguments", {}) or {}
-                if self._stop_requested:
-                    # 停止后不再真正执行工具，补"已取消"结果以维持配对
-                    result = {"success": False,
-                              "message": "用户已停止生成，工具调用未执行", "data": None}
-                else:
-                    result = tool_dispatch(name, params, self.executor)
-                # UI 反馈
-                self.action_executed.emit(name, result)
-                # 回灌内容：紧凑 JSON（含 success/message/data）
-                try:
-                    result_str = json.dumps(result, ensure_ascii=False)
-                except (TypeError, ValueError):
-                    result_str = json.dumps({"success": result.get("success", False),
-                                             "message": str(result.get("message", ""))}, ensure_ascii=False)
-                self.messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "name": name,
-                    "content": result_str,
-                })
-                all_tool_results.append({
-                    "tool_call_id": tc["id"],
-                    "name": name,
-                    "content": result_str,
-                    "operation": name,
-                })
+            #
+            # 用 begin_batch/end_batch 包裹本轮所有工具调用：暂停状态通知，避免每个
+            # 写操作都触发一次级联刷新（全树重建 + 地址冲突扫描 + 预览重生成）。
+            # 批量结束后合并成一次刷新，基于最终状态。解决 #1（刷新异常）#8（刷新范围过大）。
+            if not self._stop_requested:
+                self.executor.begin_batch()
+            try:
+                for tc in valid_tool_calls:
+                    name = tc["name"]
+                    params = tc.get("arguments", {}) or {}
+                    if self._stop_requested:
+                        # 停止后不再真正执行工具，补"已取消"结果以维持配对
+                        result = {"success": False,
+                                  "message": "用户已停止生成，工具调用未执行", "data": None}
+                    else:
+                        result = tool_dispatch(name, params, self.executor)
+                    # UI 反馈
+                    self.action_executed.emit(name, result)
+                    # 回灌内容：紧凑 JSON（含 success/message/data）
+                    try:
+                        result_str = json.dumps(result, ensure_ascii=False)
+                    except (TypeError, ValueError):
+                        result_str = json.dumps({"success": result.get("success", False),
+                                                 "message": str(result.get("message", ""))}, ensure_ascii=False)
+                    self.messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "name": name,
+                        "content": result_str,
+                    })
+                    all_tool_results.append({
+                        "tool_call_id": tc["id"],
+                        "name": name,
+                        "content": result_str,
+                        "operation": name,
+                    })
+            finally:
+                # 无论本轮是否被停止，都要恢复通知并触发一次合并刷新，
+                # 避免 begin_batch 后通知被永久暂停。
+                if not self._stop_requested:
+                    self.executor.end_batch()
 
             # 预算耗尽：询问用户是否继续，而不是静默截断。
             # （无限制模式下 budget=inf，此条件永不成立，不会弹框）

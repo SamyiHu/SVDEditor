@@ -236,6 +236,38 @@ class CommandExecutor:
         else:
             self._gui.post(_do_refresh)
 
+    def begin_batch(self) -> None:
+        """开始批量操作：暂停状态变更通知，避免中间状态触发级联刷新
+        （全树重建 / 地址冲突全量扫描 / 预览重生成 ×N 次）。
+
+        必须与 end_batch() 配对使用。批量结束后由 end_batch() 恢复通知并触发
+        一次合并刷新。在工作线程调用时通过 _gui 派发到主线程（pause/resume
+        操作 state_manager 的 QTimer，必须在主线程）。
+        """
+        def _do():
+            state_manager = self.coordinator.get_component("state_manager")
+            if state_manager and hasattr(state_manager, "pause_notifications"):
+                state_manager.pause_notifications()
+        if threading.current_thread() is threading.main_thread():
+            _do()
+        else:
+            self._gui.call_blocking(_do)
+
+    def end_batch(self) -> None:
+        """结束批量操作：恢复状态变更通知，触发一次合并刷新。
+
+        resume_notifications 内部会立即通知一次（不带防抖），确保批量修改后的
+        树/预览/冲突检测基于最终状态刷新，而非中间状态。
+        """
+        def _do():
+            state_manager = self.coordinator.get_component("state_manager")
+            if state_manager and hasattr(state_manager, "resume_notifications"):
+                state_manager.resume_notifications()
+        if threading.current_thread() is threading.main_thread():
+            _do()
+        else:
+            self._gui.call_blocking(_do)
+
     # ==================== 只读操作 ====================
 
     def _op_validate(self, params: Dict) -> Dict[str, Any]:
