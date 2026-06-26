@@ -5,15 +5,87 @@
 """
 import logging
 import re
-from typing import Dict, Any, Optional
+import threading
+from typing import Dict, Any, Optional, Callable
 
 from ..i18n.i18n import t
 
 logger = logging.getLogger("svd_tool.ai_assistant.CommandExecutor")
 
 
+class _GuiBridge:
+    """跨线程 GUI 派发桥。
+
+    CommandExecutor 在 AgentLoop 工作线程中被调用，但写操作（增删改）和涉及
+    选中/刷新的操作会修改主线程持有的共享状态（device_info、当前选中项、视图）。
+    若工作线程与主线程的手动操作交错，会产生竞态：表现为"出现两个外设"、
+    "显示是旧的"、选中错乱甚至闪退。
+
+    本桥用两个 QObject 信号分别处理"阻塞等待"和"不等待"两种派发：
+    - call_blocking(fn): 工作线程阻塞，直到 fn 在主线程执行完毕，返回其返回值
+      或重新抛出其异常。用 BlockingQueuedConnection，与用户手动点击天然串行化。
+    - post(fn): 不等待，用于通知类操作（如刷新）。
+    """
+
+    def __init__(self):
+        from PyQt6.QtCore import QObject, pyqtSignal, Qt
+
+        class _Carrier(QObject):
+            # 阻塞通道：携带 (callable, 结果盒)
+            blocking = pyqtSignal(object, object)
+            # 非阻塞通道：携带 (callable, 结果盒)
+            queued = pyqtSignal(object, object)
+
+        self._carrier = _Carrier()
+        # 阻塞通道用 BlockingQueuedConnection（跨线程时阻塞 emit 的线程）
+        self._carrier.blocking.connect(
+            self._on_run, Qt.ConnectionType.BlockingQueuedConnection)
+        # 非阻塞通道用 QueuedConnection（跨线程时排队，不阻塞）
+        self._carrier.queued.connect(
+            self._on_run, Qt.ConnectionType.QueuedConnection)
+
+    def _on_run(self, fn, result_box):
+        """在主线程执行（由信号触发）。"""
+        try:
+            value = fn()
+            if result_box is not None:
+                result_box['value'] = value
+                result_box['error'] = None
+        except Exception as e:
+            if result_box is not None:
+                result_box['error'] = e
+        finally:
+            if result_box is not None and result_box.get('event') is not None:
+                result_box['event'].set()
+
+    def call_blocking(self, fn: Callable) -> Any:
+        """把 fn 派发到主线程执行，阻塞等待结果（或重新抛出其异常）。
+
+        工作线程调用时，BlockingQueuedConnection 会阻塞本线程，直到主线程
+        事件循环处理完该信号——这与用户的手动点击天然串行，杜绝竞态。
+        """
+        result_box = {'value': None, 'error': None, 'event': threading.Event()}
+        self._carrier.blocking.emit(fn, result_box)
+        # BlockingQueuedConnection 下 emit 返回时主线程已执行完；保险起见再 wait
+        result_box['event'].wait(timeout=30)
+        if result_box['error'] is not None:
+            raise result_box['error']
+        return result_box['value']
+
+    def post(self, fn: Callable) -> None:
+        """把 fn 派发到主线程执行，不等待（用于刷新等通知）。"""
+        self._carrier.queued.emit(fn, None)
+
+
 class CommandExecutor:
     """AI 操作执行器"""
+
+    # 这些操作只读不改共享状态，可在工作线程直接跑（省一次线程切换）。
+    # 其余操作（写操作、改选中、刷新）一律派发到主线程，与手动操作串行化。
+    _READONLY_OPS = frozenset({
+        "validate", "info", "search", "conflicts",
+        "get_peripheral", "get_register", "get_field", "list_interrupts",
+    })
 
     def __init__(self, coordinator, main_window=None):
         """
@@ -23,6 +95,8 @@ class CommandExecutor:
         """
         self.coordinator = coordinator
         self.main_window = main_window
+        # 跨线程 GUI 桥（在主线程构造，affinity 正确）
+        self._gui = _GuiBridge()
         self._operation_map = {
             "validate": self._op_validate,
             "info": self._op_info,
@@ -63,6 +137,10 @@ class CommandExecutor:
 
         Returns:
             {"success": bool, "message": str, "data": any}
+
+        线程安全：只读操作（见 _READONLY_OPS）直接在当前线程执行；其余操作
+        若从工作线程调用，整体派发到主线程执行（BlockingQueuedConnection 阻塞等待），
+        与用户的手动操作串行化，避免竞态（"出现两个外设"/选中错乱/闪退）。
         """
         operation = action.get("operation", "")
         params = action.get("params", {})
@@ -75,14 +153,31 @@ class CommandExecutor:
                 "data": None
             }
 
+        def _run() -> Dict[str, Any]:
+            try:
+                return handler(params)
+            except Exception as e:
+                logger.error(f"执行操作 {operation} 失败: {e}", exc_info=True)
+                return {
+                    "success": False,
+                    "message": t("ai.op_failed", error=str(e)),
+                    "data": None,
+                }
+
+        # 只读操作直接跑；若已在主线程（非 AgentLoop 调用），也直接跑避免阻塞自身
+        if operation in self._READONLY_OPS or threading.current_thread() is threading.main_thread():
+            return _run()
+
+        # 写/GUI 操作：派发到主线程，阻塞等待结果（与手动操作串行化）
         try:
-            return handler(params)
+            return self._gui.call_blocking(_run)
         except Exception as e:
-            logger.error(f"执行操作 {operation} 失败: {e}", exc_info=True)
+            # call_blocking 内部异常（如主线程无响应）兜底
+            logger.error(f"派发操作 {operation} 到主线程失败: {e}", exc_info=True)
             return {
                 "success": False,
                 "message": t("ai.op_failed", error=str(e)),
-                "data": None
+                "data": None,
             }
 
     def _get_device_info(self):
@@ -112,14 +207,11 @@ class CommandExecutor:
     def _notify_refresh(self, peripheral_name: Optional[str] = None):
         """通知 UI 刷新。
 
-        CommandExecutor 在 AgentLoop 工作线程里运行，而 state_manager 的
-        _notify_state_change 内部会启动 QTimer、layout_manager 直接操作 QWidget。
-        跨线程操作 GUI 对象（尤其 QTimer.start / QWidget）是未定义行为，批量任务下
-        高频触发可能导致死锁或 Qt 告警刷屏。这里统一用 QTimer.singleShot(0, ...)
-        把所有 GUI 相关调用派发回主线程执行。
+        CommandExecutor 的写操作现在已在主线程执行（见 execute()），故本方法
+        实际也在主线程被调用。但保留通过 _gui 派发的兜底，确保即使将来从其它
+        线程调用也能安全地切到主线程操作 GUI（state_manager 的 QTimer、树视图等）。
+        旧实现用 QTimer.singleShot 在工作线程不可靠（无事件循环），已弃用。
         """
-        from PyQt6.QtCore import QTimer
-
         def _do_refresh():
             try:
                 state_manager = self.coordinator.get_component("state_manager")
@@ -139,7 +231,10 @@ class CommandExecutor:
             except Exception:
                 logger.debug("UI 刷新失败（可忽略）", exc_info=True)
 
-        QTimer.singleShot(0, _do_refresh)
+        if threading.current_thread() is threading.main_thread():
+            _do_refresh()
+        else:
+            self._gui.post(_do_refresh)
 
     # ==================== 只读操作 ====================
 
