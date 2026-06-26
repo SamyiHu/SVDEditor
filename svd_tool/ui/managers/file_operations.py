@@ -211,35 +211,47 @@ class FileOperations(QObject):
     def validate_svd(self):
         """独立的 SVD 验证功能（菜单触发），去重后显示合并结果（支持多文档）"""
         try:
-            # 从UI更新设备信息
-            self.update_device_info_from_ui()
+            # 验证应是只读的纯检查。用 pause/resume_notifications 包裹整个
+            # "同步输入框 + schema 验证 + 冲突检测"计算阶段：避免其间触发的
+            # 状态通知在后续弹出的模态对话框事件循环里集中爆发，导致界面
+            # 闪烁/重绘（#8）。resume 在计算完成后触发一次合并刷新。
+            sm = self.state_manager
+            can_pause = hasattr(sm, 'pause_notifications')
+            if can_pause:
+                sm.pause_notifications()
+            try:
+                # 从UI更新设备信息
+                self.update_device_info_from_ui()
 
-            # 检查是否有多个文档
-            main_win = self.layout_manager.main_window
-            dm = getattr(main_win, 'document_manager', None)
-            if dm and dm.document_count > 1:
-                self._validate_all_documents(dm)
-                return
+                # 检查是否有多个文档
+                main_win = self.layout_manager.main_window
+                dm = getattr(main_win, 'document_manager', None)
+                if dm and dm.document_count > 1:
+                    self._validate_all_documents(dm)
+                    return
 
-            # ===== 1. 执行 CMSIS-SVD Schema 验证 =====
-            validator = SVDSchemaValidator()
-            validator.validate_all(self.state_manager.device_info)
+                # ===== 1. 执行 CMSIS-SVD Schema 验证 =====
+                validator = SVDSchemaValidator()
+                validator.validate_all(self.state_manager.device_info)
 
-            # 过滤掉地址冲突相关的重复项（由 AddressConflictDetector 专门处理）
-            schema_items = [
-                r for r in validator.results
-                if r.category not in self._ADDRESS_CONFLICT_CATEGORIES
-            ]
-            schema_errors = sum(1 for r in schema_items if r.severity.value == "error")
-            schema_warnings = sum(1 for r in schema_items if r.severity.value == "warning")
-            schema_infos = sum(1 for r in schema_items if r.severity.value == "info")
+                # 过滤掉地址冲突相关的重复项（由 AddressConflictDetector 专门处理）
+                schema_items = [
+                    r for r in validator.results
+                    if r.category not in self._ADDRESS_CONFLICT_CATEGORIES
+                ]
+                schema_errors = sum(1 for r in schema_items if r.severity.value == "error")
+                schema_warnings = sum(1 for r in schema_items if r.severity.value == "warning")
+                schema_infos = sum(1 for r in schema_items if r.severity.value == "info")
 
-            # ===== 2. 执行地址冲突检测 =====
-            conflict_results = []
-            main_win = self.layout_manager.main_window
-            if hasattr(main_win, 'conflict_detector') and main_win.conflict_detector:
-                main_win.conflict_detector.detect_all(self.state_manager.device_info)
-                conflict_results = main_win.conflict_detector.conflicts
+                # ===== 2. 执行地址冲突检测 =====
+                conflict_results = []
+                main_win = self.layout_manager.main_window
+                if hasattr(main_win, 'conflict_detector') and main_win.conflict_detector:
+                    main_win.conflict_detector.detect_all(self.state_manager.device_info)
+                    conflict_results = main_win.conflict_detector.conflicts
+            finally:
+                if can_pause:
+                    sm.resume_notifications()
 
             conflict_count = len(conflict_results)
             conflict_errors = sum(1 for c in conflict_results if c.severity.value == "error")
