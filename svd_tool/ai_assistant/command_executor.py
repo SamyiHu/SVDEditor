@@ -204,6 +204,12 @@ class CommandExecutor:
         else:
             execute_fn()
 
+        # 关键：标记当前文档已修改。DocumentManager 的多文档隔离依赖 modified 标志
+        # 决定切换时是否深拷贝（_save_current_document_state）。若不标记，AI 改过的
+        # 文档会被当作"未修改"走浅引用，导致切换后多个文档共享同一 device_info
+        # 引用，表现为"后开的文档覆盖先开的"。
+        self._mark_modified()
+
     def _notify_refresh(self, peripheral_name: Optional[str] = None):
         """通知 UI 刷新。
 
@@ -235,6 +241,12 @@ class CommandExecutor:
             _do_refresh()
         else:
             self._gui.post(_do_refresh)
+
+    def _mark_modified(self) -> None:
+        """标记当前文档已修改（见 _execute_undoable 的说明，用于多文档隔离）。"""
+        dm = self.main_window.document_manager if self.main_window else None
+        if dm:
+            dm.mark_modified()
 
     def begin_batch(self) -> None:
         """开始批量操作：暂停状态变更通知，避免中间状态触发级联刷新
@@ -822,6 +834,7 @@ class CommandExecutor:
         else:
             device.interrupts[name] = irq
         self._notify_refresh()
+        self._mark_modified()
 
         return {"success": True,
                 "message": t("ai.add_irq_done", name=name, value=value,
@@ -878,6 +891,7 @@ class CommandExecutor:
                 del device.interrupts[name]
             device.interrupts[new_name] = updated
         self._notify_refresh()
+        self._mark_modified()
 
         return {"success": True,
                 "message": t("ai.update_irq_done", name=new_name, default="已更新中断 '{name}'"),
@@ -899,6 +913,7 @@ class CommandExecutor:
         else:
             del device.interrupts[name]
         self._notify_refresh()
+        self._mark_modified()
 
         return {"success": True,
                 "message": t("ai.remove_irq_done", name=name, default="已删除中断 '{name}'"),
