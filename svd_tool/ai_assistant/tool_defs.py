@@ -105,6 +105,32 @@ def _build_tool_catalog() -> List[Dict[str, Any]]:
             "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
             "category": "read",
         },
+        {
+            "name": "list_directory",
+            "description": "列出指定文件夹下的 SVD 文件（.svd/.xml），用于批量任务前了解有哪些文件。仅读取目录元信息，不解析内容。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "文件夹绝对路径"},
+                    "recursive": {"type": "boolean", "description": "是否递归子目录，默认 false"},
+                },
+                "required": ["path"],
+            },
+            "category": "read",
+        },
+        {
+            "name": "find_duplicate_svds",
+            "description": "扫描指定文件夹下的 SVD 文件，找出内容重复或外设重叠的文件对。返回重复分组（相同外设名集合 / 完全相同的文件）。用于批量生成后查重。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "文件夹绝对路径"},
+                    "recursive": {"type": "boolean", "description": "是否递归子目录，默认 false"},
+                },
+                "required": ["path"],
+            },
+            "category": "read",
+        },
         # ---------- 写操作工具（结果紧凑回灌 AI） ----------
         {
             "name": "update_device",

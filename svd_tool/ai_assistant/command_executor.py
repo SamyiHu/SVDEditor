@@ -85,6 +85,7 @@ class CommandExecutor:
     _READONLY_OPS = frozenset({
         "validate", "info", "search", "conflicts",
         "get_peripheral", "get_register", "get_field", "list_interrupts",
+        "list_directory", "find_duplicate_svds",
     })
 
     def __init__(self, coordinator, main_window=None):
@@ -102,6 +103,9 @@ class CommandExecutor:
             "info": self._op_info,
             "search": self._op_search,
             "conflicts": self._op_conflicts,
+            # 文件系统只读工具（批量任务用，不依赖当前 device_info）
+            "list_directory": self._op_list_directory,
+            "find_duplicate_svds": self._op_find_duplicate_svds,
             "diff": self._op_diff,
             "jump": self._op_jump,
             # 片段查询工具（function-calling 专用，按需取 SVD 片段）
@@ -787,6 +791,147 @@ class CommandExecutor:
             })
         data = {"total": len(irq_list), "interrupts": irq_list}
         return {"success": True, "message": t("ai.list_irq_done", count=len(irq_list)), "data": data}
+
+    # ==================== 文件系统只读工具（批量任务用） ====================
+    # 以下工具让 AI 能扫描文件夹、对比文件，用于批量生成后的查重。
+    # 不依赖当前 device_info，可安全在工作线程执行（已在 _READONLY_OPS 中）。
+    # 安全边界：只读，不写不删；路径不存在或无权限时返回友好错误而非抛异常。
+
+    def _op_list_directory(self, params: Dict) -> Dict[str, Any]:
+        """列出文件夹下的 SVD 文件（.svd/.xml）"""
+        import os
+        path = str(params.get("path", "")).strip()
+        if not path:
+            return {"success": False, "message": t("ai.fs_no_path", default="未指定文件夹路径"), "data": None}
+        if not os.path.isdir(path):
+            return {"success": False,
+                    "message": t("ai.fs_not_dir", path=path, default="路径不存在或不是文件夹: {path}"),
+                    "data": None}
+        recursive = bool(params.get("recursive", False))
+        exts = (".svd", ".xml")
+
+        files = []
+        try:
+            if recursive:
+                for root, _dirs, names in os.walk(path):
+                    for nm in names:
+                        if nm.lower().endswith(exts):
+                            fp = os.path.join(root, nm)
+                            files.append(self._file_meta(fp))
+            else:
+                for nm in os.listdir(path):
+                    if nm.lower().endswith(exts):
+                        fp = os.path.join(path, nm)
+                        if os.path.isfile(fp):
+                            files.append(self._file_meta(fp))
+        except PermissionError:
+            return {"success": False, "message": t("ai.fs_no_perm", path=path, default="无权限访问: {path}"), "data": None}
+        except Exception as e:
+            return {"success": False, "message": t("ai.fs_err", error=str(e), default="读取目录失败: {error}"), "data": None}
+
+        msg = t("ai.fs_list_done", count=len(files), path=os.path.basename(path),
+                default="在 {path} 找到 {count} 个 SVD/XML 文件")
+        return {"success": True, "message": msg,
+                "data": {"path": path, "count": len(files), "files": files}}
+
+    @staticmethod
+    def _file_meta(fp: str) -> Dict[str, Any]:
+        import os
+        try:
+            st = os.stat(fp)
+            return {"name": os.path.basename(fp), "path": fp,
+                    "size": st.st_size, "modified": int(st.st_mtime)}
+        except OSError:
+            return {"name": os.path.basename(fp), "path": fp, "size": -1, "modified": 0}
+
+    def _op_find_duplicate_svds(self, params: Dict) -> Dict[str, Any]:
+        """扫描文件夹，找出外设名集合重复或内容完全相同的 SVD 文件对。
+
+        查重策略（两层）：
+        1. 完全相同：文件字节内容一致（md5）→ 一定是重复
+        2. 外设重叠：两个文件的外设名集合高度重合（Jaccard>=0.8）→ 疑似重复
+        """
+        import os
+        path = str(params.get("path", "")).strip()
+        if not path or not os.path.isdir(path):
+            return {"success": False, "message": t("ai.fs_no_path", default="未指定有效文件夹路径"), "data": None}
+        recursive = bool(params.get("recursive", False))
+        exts = (".svd", ".xml")
+
+        # 收集文件
+        file_paths = []
+        try:
+            if recursive:
+                for root, _dirs, names in os.walk(path):
+                    for nm in names:
+                        if nm.lower().endswith(exts):
+                            file_paths.append(os.path.join(root, nm))
+            else:
+                for nm in os.listdir(path):
+                    fp = os.path.join(path, nm)
+                    if os.path.isfile(fp) and nm.lower().endswith(exts):
+                        file_paths.append(fp)
+        except Exception as e:
+            return {"success": False, "message": t("ai.fs_err", error=str(e), default="读取目录失败: {error}"), "data": None}
+
+        if len(file_paths) < 2:
+            return {"success": True,
+                    "message": t("ai.dup_too_few", default="文件不足 2 个，无需查重"),
+                    "data": {"path": path, "exact": [], "overlapping": [], "scanned": len(file_paths)}}
+
+        # 逐文件解析外设名集合 + 算 md5
+        from svd_tool.core.svd_parser import SVDParser
+        import hashlib
+        parser = SVDParser()
+        info = []  # [{path, periphs:set, md5}]
+        failures = []
+        for fp in file_paths:
+            try:
+                with open(fp, "rb") as f:
+                    md5 = hashlib.md5(f.read()).hexdigest()
+                dev = parser.parse_file(fp)
+                periphs = set(dev.peripherals.keys())
+                info.append({"path": fp, "name": os.path.basename(fp), "periphs": periphs, "md5": md5})
+            except Exception as e:
+                failures.append({"path": fp, "error": str(e)})
+
+        # 1. 完全相同（同 md5）
+        by_md5: Dict[str, list] = {}
+        for it in info:
+            by_md5.setdefault(it["md5"], []).append(it["path"])
+        exact = [{"md5": k, "files": v} for k, v in by_md5.items() if len(v) > 1]
+
+        # 2. 外设重叠（Jaccard >= 0.8）
+        overlapping = []
+        n = len(info)
+        for i in range(n):
+            for j in range(i + 1, n):
+                a, b = info[i], info[j]
+                if a["md5"] == b["md5"]:
+                    continue  # 已在 exact 里
+                pa, pb = a["periphs"], b["periphs"]
+                if not pa or not pb:
+                    continue
+                inter = len(pa & pb)
+                union = len(pa | pb)
+                if union == 0:
+                    continue
+                jaccard = inter / union
+                if jaccard >= 0.8:
+                    overlapping.append({
+                        "file_a": a["path"], "file_b": b["path"],
+                        "jaccard": round(jaccard, 3),
+                        "common_periphs": sorted(pa & pb)[:20],
+                        "common_count": inter,
+                    })
+
+        total_dup = len(exact) + len(overlapping)
+        msg = t("ai.dup_result", scanned=len(info), dups=total_dup,
+                default="扫描 {scanned} 个文件，发现 {dups} 组疑似重复")
+        return {"success": True, "message": msg,
+                "data": {"path": path, "scanned": len(info),
+                         "exact": exact, "overlapping": overlapping,
+                         "parse_failures": failures}}
 
     # ==================== 中断操作（增删改，复用 state_manager） ====================
     # 中断比寄存器/位域多一层复杂性：device.interrupts 与各 peripheral.interrupts
