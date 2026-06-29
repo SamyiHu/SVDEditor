@@ -136,12 +136,13 @@ class DocumentActionsMixin:
         if irq_table:
             doc.irq_table_scroll = irq_table.verticalScrollBar().value()
 
-        # 仅在数据被修改时才深拷贝（大幅减少切换文档时的开销）
-        if doc.modified or doc.device_info is None:
-            doc.device_info = copy.deepcopy(self.state_manager.device_info)
-        else:
-            # 未修改时直接引用（文档切换时不会修改 device_info）
-            doc.device_info = self.state_manager.device_info
+        # 始终深拷贝：保证每个文档的 device_info 是独立副本，彻底隔离。
+        # 旧实现用 doc.modified 决定深拷贝/浅引用来省一次拷贝，但 state_manager 的
+        # 写操作（add/update/delete peripheral/register 等）并不总调 mark_modified，
+        # 导致 modified 标志不可靠，浅引用会让多个文档共享同一 device_info 对象，
+        # 表现为「保存 doc1 却写入 doc2 数据」「切换后内容串扰」。
+        # 切换时一次深拷贝的代价（大型 SVD 约几十 ms）远小于数据丢失风险。
+        doc.device_info = copy.deepcopy(self.state_manager.device_info)
 
         # 保存命令历史（每个文档独立维护撤销/重做栈）
         doc.command_history = self.state_manager.command_history
@@ -162,14 +163,9 @@ class DocumentActionsMixin:
         self.state_manager.pause_notifications()
 
         try:
-            # 恢复设备数据
-            # 如果文档未修改，doc.device_info 就是 state_manager 原来的引用，可以直接使用
-            # 如果文档已修改，doc.device_info 是之前保存时的深拷贝，需要再拷贝一份保证隔离
-            if doc.modified:
-                self.state_manager.device_info = copy.deepcopy(doc.device_info)
-            else:
-                # 未修改时直接使用引用（_save_current_document_state 保证了数据一致性）
-                self.state_manager.device_info = doc.device_info
+            # 恢复设备数据：始终深拷贝，保证 state_manager 与 doc 的 device_info 完全独立。
+            # 这样后续对 state_manager 的编辑不会意外改到 doc 的副本（根治多文档串扰）。
+            self.state_manager.device_info = copy.deepcopy(doc.device_info)
 
             # 恢复命令历史（每个文档独立维护撤销/重做栈）
             if doc.command_history is not None:
