@@ -1038,7 +1038,21 @@ class CommandExecutor:
 
         # 其它可改属性（改名已单独处理，这里不动 name）
         old_values = {}
-        updatable_fields = ["description", "base_address", "group_name", "display_name"]
+        updatable_fields = ["description", "base_address", "group_name", "display_name", "derived_from"]
+
+        # derivedFrom 校验：派生目标必须是已存在的外设，且不能形成自引用
+        if "derived_from" in updates:
+            df = str(updates["derived_from"]).strip()
+            if df == effective_name:
+                return {"success": False,
+                        "message": t("ai.derived_self", name=effective_name,
+                                     default="外设不能继承自己"),
+                        "data": None}
+            if df and df not in device.peripherals:
+                return {"success": False,
+                        "message": t("ai.periph_not_found", name=df), "data": None}
+            updates = dict(updates)  # 避免改到调用方
+            updates["derived_from"] = df
 
         for key in updatable_fields:
             if key in updates:
@@ -1188,7 +1202,21 @@ class CommandExecutor:
 
         # 其它可改属性（改名已单独处理，这里不动 name）
         old_values = {}
-        updatable_fields = ["description", "offset", "size", "access", "reset_value", "display_name"]
+        updatable_fields = ["description", "offset", "size", "access", "reset_value", "display_name", "derived_from"]
+
+        # derivedFrom 校验：派生目标必须是同外设下已存在的寄存器，且不能自引用
+        if "derived_from" in updates:
+            df = str(updates["derived_from"]).strip()
+            cur_name = new_name if rename_done else reg_name
+            if df == cur_name:
+                return {"success": False,
+                        "message": t("ai.derived_self", name=cur_name,
+                                     default="寄存器不能继承自己"),
+                        "data": None}
+            if df and df not in periph.registers:
+                return {"success": False, "message": t("ai.reg_not_found", name=df), "data": None}
+            updates = dict(updates)
+            updates["derived_from"] = df
 
         for key in updatable_fields:
             if key in updates:
@@ -1351,7 +1379,21 @@ class CommandExecutor:
 
         # 其它可改属性（改名已单独处理，这里不动 name）
         old_values = {}
-        updatable_fields = ["description", "bit_offset", "bit_width", "access", "reset_value", "display_name"]
+        updatable_fields = ["description", "bit_offset", "bit_width", "access", "reset_value", "display_name", "derived_from"]
+
+        # derivedFrom 校验：派生目标必须是同寄存器下已存在的位域，且不能自引用
+        if "derived_from" in updates:
+            df = str(updates["derived_from"]).strip()
+            cur_name = new_name if rename_done else field_name
+            if df == cur_name:
+                return {"success": False,
+                        "message": t("ai.derived_self", name=cur_name,
+                                     default="位域不能继承自己"),
+                        "data": None}
+            if df and df not in reg.fields:
+                return {"success": False, "message": t("ai.field_not_found", name=df), "data": None}
+            updates = dict(updates)
+            updates["derived_from"] = df
 
         for key in updatable_fields:
             if key in updates:

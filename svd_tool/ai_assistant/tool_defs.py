@@ -134,7 +134,7 @@ def _build_tool_catalog() -> List[Dict[str, Any]]:
         },
         {
             "name": "update_peripheral",
-            "description": "更新外设属性。updates 可含 name(改名)、description、base_address、group_name、display_name。",
+            "description": "更新外设属性。updates 可含 name(改名)、description、base_address、group_name、display_name、derived_from(继承自哪个外设，设为空串清除继承)。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -175,7 +175,7 @@ def _build_tool_catalog() -> List[Dict[str, Any]]:
         },
         {
             "name": "update_register",
-            "description": "更新寄存器属性。updates 可含 name(改名)、description、offset、size、access、reset_value、display_name。",
+            "description": "更新寄存器属性。updates 可含 name(改名)、description、offset、size、access、reset_value、display_name、derived_from(继承自同外设的哪个寄存器，设为空串清除继承)。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -220,7 +220,7 @@ def _build_tool_catalog() -> List[Dict[str, Any]]:
         },
         {
             "name": "update_field",
-            "description": "更新位域属性。updates 可含 name(改名)、description、bit_offset、bit_width、access、reset_value、display_name。",
+            "description": "更新位域属性。updates 可含 name(改名)、description、bit_offset、bit_width、access、reset_value、display_name、derived_from(继承自同寄存器的哪个位域，设为空串清除继承)。",
             "parameters": {
                 "type": "object",
                 "properties": {
