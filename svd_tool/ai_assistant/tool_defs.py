@@ -343,6 +343,20 @@ def _build_tool_catalog() -> List[Dict[str, Any]]:
             "category": "ui",
         },
         {
+            "name": "diff_peripheral",
+            "description": "只比较单个外设在当前 SVD 与另一文件/文档之间的差异（寄存器/位域增删改）。比整文件对比更聚焦，不弹窗，只返回文本结果。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "peripheral": {"type": "string", "description": "要对比的外设名"},
+                    "compare_with": {"type": "string", "description": "已打开文档名（模糊匹配）"},
+                    "file_path": {"type": "string", "description": "外部 SVD 文件路径"},
+                },
+                "required": ["peripheral"],
+            },
+            "category": "read",
+        },
+        {
             "name": "switch_document",
             "description": "切换到另一个已打开的文档。",
             "parameters": {

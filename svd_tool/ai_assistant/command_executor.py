@@ -85,7 +85,7 @@ class CommandExecutor:
     _READONLY_OPS = frozenset({
         "validate", "info", "search", "conflicts",
         "get_peripheral", "get_register", "get_field", "list_interrupts",
-        "list_directory", "find_duplicate_svds",
+        "list_directory", "find_duplicate_svds", "diff_peripheral",
     })
 
     def __init__(self, coordinator, main_window=None):
@@ -107,6 +107,7 @@ class CommandExecutor:
             "list_directory": self._op_list_directory,
             "find_duplicate_svds": self._op_find_duplicate_svds,
             "diff": self._op_diff,
+            "diff_peripheral": self._op_diff_peripheral,
             "jump": self._op_jump,
             # 片段查询工具（function-calling 专用，按需取 SVD 片段）
             "get_peripheral": self._op_get_peripheral,
@@ -515,6 +516,79 @@ class CommandExecutor:
                 QTimer.singleShot(100, lambda: self._show_diff_dialog(device, other_device, dm))
 
             return result
+        except Exception as e:
+            return {"success": False, "message": t("ai.diff_fail", error=str(e)), "data": None}
+
+    def _op_diff_peripheral(self, params: Dict) -> Dict[str, Any]:
+        """比较单个外设在当前 SVD 与另一个文件/文档之间的差异。
+
+        细分需求：不必整文件对比，只关注某个外设（寄存器/位域增删改）。
+        不弹可视化对话框（AI 场景只需文本结果）。
+        """
+        device = self._get_device_info()
+        if not device or not device.name:
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
+
+        peripheral = params.get("peripheral", "").strip()
+        if not peripheral:
+            return {"success": False,
+                    "message": t("ai.diff_periph_no_name", default="未指定要对比的外设名"), "data": None}
+
+        # 解析另一侧（复用 _op_diff 的文档/文件解析逻辑）
+        other_device = None
+        other_name = ""
+        compare_with = params.get("compare_with", "").strip()
+        if compare_with or (not params.get("file_path") and not params.get("file")):
+            other_device, other_name = self._resolve_other_device(compare_with)
+            if other_device is None:
+                open_docs = self._get_open_documents_info()
+                if not open_docs:
+                    return {"success": False, "message": t("ai.diff_only_one"), "data": None}
+                return {"success": False, "message": t("ai.diff_not_found", docs=', '.join(open_docs)),
+                        "data": {"open_documents": open_docs}}
+
+        if other_device is None:
+            file_path = params.get("file_path", "") or params.get("file", "")
+            if isinstance(file_path, str):
+                file_path = file_path.strip()
+            if not file_path:
+                return {"success": False, "message": t("ai.diff_no_path"), "data": None}
+            import os
+            if not os.path.isfile(file_path):
+                return {"success": False, "message": t("ai.diff_file_not_found", path=file_path), "data": None}
+            try:
+                from svd_tool.core.svd_parser import SVDParser
+                other_device = SVDParser().parse_file(file_path)
+                other_name = os.path.basename(file_path)
+            except Exception as e:
+                return {"success": False, "message": t("ai.diff_parse_fail", error=str(e)), "data": None}
+
+        try:
+            from svd_tool.core.svd_differ import SVDDiffer
+            differ = SVDDiffer()
+            diffs = differ.diff_peripheral(device, other_device, peripheral)
+
+            if not diffs:
+                return {"success": True,
+                        "message": t("ai.diff_periph_identical", name=peripheral, a=device.name, b=other_name,
+                                     default="外设 '{name}' 在 {a} 与 {b} 中完全一致"),
+                        "data": {"peripheral": peripheral, "total_changes": 0, "diffs": []}}
+
+            summary = differ.generate_summary(diffs)
+            diff_list = []
+            total_changes = 0
+            for d in diffs:
+                count = d.count_changes
+                total_changes += count
+                diff_list.append({"path": d.path, "type": d.diff_type.name, "changes": count})
+
+            return {"success": True,
+                    "message": t("ai.diff_periph_result", name=peripheral, a=device.name, b=other_name,
+                                 changes=total_changes,
+                                 default="外设 '{name}' 对比 {a} vs {b}: {changes} 处差异"),
+                    "data": {"peripheral": peripheral, "source": device.name, "target": other_name,
+                             "total_changes": total_changes, "diffs": diff_list,
+                             "summary": summary[:2000] if summary else ""}}
         except Exception as e:
             return {"success": False, "message": t("ai.diff_fail", error=str(e)), "data": None}
 

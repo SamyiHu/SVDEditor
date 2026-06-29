@@ -200,7 +200,12 @@ def cmd_diff(args):
     differ.ignore_display_name = args.ignore_display_name
     differ.ignore_reset_value = args.ignore_reset_value
 
-    diffs = differ.diff(device_old, device_new)
+    # 单外设对比模式：只比较指定的外设（CLI/AI 细分需求）
+    periph = getattr(args, "peripheral", None)
+    if periph:
+        diffs = differ.diff_peripheral(device_old, device_new, periph)
+    else:
+        diffs = differ.diff(device_old, device_new)
 
     if args.json:
         result = {
@@ -209,6 +214,8 @@ def cmd_diff(args):
             "changes": [d.to_dict() for d in diffs],
             "total_changes": sum(d.count_changes for d in diffs),
         }
+        if periph:
+            result["peripheral"] = periph
         _output_json(result, args.output)
         if result["total_changes"] > 0 and args.strict:
             sys.exit(1)
@@ -216,10 +223,15 @@ def cmd_diff(args):
 
     # 文本模式
     if not diffs:
-        print("✅ 两个 SVD 文件完全一致，没有差异。")
+        if periph:
+            print(f"✅ 外设 '{periph}' 在两个文件中完全一致，没有差异。")
+        else:
+            print("✅ 两个 SVD 文件完全一致，没有差异。")
         return
 
     summary_text = differ.generate_summary(diffs)
+    if periph:
+        print(f"=== 外设对比: {periph} ===")
     print(summary_text)
 
     if args.output:
@@ -1030,6 +1042,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_diff.add_argument("--ignore-description", action="store_true", help="比较时忽略描述字段")
     p_diff.add_argument("--ignore-display-name", action="store_true", help="比较时忽略显示名称")
     p_diff.add_argument("--ignore-reset-value", action="store_true", help="比较时忽略复位值")
+    p_diff.add_argument("--peripheral", "-p", help="只比较指定的单个外设（单外设对比模式）")
 
     # ---------- info ----------
     p_info = subparsers.add_parser(
