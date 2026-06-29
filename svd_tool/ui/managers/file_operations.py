@@ -113,15 +113,25 @@ class FileOperations(QObject):
     def save_svd_file_impl(self, force_save_as=False):
         """保存SVD文件实现"""
         try:
-            # 获取保存路径
+            # 保存路径优先取当前活动文档的 file_path（每个文档独立），
+            # 而非全局的 current_file_path（旧实现不随文档切换变化，导致两个 bug：
+            # 1. 打开已有文件仍弹"另存为"；2. 关闭后打开另一文件，保存还用旧路径/旧名覆盖）
+            main_win = self.layout_manager.main_window
+            dm = getattr(main_win, 'document_manager', None)
+            active_doc = dm.active_document if dm else None
+            doc_file_path = active_doc.file_path if active_doc else None
+
             file_path = None
-            if not force_save_as and self.current_file_path:
-                file_path = self.current_file_path
+            if not force_save_as and doc_file_path:
+                # 普通保存：用文档自身的路径，不弹窗
+                file_path = doc_file_path
             else:
+                # 另存为，或文档没有路径（新建未保存）：弹对话框
+                default_name = doc_file_path if doc_file_path else ""
                 file_path, _ = QFileDialog.getSaveFileName(
                     self.layout_manager.main_window,
                     t("dialog.save_svd"),
-                    "",
+                    default_name,
                     "SVD (*.svd);;All (*.*)"
                 )
 
@@ -144,8 +154,13 @@ class FileOperations(QObject):
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(svd_xml)
 
-            # 更新状态
+            # 更新状态：把路径写回当前活动文档（多文档隔离的关键）
             self.current_file_path = file_path
+            if dm and active_doc:
+                dm.save_document(active_doc.id, file_path=file_path)
+            elif dm and not active_doc:
+                # 兜底：通过全局 current_file_path 找文档
+                pass
             self.layout_manager.update_status(t("status.saved", path=file_path))
             self.file_saved.emit(file_path)
             QMessageBox.information(
