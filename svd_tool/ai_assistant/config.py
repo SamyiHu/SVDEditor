@@ -39,6 +39,12 @@ class AIConfig:
     # >0 = 每跑完这么多轮就弹框问用户是否继续（防失控）。
     max_tool_iterations: int = 0
 
+    # 上下文压缩配置（控制批量任务中 tool 结果的体积，防止上下文膨胀）：
+    # compact_keep_groups: 最近多少"组"tool 调用保持完整，更早的会被压缩
+    # compact_max_chars: 较早 tool 结果超过此字符数则截断保概要。0=禁用压缩（全量保留）
+    compact_keep_groups: int = 6
+    compact_max_chars: int = 400
+
     # 自定义系统提示词补充
     system_prompt_extra: str = ""
 

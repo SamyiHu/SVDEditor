@@ -143,6 +143,14 @@ class AIAssistantController(QObject):
         # 构建完整消息列表
         messages = self._build_messages()
 
+        # 上下文压缩提示：若本次请求压缩了历史 tool 结果，告知用户（可见性，#6）
+        truncated = getattr(self, "_last_compact_count", 0)
+        if truncated > 0 and self.panel:
+            self.panel.append_system_message(t(
+                "ai.compact_hint", n=truncated,
+                default="ℹ 已自动压缩 {n} 条较早的工具结果，以控制上下文长度。"
+            ))
+
         # 启动 AgentLoop（启用工具）
         self._worker = AgentLoop(
             backend=self.backend,
@@ -214,7 +222,13 @@ class AIAssistantController(QObject):
 
         # 批量任务（如一次生成多个 SVD）会累积大量 tool 结果，导致上下文膨胀、
         # 推理变慢甚至超时。对较早的 tool 消息内容做裁剪（保留概要），最近若干轮保持完整。
-        messages = _compact_tool_results(messages)
+        # 压缩配置来自 AIConfig（用户可见、可调）；记录被压缩条数供 _start_agent_loop 提示。
+        messages, truncated = _compact_tool_results(
+            messages,
+            keep_full_groups=self.config.compact_keep_groups,
+            max_tool_content_chars=self.config.compact_max_chars,
+        )
+        self._last_compact_count = truncated
 
         return messages
 
@@ -408,7 +422,7 @@ def _collect_tool_call_ids(messages: list) -> set:
 
 def _compact_tool_results(messages: list,
                           keep_full_groups: int = 6,
-                          max_tool_content_chars: int = 400) -> list:
+                          max_tool_content_chars: int = 400):
     """压缩较早的 tool 结果内容，控制上下文体积。
 
     批量任务（一次生成多个 SVD 文档）会让 messages 里堆积大量 tool 结果 JSON，
@@ -422,10 +436,19 @@ def _compact_tool_results(messages: list,
       让模型仍能看到"这个工具调用过、大致结果"，但不必携带完整 JSON。
     - assistant 的 tool_calls（调用意图）始终完整保留——模型需要知道它做过什么。
 
+    max_tool_content_chars=0 时禁用压缩（全量保留）。
+
     仅作用于发请求的副本，不改 chat_history。
+
+    Returns:
+        (压缩后的 messages, 被截断的 tool 消息条数)
     """
     if not messages:
-        return messages
+        return messages, 0
+
+    # 禁用压缩
+    if max_tool_content_chars <= 0:
+        return messages, 0
 
     # 划分组：[(start, end), ...]
     groups: list = []
@@ -446,10 +469,11 @@ def _compact_tool_results(messages: list,
 
     # 早于"最近 keep_full_groups 组"的才压缩
     if len(groups) <= keep_full_groups:
-        return messages
+        return messages, 0
     cutoff = len(groups) - keep_full_groups  # 前 cutoff 组需要压缩
 
     out: list = []
+    truncated = 0
     for gi, (start, end) in enumerate(groups):
         for idx in range(start, end + 1):
             m = messages[idx]
@@ -460,6 +484,7 @@ def _compact_tool_results(messages: list,
                     new_m["content"] = (content[:max_tool_content_chars] +
                                         "\n...[已截断，仅保留概要]")
                     out.append(new_m)
+                    truncated += 1
                     continue
             out.append(m)
-    return out
+    return out, truncated

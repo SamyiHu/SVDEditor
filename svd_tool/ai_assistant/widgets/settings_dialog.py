@@ -197,6 +197,14 @@ class AISettingsDialog(QDialog):
             "ai.settings.tool_iter_hint", default="0=无限制，或填每轮预算（如 50）"))
         form.addRow(t("ai.settings.tool_iter", default="工具调用预算:"), self._tool_iter_edit)
 
+        # 上下文压缩 — 较早 tool 结果的最大字符数（0=禁用压缩）
+        self._compact_chars_edit = QLineEdit("400")
+        self._compact_chars_edit.setValidator(QIntValidator(0, 10000))
+        self._compact_chars_edit.setPlaceholderText(t(
+            "ai.settings.compact_chars_hint",
+            default="0=禁用压缩，或填如 400。超出此长度的较早工具结果会被截断"))
+        form.addRow(t("ai.settings.compact_chars", default="上下文压缩:"), self._compact_chars_edit)
+
         # 自定义系统提示词
         self._system_prompt_edit = QPlainTextEdit()
         self._system_prompt_edit.setMaximumHeight(80)
@@ -233,6 +241,7 @@ class AISettingsDialog(QDialog):
         self._timeout_edit.setText(str(self.config.request_timeout))
         self._history_edit.setText(str(self.config.max_history_messages))
         self._tool_iter_edit.setText(str(self.config.max_tool_iterations))
+        self._compact_chars_edit.setText(str(self.config.compact_max_chars))
         self._system_prompt_edit.setPlainText(self.config.system_prompt_extra)
 
     def _safe_float(self, text: str, default: float, lo: float, hi: float) -> float:
@@ -264,6 +273,7 @@ class AISettingsDialog(QDialog):
             max_history_messages=self._safe_int(self._history_edit.text(), 50, 10, 200),
             request_timeout=self._safe_int(self._timeout_edit.text(), 60, 10, 600),
             max_tool_iterations=self._safe_int(self._tool_iter_edit.text(), 0, 0, 9999),
+            compact_max_chars=self._safe_int(self._compact_chars_edit.text(), 400, 0, 10000),
             system_prompt_extra=self._system_prompt_edit.toPlainText().strip(),
         )
 
