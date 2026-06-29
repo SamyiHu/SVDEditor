@@ -61,7 +61,15 @@ class _GuiBridge:
 
         工作线程用 threading.Event 等待主线程执行完毕（而非 BlockingQueuedConnection，
         后者在嵌套场景会触发 Qt 死锁检测）。
+
+        关键：若当前已在主线程（如 execute() 已把操作派发到主线程，操作内部又
+        调 call_blocking，如保存时的 _confirm_overwrite），则直接同步执行 fn。
+        否则 QueuedConnection 会把 fn 排到主线程事件队列，但主线程此刻正执行
+        外层 fn（事件循环没跑），fn 永远得不到执行 → Event 永不 set → 死锁。
         """
+        if threading.current_thread() is threading.main_thread():
+            return fn()
+
         result_box = {'value': None, 'error': None, 'event': threading.Event()}
         self._carrier.run.emit(fn, result_box)
         # QueuedConnection 下 emit 立即返回；用 Event 阻塞等待主线程执行完
@@ -72,6 +80,9 @@ class _GuiBridge:
 
     def post(self, fn: Callable) -> None:
         """把 fn 派发到主线程执行，不等待（用于刷新等通知）。"""
+        if threading.current_thread() is threading.main_thread():
+            fn()
+            return
         self._carrier.run.emit(fn, None)
 
 
