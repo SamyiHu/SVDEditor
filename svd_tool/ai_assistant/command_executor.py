@@ -19,11 +19,14 @@ class _GuiBridge:
     CommandExecutor 在 AgentLoop 工作线程中被调用，但写操作（增删改）和涉及
     选中/刷新的操作会修改主线程持有的共享状态（device_info、当前选中项、视图）。
     若工作线程与主线程的手动操作交错，会产生竞态：表现为"出现两个外设"、
-    "显示是旧的"、选中错乱甚至闪退。
+    "显示还是旧的"、选中错乱甚至闪退。
 
-    本桥用两个 QObject 信号分别处理"阻塞等待"和"不等待"两种派发：
-    - call_blocking(fn): 工作线程阻塞，直到 fn 在主线程执行完毕，返回其返回值
-      或重新抛出其异常。用 BlockingQueuedConnection，与用户手动点击天然串行化。
+    本桥用 QObject 信号把可调用对象派发到主线程执行：
+    - call_blocking(fn): 工作线程用 threading.Event 阻塞等待，直到 fn 在主线程
+      执行完毕，返回其返回值或重新抛出其异常。注意：不使用 BlockingQueuedConnection
+      （它会在"主线程执行期间又需要工作线程响应"时触发 Qt 死锁检测，
+      报 "Dead lock detected while activating a BlockingQueuedConnection"），
+      改用 QueuedConnection + Event 等待，规避该陷阱。
     - post(fn): 不等待，用于通知类操作（如刷新）。
     """
 
@@ -31,17 +34,12 @@ class _GuiBridge:
         from PyQt6.QtCore import QObject, pyqtSignal, Qt
 
         class _Carrier(QObject):
-            # 阻塞通道：携带 (callable, 结果盒)
-            blocking = pyqtSignal(object, object)
-            # 非阻塞通道：携带 (callable, 结果盒)
-            queued = pyqtSignal(object, object)
+            # 单一通道：携带 (callable, 结果盒)。连接类型在 emit 时按线程决定。
+            run = pyqtSignal(object, object)
 
         self._carrier = _Carrier()
-        # 阻塞通道用 BlockingQueuedConnection（跨线程时阻塞 emit 的线程）
-        self._carrier.blocking.connect(
-            self._on_run, Qt.ConnectionType.BlockingQueuedConnection)
-        # 非阻塞通道用 QueuedConnection（跨线程时排队，不阻塞）
-        self._carrier.queued.connect(
+        # 用 QueuedConnection（跨线程时排队到主线程事件循环，不阻塞 emit 方）
+        self._carrier.run.connect(
             self._on_run, Qt.ConnectionType.QueuedConnection)
 
     def _on_run(self, fn, result_box):
@@ -61,12 +59,12 @@ class _GuiBridge:
     def call_blocking(self, fn: Callable) -> Any:
         """把 fn 派发到主线程执行，阻塞等待结果（或重新抛出其异常）。
 
-        工作线程调用时，BlockingQueuedConnection 会阻塞本线程，直到主线程
-        事件循环处理完该信号——这与用户的手动点击天然串行，杜绝竞态。
+        工作线程用 threading.Event 等待主线程执行完毕（而非 BlockingQueuedConnection，
+        后者在嵌套场景会触发 Qt 死锁检测）。
         """
         result_box = {'value': None, 'error': None, 'event': threading.Event()}
-        self._carrier.blocking.emit(fn, result_box)
-        # BlockingQueuedConnection 下 emit 返回时主线程已执行完；保险起见再 wait
+        self._carrier.run.emit(fn, result_box)
+        # QueuedConnection 下 emit 立即返回；用 Event 阻塞等待主线程执行完
         result_box['event'].wait(timeout=30)
         if result_box['error'] is not None:
             raise result_box['error']
@@ -74,7 +72,7 @@ class _GuiBridge:
 
     def post(self, fn: Callable) -> None:
         """把 fn 派发到主线程执行，不等待（用于刷新等通知）。"""
-        self._carrier.queued.emit(fn, None)
+        self._carrier.run.emit(fn, None)
 
 
 class CommandExecutor:
