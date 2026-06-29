@@ -1710,6 +1710,31 @@ class CommandExecutor:
 
         return {"success": False, "message": t("ai.doc_not_found", hint=target or name_hint), "data": None}
 
+    def _confirm_overwrite(self, save_path: str, doc_name: str) -> bool:
+        """保存到已存在的文件前弹确认框（主线程），返回是否允许覆盖。
+
+        通过 _gui.call_blocking 派发到主线程弹 QMessageBox，工作线程阻塞等待。
+        用户拒绝则返回 False，调用方应取消保存。
+        """
+        import os
+        if not os.path.isfile(save_path):
+            return True  # 文件不存在，无需确认
+
+        def _ask() -> bool:
+            from PyQt6.QtWidgets import QMessageBox
+            parent = self.main_window if self.main_window else None
+            ret = QMessageBox.warning(
+                parent,
+                t("ai.save_overwrite_title", default="确认覆盖文件"),
+                t("ai.save_overwrite_text", path=save_path, doc=doc_name,
+                  default="AI 即将把文档 '{doc}' 保存到已存在的文件：\n{path}\n\n确认覆盖？"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            return ret == QMessageBox.StandardButton.Yes
+
+        return self._gui.call_blocking(_ask)
+
     def _op_save_document(self, params: Dict) -> Dict[str, Any]:
         """保存指定文档（默认保存当前文档）"""
         if not self.main_window or not hasattr(self.main_window, 'document_manager'):
@@ -1740,6 +1765,12 @@ class CommandExecutor:
             save_path = params.get("file_path", "").strip() or doc.file_path
             if not save_path:
                 return {"success": False, "message": t("ai.doc_no_path", name=doc.display_name), "data": None}
+
+            # 覆盖已存在文件前确认（防误覆盖，#用户反馈）
+            if not self._confirm_overwrite(save_path, doc.display_name):
+                return {"success": False,
+                        "message": t("ai.save_cancelled", default="用户取消了保存（拒绝覆盖）"),
+                        "data": {"doc_id": target_id, "path": save_path, "cancelled": True}}
 
             with open(save_path, 'w', encoding='utf-8') as f:
                 f.write(svd_xml)
@@ -1794,6 +1825,11 @@ class CommandExecutor:
                 failed.append({"doc_id": doc_id, "name": doc.display_name, "error": t("ai.doc_no_path_batch")})
                 continue
             try:
+                # 覆盖已存在文件前确认（每个文档单独确认，拒绝则跳过该文档）
+                if not self._confirm_overwrite(save_path, doc.display_name):
+                    failed.append({"doc_id": doc_id, "name": doc.display_name,
+                                   "error": t("ai.save_cancelled", default="用户取消了保存")})
+                    continue
                 generator = SVDGenerator(doc.device_info, skip_derived_registers=getattr(self.main_window, 'skip_derived_registers', True))
                 svd_xml = generator.generate()
                 with open(save_path, 'w', encoding='utf-8') as f:
