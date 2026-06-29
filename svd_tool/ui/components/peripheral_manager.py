@@ -720,6 +720,10 @@ class PeripheralManager(QObject):
         """选中指定外设（公开方法）"""
         self._select_peripheral_in_tree(periph_name)
         self.state_manager.set_selection(peripheral=periph_name, element_type='peripheral')
+        # 与 select_register/select_field 对齐：emit selection_changed，
+        # 否则右侧详情面板（_event_handlers.on_selection_changed）不会刷新，
+        # 表现为 AI/外部调 select_peripheral 跳转"用不了"（面板不跟着变）。
+        self.selection_changed.emit(periph_name, None, None)
 
     def select_register(self, periph_name: str, reg_name: str):
         """选中指定寄存器"""

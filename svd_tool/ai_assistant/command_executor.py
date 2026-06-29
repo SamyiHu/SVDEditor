@@ -696,6 +696,20 @@ class CommandExecutor:
         except Exception as e:
             return {"success": False, "message": t("ai.jump_fail", error=str(e)), "data": None}
 
+        # 验证选中是否真正生效（树模型可能因数据脱节而静默失败）
+        try:
+            cur_sel = self.coordinator.get_component("state_manager")
+            if cur_sel and hasattr(cur_sel, "current_selection"):
+                sel = cur_sel.current_selection or {}
+                actual_p = sel.get("peripheral", "")
+                if actual_p and actual_p != peripheral:
+                    return {"success": False,
+                            "message": t("ai.jump_mismatch", target=peripheral, actual=actual_p,
+                                         default="跳转未生效：目标 {target}，实际选中 {actual}"),
+                            "data": None}
+        except Exception:
+            pass
+
         return {"success": True, "message": t("ai.jump_done", target=target_desc), "data": {
             "peripheral": peripheral,
             "register": register or None,
