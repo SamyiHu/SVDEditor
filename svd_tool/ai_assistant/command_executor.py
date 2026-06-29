@@ -1651,6 +1651,13 @@ class CommandExecutor:
         if not doc:
             return {"success": False, "message": t("ai.doc_not_exist", id=target_id), "data": None}
 
+        # 关键：生成 XML 前必须把 state_manager 当前编辑的数据同步回目标 doc。
+        # 否则 doc.device_info 可能还停留在切换前的状态（甚至因浅引用指向其它文档），
+        # 导致保存时写入错误数据（"保存doc1却写入doc2"的恶性 bug）。
+        # 手动保存（save_all_documents）也做了同样的 _save_current_document_state。
+        if hasattr(self.main_window, '_save_current_document_state'):
+            self.main_window._save_current_document_state()
+
         try:
             from svd_tool.core.svd_generator import SVDGenerator
             generator = SVDGenerator(doc.device_info, skip_derived_registers=getattr(self.main_window, 'skip_derived_registers', True))
@@ -1693,6 +1700,10 @@ class CommandExecutor:
 
         if not docs_to_save:
             return {"success": True, "message": t("ai.doc_no_save"), "data": {"saved": [], "failed": []}}
+
+        # 同步当前文档的编辑状态到对应 doc（同 _op_save_document，避免写入串扰数据）
+        if hasattr(self.main_window, '_save_current_document_state'):
+            self.main_window._save_current_document_state()
 
         from svd_tool.core.svd_generator import SVDGenerator
         saved = []

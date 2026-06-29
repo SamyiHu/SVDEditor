@@ -127,6 +127,34 @@ class SVDDiffer:
         
         return results
     
+    def diff_peripheral(self, device_a, device_b, peripheral_name: str):
+        """比较两个设备中指定的单个外设（CLI / AI 单外设对比入口）。
+
+        Args:
+            device_a: 基准 DeviceInfo
+            device_b: 比较 DeviceInfo
+            peripheral_name: 外设名（须在至少一侧存在）
+
+        Returns:
+            List[DiffItem]: 该外设的差异（空列表表示无差异，或两侧都不存在该外设）
+        """
+        pa = device_a.peripherals.get(peripheral_name) if device_a else None
+        pb = device_b.peripherals.get(peripheral_name) if device_b else None
+        results = []
+        if pa and not pb:
+            results.append(DiffItem(peripheral_name, DiffType.REMOVED,
+                                    old_value=f"baseAddress={getattr(pa, 'base_address', 'N/A')}",
+                                    category='peripheral'))
+        elif not pa and pb:
+            results.append(DiffItem(peripheral_name, DiffType.ADDED,
+                                    new_value=f"baseAddress={getattr(pb, 'base_address', 'N/A')}",
+                                    category='peripheral'))
+        elif pa and pb:
+            d = self._diff_peripheral(peripheral_name, pa, pb)
+            if d:
+                results.append(d)
+        return results
+
     def _diff_peripheral(self, name, p_a, p_b):
         """比较两个外设"""
         children = []
