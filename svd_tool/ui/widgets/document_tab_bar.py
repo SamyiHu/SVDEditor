@@ -53,7 +53,16 @@ class DocumentTabBar(QWidget):
         
         self._setup_ui()
         self._connect_signals()
-        
+
+        # 标签标题更新防抖：批量编辑时 document_modified 高频触发 setTabText 会
+        # 导致 QTabBar 反复重布局而卡顿（#4）。用定时器合并短时间内的多次更新。
+        from PyQt6.QtCore import QTimer
+        self._title_dirty: set = set()  # 待刷新的 doc_id
+        self._title_timer = QTimer(self)
+        self._title_timer.setSingleShot(True)
+        self._title_timer.setInterval(150)  # 150ms 防抖
+        self._title_timer.timeout.connect(self._flush_dirty_titles)
+
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setFixedHeight(36)
         self.hide()  # 初始隐藏（无文档时）
@@ -112,8 +121,10 @@ class DocumentTabBar(QWidget):
                 border-top-right-radius: {s.radius_sm};
                 padding: 5px 12px;
                 margin-right: 1px;
-                min-width: 80px;
-                max-width: 500px;
+                /* 固定宽度：短名/长名标签等宽，超长用省略号（#4）。
+                   QSS 无法直接设固定 width，用 min-width=max-width 实现等宽效果 */
+                min-width: 140px;
+                max-width: 140px;
             }}
             QTabBar::tab:selected {{
                 background: {c.tab_selected};
@@ -432,12 +443,23 @@ class DocumentTabBar(QWidget):
             self.diff_tab_close_requested.emit(diff_id)
     
     def _update_tab_title(self, doc_id: str):
-        """更新指定文档的标签标题"""
-        index = self._doc_id_to_index(doc_id)
-        doc = self.doc_manager.get_document(doc_id)
-        if index >= 0 and doc:
-            self._tab_bar.setTabText(index, doc.get_tab_title())
-            self._tab_bar.setTabToolTip(index, doc.get_tooltip())
+        """更新指定文档的标签标题（防抖：合并短时间内的多次更新，避免卡顿 #4）"""
+        self._title_dirty.add(doc_id)
+        self._title_timer.start()
+
+    def _flush_dirty_titles(self):
+        """实际刷新所有待更新的标签标题（由防抖定时器触发）"""
+        if not self._title_dirty:
+            return
+        self._tab_bar.blockSignals(True)
+        for doc_id in self._title_dirty:
+            index = self._doc_id_to_index(doc_id)
+            doc = self.doc_manager.get_document(doc_id)
+            if index >= 0 and doc:
+                self._tab_bar.setTabText(index, doc.get_tab_title())
+                self._tab_bar.setTabToolTip(index, doc.get_tooltip())
+        self._tab_bar.blockSignals(False)
+        self._title_dirty.clear()
     
     def update_tab_title(self, doc_id: str):
         """公开接口：更新标签标题"""
