@@ -228,7 +228,7 @@ class DeviceTreeView(QTreeView):
             event.ignore()
             return
         node = m._node_from_index(indexes[0])
-        if node is None or node.node_type not in ("peripheral", "field"):
+        if node is None or node.node_type not in ("peripheral", "register", "field"):
             event.ignore()
             return
         self._drag_source_type = node.node_type
@@ -278,6 +278,8 @@ class DeviceTreeView(QTreeView):
 
         if self._drag_source_type == "peripheral":
             self._execute_peripheral_drop(m, target_idx, pos)
+        elif self._drag_source_type == "register":
+            self._execute_register_drop(m, target_idx, pos)
         elif self._drag_source_type == "field":
             self._execute_field_drop(m, target_idx, pos)
 
@@ -313,6 +315,27 @@ class DeviceTreeView(QTreeView):
                 return True  # 拖到底部空白区域
             node = m._node_from_index(target_idx)
             return node is not None and node.node_type == "peripheral"
+
+        elif source_type == "register":
+            # 寄存器只能在外设内重排
+            if not target_idx.isValid():
+                return False
+            node = m._node_from_index(target_idx)
+            if node is None:
+                return False
+            source_indexes = self.selectedIndexes()
+            if not source_indexes:
+                return False
+            source_node = m._node_from_index(source_indexes[0])
+            if source_node is None:
+                return False
+            if node.node_type == "register":
+                # 必须同一外设
+                return source_node.parent is node.parent
+            elif node.node_type == "peripheral":
+                # 拖到外设节点上（该外设就是源寄存器的外设）
+                return source_node.parent is node
+            return False
 
         elif source_type == "field":
             if not target_idx.isValid():
@@ -482,6 +505,45 @@ class DeviceTreeView(QTreeView):
                                        periph_name, reg_name,
                                        old_order, new_order)
 
+    def _execute_register_drop(self, m: DeviceTreeModel,
+                                target_idx: QModelIndex, pos: QPoint):
+        """执行寄存器拖放重排序（同一外设内）。与 _execute_field_drop 平行。"""
+        source_indexes = self.selectedIndexes()
+        if not source_indexes:
+            return
+        source_idx = source_indexes[0]
+        source_node = m._node_from_index(source_idx)
+        if source_node is None or source_node.parent is None:
+            return
+        periph_node = source_node.parent
+        periph_name = periph_node.name
+        # 用 QModelIndex.row() 获取正确的行号
+        source_row = source_idx.row()
+
+        # 计算 target_row
+        if self._drop_position == "above":
+            target_row = self._drop_target_row
+        elif self._drop_position == "below":
+            target_row = self._drop_target_row
+        elif self._drop_position == "onto":
+            # 拖到外设节点上：放到该外设末尾
+            target_row = len(periph_node.children)
+        else:
+            return
+
+        if source_row == target_row:
+            return
+
+        old_order = m.get_register_order(periph_name)
+
+        m.move_register(source_row, target_row, periph_name)
+
+        new_order = m.get_register_order(periph_name)
+
+        if old_order != new_order:
+            self._record_register_reorder(m, source_node.name,
+                                          periph_name, old_order, new_order)
+
     # ================================================================
     # undo/redo 记录
     # ================================================================
@@ -573,6 +635,51 @@ class DeviceTreeView(QTreeView):
                 execute=execute_field_reorder,
                 undo=undo_field_reorder,
                 description=f"拖放调整位域顺序: {source_name}",
+            )
+            state_mgr.command_history.history.append(command)
+            state_mgr.command_history.current_index = len(state_mgr.command_history.history) - 1
+            state_mgr.command_history.redo_stack.clear()
+        except Exception:
+            pass
+
+    def _record_register_reorder(self, m: DeviceTreeModel, source_name: str,
+                                  periph_name: str,
+                                  old_order: list, new_order: list):
+        """记录寄存器重排序到命令历史（与 _record_field_reorder 平行）"""
+        try:
+            state_mgr = self._find_state_manager()
+            if state_mgr is None:
+                return
+
+            captured_old = old_order[:]
+            captured_new = new_order[:]
+            captured_periph = periph_name
+
+            def execute_register_reorder():
+                periph = state_mgr.device_info.peripherals.get(captured_periph)
+                if periph is None:
+                    return False
+                old_regs = periph.registers
+                periph.registers = {name: old_regs[name]
+                                    for name in captured_new if name in old_regs}
+                state_mgr._notify_state_change()
+                return True
+
+            def undo_register_reorder():
+                periph = state_mgr.device_info.peripherals.get(captured_periph)
+                if periph is None:
+                    return False
+                old_regs = periph.registers
+                periph.registers = {name: old_regs[name]
+                                    for name in captured_old if name in old_regs}
+                state_mgr._notify_state_change()
+                return True
+
+            from ...core.command_history import Command
+            command = Command(
+                execute=execute_register_reorder,
+                undo=undo_register_reorder,
+                description=f"拖放调整寄存器顺序: {source_name}",
             )
             state_mgr.command_history.history.append(command)
             state_mgr.command_history.current_index = len(state_mgr.command_history.history) - 1

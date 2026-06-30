@@ -493,6 +493,42 @@ class DeviceTreeModel(QAbstractItemModel):
         # 同步 register.fields dict 顺序
         self._sync_field_order(periph_name, reg_name, reg_node)
 
+    def move_register(self, source_row: int, target_row: int, periph_name: str):
+        """移动寄存器行（source → target），在同一外设内。
+        与 move_field 平行：寄存器顺序在本项目里独立于 offset，可由用户拖拽调整。
+        """
+        periph_node = None
+        for root in self._root_nodes:
+            if root.name == periph_name:
+                periph_node = root
+                break
+        if periph_node is None or not periph_node.fetched:
+            return
+        if source_row == target_row:
+            return
+        if source_row < 0 or source_row >= len(periph_node.children):
+            return
+        if target_row < 0 or target_row > len(periph_node.children):
+            return
+
+        # 同一位置 no-op
+        if source_row < target_row and source_row == target_row - 1:
+            return
+
+        periph_idx = self._index_from_node(periph_node)
+
+        self.beginMoveRows(periph_idx, source_row, source_row,
+                           periph_idx, target_row)
+
+        node = periph_node.children.pop(source_row)
+        insert_at = target_row if source_row > target_row else target_row - 1
+        periph_node.children.insert(insert_at, node)
+
+        self.endMoveRows()
+
+        # 同步 peripheral.registers dict 顺序
+        self._sync_register_order(periph_name, periph_node)
+
     def _find_register_node(self, periph_name: str, reg_name: str) -> Optional[TreeNode]:
         for root in self._root_nodes:
             if root.name == periph_name:
@@ -522,6 +558,15 @@ class DeviceTreeModel(QAbstractItemModel):
         fields = register.fields
         register.fields = {name: fields[name] for name in new_order if name in fields}
 
+    def _sync_register_order(self, periph_name: str, periph_node: TreeNode):
+        """将 periph_node.children 顺序同步到 peripheral.registers"""
+        new_order = [n.name for n in periph_node.children]
+        periph = self._device_info.peripherals.get(periph_name)
+        if not periph:
+            return
+        registers = periph.registers
+        periph.registers = {name: registers[name] for name in new_order if name in registers}
+
     # ================================================================
     # 获取顺序信息（用于 undo/redo）
     # ================================================================
@@ -531,6 +576,13 @@ class DeviceTreeModel(QAbstractItemModel):
         if reg_node is None:
             return []
         return [n.name for n in reg_node.children]
+
+    def get_register_order(self, periph_name: str) -> List[str]:
+        """获取指定外设下的寄存器顺序（用于 undo/redo）。"""
+        for root in self._root_nodes:
+            if root.name == periph_name and root.fetched:
+                return [n.name for n in root.children]
+        return []
 
     # ================================================================
     # 辅助方法
