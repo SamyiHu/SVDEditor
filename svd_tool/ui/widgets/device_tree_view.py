@@ -9,7 +9,7 @@ from __future__ import annotations
 from math import sin, pi
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QRect, QRectF, QPoint, QModelIndex, QTimer, QElapsedTimer
+from PyQt6.QtCore import Qt, QRect, QPoint, QModelIndex, QTimer, QElapsedTimer
 from PyQt6.QtGui import (QPainter, QPen, QColor, QBrush, QLinearGradient,
                           QPainterPath, QFont, QPixmap)
 from PyQt6.QtWidgets import (
@@ -36,10 +36,6 @@ class DeviceTreeView(QTreeView):
         self.setUniformRowHeights(True)
         self.setAlternatingRowColors(True)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        # 开启鼠标跟踪：hover 行需重绘以补画 chevron（QSS 的 :hover 背景会吞掉箭头）
-        self.viewport().setMouseTracking(True)
-        self._hover_row: Optional[int] = None       # 缓存 hover 行号
-        self._hover_idx: Optional[QModelIndex] = None  # 缓存 hover 的 model index
 
         # ---- 列宽策略 ----
         header = self.header()
@@ -108,47 +104,10 @@ class DeviceTreeView(QTreeView):
     # ================================================================
 
     def _repaint_rows(self, *rows):
-        """只重绘指定行（局部刷新，避免全量 viewport().update() 造成的卡顿/闪烁）。
-        rows 为 QModelIndex 的可变参数（会过滤无效项）。
+        """已弃用：纯 QSS image 方案后 chevron 由 QSS 绘制，无需 hover 重绘。
+        保留空实现仅为兼容（不应再被调用）。
         """
-        rects = []
-        for idx in rows:
-            if idx is not None and idx.isValid():
-                r = self.visualRect(idx)
-                if r.isValid():
-                    # 扩展到 branch 区域（行左侧缩进列）
-                    rects.append(QRect(0, r.y(), self.viewport().width(), r.height()))
-        if rects:
-            # 用 viewport 的 update(QRegion) 只刷新这几行的区域
-            from PyQt6.QtGui import QRegion
-            region = QRegion()
-            for r in rects:
-                region = region.united(QRegion(r))
-            self.viewport().update(region)
-
-    def mouseMoveEvent(self, event):
-        """跟踪鼠标移动，hover 行变化时局部重绘（仅新旧 hover 行）。"""
-        super().mouseMoveEvent(event)
-        idx = self.indexAt(event.position().toPoint())
-        row = idx.row() if idx.isValid() else None
-        if row != self._hover_row:
-            # 收集旧 hover 行 + 新 hover 行，只重绘这两行
-            old_idx = None
-            if self._hover_row is not None:
-                # 旧行需要 model 索引；用当前 hover 的 index 缓存更稳
-                old_idx = getattr(self, '_hover_idx', None)
-            self._hover_row = row
-            self._hover_idx = idx if idx.isValid() else None
-            self._repaint_rows(old_idx, idx)
-
-    def leaveEvent(self, event):
-        """鼠标离开时清除 hover 高亮并局部重绘。"""
-        super().leaveEvent(event)
-        old_idx = getattr(self, '_hover_idx', None)
-        if self._hover_row is not None:
-            self._hover_row = None
-            self._hover_idx = None
-            self._repaint_rows(old_idx)
+        return
 
     def paintEvent(self, event):
         """先画默认内容，再叠加拖拽指示器"""
@@ -169,59 +128,6 @@ class DeviceTreeView(QTreeView):
             self._paint_onto_highlight(painter, r, pulse)
 
         painter.end()
-
-    def drawBranches(self, painter: QPainter, rect: QRect, index: QModelIndex):
-        """绘制行分支区域（含 chevron 箭头）。
-
-        关键修复：QSS 含 QTreeView::branch 规则时，Qt 对选中/悬停行的 branch 走 QSS
-        路径（item:selected/:hover 背景覆盖 + 不调 proxy style），导致这些行的
-        chevron 消失。重写 drawBranches（用 Qt 绘制流程里的同一个 painter，而非
-        paintEvent 后另开 painter——后者会因绘制缓冲被丢弃）：先让父类画默认内容
-        （含普通行箭头），再对选中/悬停且有子节点的行补画对比色 chevron，
-        画在背景之上确保可见。
-        """
-        super().drawBranches(painter, rect, index)
-        self._paint_chevron_if_needed(painter, rect, index)
-
-    def _is_hovered(self, index: QModelIndex) -> bool:
-        """判断 index 是否正处于鼠标悬停下（用缓存的 hover index 精确比较）。"""
-        hi = self._hover_idx
-        if hi is None or not hi.isValid():
-            return False
-        return index.isValid() and index == hi
-
-    def _paint_chevron_if_needed(self, painter: QPainter, rect: QRect, index: QModelIndex):
-        """若该 index 所在行被选中或悬停，且有子节点，补画 chevron。
-        rect 是整行的 branch 区域（QTreeView.drawBranches 传入）。
-        覆盖两种箭头被背景吞掉的情况：selected（选中色）与 hover（悬停色）。
-        """
-        m = self._model()
-        if m is None:
-            return
-        if index.column() != 0:
-            return
-        sm = self.selectionModel()
-        is_selected = sm is not None and sm.isSelected(index)
-        is_hovered = self._is_hovered(index)
-        if not (is_selected or is_hovered):
-            return
-        if not m.hasChildren(index):
-            return
-
-        from ...config.tree_branch_style import draw_chevron, selected_chevron_color
-        # 选中态用 selected_text（保证在选中色背景上可读）；纯悬停用稍深的灰色
-        color = selected_chevron_color() if is_selected else QColor("#333333")
-        is_open = self.isExpanded(index)
-        # chevron 中心 = 该 index 深度对应的缩进格中心
-        indent = self.indentation()
-        depth = 0
-        p = index.parent()
-        while p.isValid():
-            depth += 1
-            p = p.parent()
-        chev_rect = QRectF(depth * indent, rect.y(), indent, rect.height())
-        draw_chevron(painter, chev_rect, is_open, color)
-
 
     def _paint_insert_line(self, painter: QPainter, r: QRect, pulse: float):
         """绘制插入指示线：渐变色线 + 三角箭头 + 半透明预览行"""

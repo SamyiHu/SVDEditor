@@ -16,7 +16,6 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from ...i18n.i18n import t
 from ...config.styles import get_style_scheme
-from ...config.tree_branch_style import apply_tree_branch_style
 from ..widgets.toggle_switch import ToggleSwitch
 from ..widgets.labeled_slider import LabeledSlider
 from ..widgets.device_tree_view import DeviceTreeView
@@ -427,8 +426,7 @@ class TabBuilder:
         left_layout.addLayout(periph_toolbar)
 
         periph_tree = DeviceTreeView()
-        # 应用自定义分支箭头样式
-        apply_tree_branch_style(periph_tree)
+        # chevron 箭头现由全局 QSS image(SVG)绘制，不再需要 proxy style
         left_layout.addWidget(periph_tree)
 
         # 右侧

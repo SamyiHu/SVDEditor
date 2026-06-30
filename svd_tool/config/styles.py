@@ -287,9 +287,19 @@ class StyleScheme:
         c = self.colors
         f = self.fonts
         s = self.sizes
-        
-        # 树形分支箭头由 TreeBranchStyle (QProxyStyle) 矢量绘制，不再需要生成 PNG
-        
+
+        # 树形分支 chevron 箭头：用 QSS image 引用 SVG 矢量图标。
+        # 由 QSS 在正确绘制层级处理选中/hover 行，无需 proxy style 事后补画，
+        # 也就不需要 hover 时重绘——彻底消除闪烁/性能问题。
+        # 路径解析为包内资源的绝对路径（QSS url 不支持相对路径）。
+        import os as _os
+        _icon_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                                   "resources", "icons")
+        _ic_closed = _os.path.join(_icon_dir, "branch_closed.svg").replace("\\", "/")
+        _ic_open = _os.path.join(_icon_dir, "branch_open.svg").replace("\\", "/")
+        _ic_closed_sel = _os.path.join(_icon_dir, "branch_closed_selected.svg").replace("\\", "/")
+        _ic_open_sel = _os.path.join(_icon_dir, "branch_open_selected.svg").replace("\\", "/")
+
         return f"""
         /* ========== 全局基础 ========== */
         QMainWindow {{
@@ -463,26 +473,26 @@ class StyleScheme:
             background-color: {c.selected_active};
         }}
 
-        /* 折叠/展开状态的分支箭头由 TreeBranchStyle (QProxyStyle) 矢量绘制，无需 CSS image */
+        /* 树形分支 chevron 箭头：QSS image 引用 SVG（矢量，任意 DPI 清晰）。
+           QSS 在正确绘制层级处理，选中/hover 行也能显示，无需 proxy style 补画。 */
         QTreeWidget::branch:has-children:!has-siblings:closed,
         QTreeWidget::branch:closed:has-children:has-siblings {{
-            border-image: none;
+            image: url({_ic_closed});
         }}
 
         QTreeWidget::branch:open:has-children:!has-siblings,
         QTreeWidget::branch:open:has-children:has-siblings {{
-            border-image: none;
+            image: url({_ic_open});
         }}
 
-        /* 鼠标悬停 */
-        QTreeWidget::branch:has-children:!has-siblings:closed:hover,
-        QTreeWidget::branch:closed:has-children:has-siblings:hover {{
-            background-color: {c.hover};
+        QTreeWidget::branch:has-children:!has-siblings:closed:selected,
+        QTreeWidget::branch:closed:has-children:has-siblings:selected {{
+            image: url({_ic_closed_sel});
         }}
 
-        QTreeWidget::branch:open:has-children:!has-siblings:hover,
-        QTreeWidget::branch:open:has-children:has-siblings:hover {{
-            background-color: {c.hover};
+        QTreeWidget::branch:open:has-children:!has-siblings:selected,
+        QTreeWidget::branch:open:has-children:has-siblings:selected {{
+            image: url({_ic_open_sel});
         }}
 
         QTreeWidget::branch:selected {{
@@ -521,22 +531,22 @@ class StyleScheme:
 
         QTreeView::branch:has-children:!has-siblings:closed,
         QTreeView::branch:closed:has-children:has-siblings {{
-            border-image: none;
+            image: url({_ic_closed});
         }}
 
         QTreeView::branch:open:has-children:!has-siblings,
         QTreeView::branch:open:has-children:has-siblings {{
-            border-image: none;
+            image: url({_ic_open});
         }}
 
-        QTreeView::branch:has-children:!has-siblings:closed:hover,
-        QTreeView::branch:closed:has-children:has-siblings:hover {{
-            background-color: {c.hover};
+        QTreeView::branch:has-children:!has-siblings:closed:selected,
+        QTreeView::branch:closed:has-children:has-siblings:selected {{
+            image: url({_ic_closed_sel});
         }}
 
-        QTreeView::branch:open:has-children:!has-siblings:hover,
-        QTreeView::branch:open:has-children:has-siblings:hover {{
-            background-color: {c.hover};
+        QTreeView::branch:open:has-children:!has-siblings:selected,
+        QTreeView::branch:open:has-children:has-siblings:selected {{
+            image: url({_ic_open_sel});
         }}
 
         QTreeView::branch:selected {{
