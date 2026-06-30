@@ -201,6 +201,13 @@ class AgentLoop(QThread):
                                   "message": "用户已停止生成，工具调用未执行", "data": None}
                     else:
                         result = tool_dispatch(name, params, self.executor)
+                    # 防御：dispatch/execute 契约应返回 dict，但若底层异常路径
+                    # （如 call_blocking 超时未捕获、handler 漏 return）返回 None，
+                    # 信号 action_executed(str, dict) 会因参数类型不符报错。统一兜底。
+                    if not isinstance(result, dict):
+                        result = {"success": False,
+                                  "message": f"工具 {name} 返回了无效结果（None），请重试",
+                                  "data": None}
                     # UI 反馈
                     self.action_executed.emit(name, result)
                     # 回灌内容：紧凑 JSON（含 success/message/data）

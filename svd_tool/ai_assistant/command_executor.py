@@ -72,10 +72,16 @@ class _GuiBridge:
 
         result_box = {'value': None, 'error': None, 'event': threading.Event()}
         self._carrier.run.emit(fn, result_box)
-        # QueuedConnection 下 emit 立即返回；用 Event 阻塞等待主线程执行完
-        result_box['event'].wait(timeout=30)
+        # QueuedConnection 下 emit 立即返回；用 Event 阻塞等待主线程执行完。
+        # 关键：等待时长必须足够覆盖用户交互（如保存前的覆盖确认弹窗），
+        # 用户犹豫时间不应让任务失败。用较长上限 + 显式超时检测，绝不能
+        # 静默返回初始值 None（会导致 emit(name, None) 报参数类型错）。
+        done = result_box['event'].wait(timeout=300)
         if result_box['error'] is not None:
             raise result_box['error']
+        if not done:
+            # 主线程长时间无响应（卡死/事件循环阻塞），明确报错而非返回 None
+            raise TimeoutError("主线程响应超时，GUI 操作未能完成（可能主线程卡死）")
         return result_box['value']
 
     def post(self, fn: Callable) -> None:
