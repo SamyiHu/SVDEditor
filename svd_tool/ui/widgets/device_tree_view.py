@@ -38,7 +38,8 @@ class DeviceTreeView(QTreeView):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         # 开启鼠标跟踪：hover 行需重绘以补画 chevron（QSS 的 :hover 背景会吞掉箭头）
         self.viewport().setMouseTracking(True)
-        self._hover_row: Optional[int] = None  # 缓存上一次 hover 行，按需触发重绘
+        self._hover_row: Optional[int] = None       # 缓存 hover 行号
+        self._hover_idx: Optional[QModelIndex] = None  # 缓存 hover 的 model index
 
         # ---- 列宽策略 ----
         header = self.header()
@@ -106,22 +107,48 @@ class DeviceTreeView(QTreeView):
     # 自绘拖拽指示器
     # ================================================================
 
+    def _repaint_rows(self, *rows):
+        """只重绘指定行（局部刷新，避免全量 viewport().update() 造成的卡顿/闪烁）。
+        rows 为 QModelIndex 的可变参数（会过滤无效项）。
+        """
+        rects = []
+        for idx in rows:
+            if idx is not None and idx.isValid():
+                r = self.visualRect(idx)
+                if r.isValid():
+                    # 扩展到 branch 区域（行左侧缩进列）
+                    rects.append(QRect(0, r.y(), self.viewport().width(), r.height()))
+        if rects:
+            # 用 viewport 的 update(QRegion) 只刷新这几行的区域
+            from PyQt6.QtGui import QRegion
+            region = QRegion()
+            for r in rects:
+                region = region.united(QRegion(r))
+            self.viewport().update(region)
+
     def mouseMoveEvent(self, event):
-        """跟踪鼠标移动，hover 行变化时重绘以补画/清除 hover chevron。"""
+        """跟踪鼠标移动，hover 行变化时局部重绘（仅新旧 hover 行）。"""
         super().mouseMoveEvent(event)
         idx = self.indexAt(event.position().toPoint())
         row = idx.row() if idx.isValid() else None
-        # 只在行变化（或进入/离开）时重绘，避免每像素都刷新
         if row != self._hover_row:
+            # 收集旧 hover 行 + 新 hover 行，只重绘这两行
+            old_idx = None
+            if self._hover_row is not None:
+                # 旧行需要 model 索引；用当前 hover 的 index 缓存更稳
+                old_idx = getattr(self, '_hover_idx', None)
             self._hover_row = row
-            self.viewport().update()
+            self._hover_idx = idx if idx.isValid() else None
+            self._repaint_rows(old_idx, idx)
 
     def leaveEvent(self, event):
-        """鼠标离开时清除 hover 高亮并重绘。"""
+        """鼠标离开时清除 hover 高亮并局部重绘。"""
         super().leaveEvent(event)
+        old_idx = getattr(self, '_hover_idx', None)
         if self._hover_row is not None:
             self._hover_row = None
-            self.viewport().update()
+            self._hover_idx = None
+            self._repaint_rows(old_idx)
 
     def paintEvent(self, event):
         """先画默认内容，再叠加拖拽指示器"""
@@ -157,10 +184,11 @@ class DeviceTreeView(QTreeView):
         self._paint_chevron_if_needed(painter, rect, index)
 
     def _is_hovered(self, index: QModelIndex) -> bool:
-        """判断 index 是否正处于鼠标悬停下（用 mouseMoveEvent 缓存的行判断）。"""
-        if self._hover_row is None:
+        """判断 index 是否正处于鼠标悬停下（用缓存的 hover index 精确比较）。"""
+        hi = self._hover_idx
+        if hi is None or not hi.isValid():
             return False
-        return index.isValid() and index.row() == self._hover_row
+        return index.isValid() and index == hi
 
     def _paint_chevron_if_needed(self, painter: QPainter, rect: QRect, index: QModelIndex):
         """若该 index 所在行被选中或悬停，且有子节点，补画 chevron。
