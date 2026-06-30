@@ -268,9 +268,12 @@ class DeviceTreeModel(QAbstractItemModel):
             return base
         if node.node_type == "peripheral":
             base |= Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled
+        elif node.node_type == "register":
+            # 寄存器可拖拽排序（顺序在本项目独立于 offset）。是否允许放置由
+            # view 的 _is_valid_drop 把控（仅同外设内重排），无需在此加 DropEnabled。
+            base |= Qt.ItemFlag.ItemIsDragEnabled
         elif node.node_type == "field":
             base |= Qt.ItemFlag.ItemIsDragEnabled
-        # register: 不可拖拽，不可放置
         return base
 
     # ================================================================
