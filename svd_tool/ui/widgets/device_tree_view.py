@@ -218,6 +218,20 @@ class DeviceTreeView(QTreeView):
     # 拖拽事件
     # ================================================================
 
+    def startDrag(self, supportedActions):
+        """拖拽源生成前的拦截点。
+        排序是单选语义（把一个项插到某位置），多选拖拽排序语义混乱（多个项
+        要插到哪、相对顺序如何均无定义）。故：选中了不止一个节点时直接不生成
+        拖拽源，强制用户先单选。拖拽预览也不会出现，反馈一致。
+        """
+        # 按行去重计数（SelectRows 下同一行也可能返回多个列 index）
+        selected = self.selectedIndexes()
+        if selected:
+            unique_rows = {(idx.parent(), idx.row()) for idx in selected}
+            if len(unique_rows) > 1:
+                return  # 多选：阻止拖拽
+        super().startDrag(supportedActions)
+
     def dragEnterEvent(self, event):
         m = self._model()
         if m is None:
