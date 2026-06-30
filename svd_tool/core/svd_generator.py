@@ -20,6 +20,13 @@ class SVDGenerator:
     
     def generate(self, pretty_print: bool = True) -> str:
         """生成SVD XML字符串"""
+        # 数据一致性保障：从权威的顶层 device_info.interrupts 重建每个外设的
+        # interrupts 列表。生成器只写 peripheral.interrupts（SVD 标准里中断归属
+        # 外设），而该列表是增量同步来的派生数据，AI/手动 改中断（尤其改名、改
+        # 关联外设、用空 peripherals 添加）时易与顶层不一致，导致保存丢失中断。
+        # 在生成这个唯一出口处重建，所有保存路径（手动/AI/批量）都受益。
+        self._rebuild_peripheral_interrupts()
+
         # 创建根节点
         root = self._create_root_element()
 
@@ -45,6 +52,33 @@ class SVDGenerator:
 
         return xml_str
     
+    def _rebuild_peripheral_interrupts(self):
+        """从顶层 device_info.interrupts 重建每个外设的 interrupts 列表。
+
+        SVD 标准里 <interrupt> 写在 <peripheral> 下，故生成器读 peripheral.interrupts。
+        但该列表是 device_info.interrupts 的派生镜像，编辑过程中可能不同步。
+        这里以顶层中断为唯一数据源重建，保证写出的中断与用户实际编辑的一致。
+        """
+        # 清空所有外设的 interrupts（含 derivedFrom 外设——它们若不跳过继承，
+        # 也需要自己的中断；空列表由 skip_inherited 逻辑在写入时处理）
+        for peripheral in self.device_info.peripherals.values():
+            peripheral.interrupts = []
+        # 按顶层中断及其关联外设重新填充
+        for interrupt in self.device_info.interrupts.values():
+            irq_name = getattr(interrupt, "name", "")
+            if not irq_name:
+                continue
+            for periph_name in (interrupt.peripherals or []):
+                peripheral = self.device_info.peripherals.get(periph_name)
+                if peripheral is None:
+                    continue
+                peripheral.interrupts.append({
+                    "name": irq_name,
+                    "value": interrupt.value,
+                    "description": interrupt.description or "",
+                    "peripheral": periph_name,
+                })
+
     def _create_root_element(self) -> ET.Element:
         """创建根节点"""
         schema_version = self.device_info.svd_version
