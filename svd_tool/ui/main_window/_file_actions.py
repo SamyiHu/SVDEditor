@@ -23,6 +23,21 @@ class FileActionsMixin:
                         # 先保存当前文档状态（确保数据隔离）
                         self._save_current_document_state()
 
+                        # 关键修复：先检查文件是否已打开。若已打开，直接切回该文档
+                        # 并恢复其状态，绝不能用新解析的完整数据覆盖 state_manager——
+                        # 否则用户在旧文档上的未保存删除/修改会被"还原"（用磁盘原始
+                        # 数据替换了内存中的编辑状态）。
+                        existing_doc_id = self.document_manager.find_by_file_path(file_path) \
+                            if hasattr(self.document_manager, 'find_by_file_path') else None
+                        if existing_doc_id:
+                            self.document_manager.switch_to(existing_doc_id)
+                            existing_doc = self.document_manager.get_document(existing_doc_id)
+                            if existing_doc:
+                                self._restore_document_state(existing_doc)
+                            self.layout_manager.update_status(
+                                t("status.file_loaded", name=os.path.basename(file_path)))
+                            continue
+
                         self.layout_manager.update_status(t("status.file_parsing", name=os.path.basename(file_path)))
                         QApplication.processEvents()  # 更新UI
 
