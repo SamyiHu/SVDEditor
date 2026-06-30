@@ -59,14 +59,8 @@ class SVDGenerator:
         但该列表是 device_info.interrupts 的派生镜像，编辑过程中可能不同步。
         这里以顶层中断为唯一数据源重建，保证写出的中断与用户实际编辑的一致。
         """
-        import logging
-        _irq_log = logging.getLogger("svd_tool.IRQ_DIAG")
-        _irq_log.info(f"[GEN-REBUILD] 顶层中断数: {len(self.device_info.interrupts)}: {[(i.name, i.value, i.peripherals) for i in self.device_info.interrupts.values()]}")
-        before = {p.name: len(p.interrupts) for p in self.device_info.peripherals.values()}
-        # 清空所有外设的 interrupts
         for peripheral in self.device_info.peripherals.values():
             peripheral.interrupts = []
-        # 按顶层中断及其关联外设重新填充
         for interrupt in self.device_info.interrupts.values():
             irq_name = getattr(interrupt, "name", "")
             if not irq_name:
@@ -74,7 +68,6 @@ class SVDGenerator:
             for periph_name in (interrupt.peripherals or []):
                 peripheral = self.device_info.peripherals.get(periph_name)
                 if peripheral is None:
-                    _irq_log.warning(f"[GEN-REBUILD] 中断 {irq_name} 关联的外设 {periph_name!r} 不存在，跳过")
                     continue
                 peripheral.interrupts.append({
                     "name": irq_name,
@@ -82,8 +75,6 @@ class SVDGenerator:
                     "description": interrupt.description or "",
                     "peripheral": periph_name,
                 })
-        after = {p.name: [(d['name'], d['value']) for d in p.interrupts] for p in self.device_info.peripherals.values()}
-        _irq_log.info(f"[GEN-REBUILD] 重建后外设中断: {after}")
 
     def _create_root_element(self) -> ET.Element:
         """创建根节点"""
@@ -183,16 +174,18 @@ class SVDGenerator:
         ET.SubElement(addr_block_elem, "size").text = peripheral.address_block["size"]
         ET.SubElement(addr_block_elem, "usage").text = peripheral.address_block.get("usage", "registers")
         
-        # 如果是继承外设且开启了跳过开关，不写入继承的寄存器/簇/中断
+        # 如果是继承外设且开启了跳过开关，不写入继承的寄存器/簇（让 derivedFrom 继承生效）。
+        # 但中断必须始终写入：中断是外设自身的向量关联，不属于"可继承的寄存器定义"，
+        # 若对继承外设跳过中断，多外设共用中断（如 UART0_2_4 关联 UART0/UART2/UART4，
+        # 其中 UART2 derivedFrom UART3）在被关联的继承外设上就会丢失 → 保存后重开丢失。
         is_derived = bool(peripheral.derived_from)
         skip_inherited = is_derived and self.skip_derived_registers
 
-        # 添加中断
-        if not skip_inherited:
-            for interrupt in peripheral.interrupts:
-                self._add_interrupt_to_peripheral(periph_elem, interrupt)
+        # 添加中断（继承外设也要写自己的中断）
+        for interrupt in peripheral.interrupts:
+            self._add_interrupt_to_peripheral(periph_elem, interrupt)
 
-        # 添加寄存器和簇
+        # 添加寄存器和簇（继承外设可跳过，让 derivedFrom 继承）
         if not skip_inherited and (peripheral.registers or peripheral.clusters):
             registers_elem = ET.SubElement(periph_elem, "registers")
 

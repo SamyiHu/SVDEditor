@@ -35,34 +35,5 @@ if __name__ == "__main__":
         from svd_tool.cli import main as cli_main
         cli_main()
     else:
-        # ===== 诊断块：确认加载的是哪份代码（排查"修改不保存"）=====
-        try:
-            import logging
-            _diag = logging.getLogger("svd_tool.IRQ_DIAG")
-            _diag.info("=" * 60)
-            _diag.info(f"[BOOT] Python: {sys.executable}")
-            _diag.info(f"[BOOT] sys.path[0:3]: {sys.path[:3]}")
-            import svd_tool
-            _diag.info(f"[BOOT] svd_tool 加载自: {svd_tool.__file__}")
-            import svd_tool.ui.components.state_manager as _sm
-            _diag.info(f"[BOOT] state_manager 加载自: {_sm.__file__}")
-            _sm_src = open(_sm.__file__, encoding='utf-8').read()
-            _diag.info(f"[BOOT] state_manager 含 IRQ_DIAG 日志? {'IRQ_DIAG' in _sm_src}")
-            _diag.info(f"[BOOT] state_manager 含 _sync_all_peripheral_interrupts? {'_sync_all_peripheral_interrupts' in _sm_src}")
-            import svd_tool.core.svd_generator as _sg
-            _sg_src = open(_sg.__file__, encoding='utf-8').read()
-            _diag.info(f"[BOOT] svd_generator 加载自: {_sg.__file__}")
-            _diag.info(f"[BOOT] svd_generator 含 _rebuild_peripheral_interrupts? {'_rebuild_peripheral_interrupts' in _sg_src}")
-            _diag.info(f"[BOOT] svd_generator 含 IRQ_DIAG? {'IRQ_DIAG' in _sg_src}")
-            _diag.info("=" * 60)
-            # 同时打印到控制台，避免漏看
-            print(f"[BOOT-DIAG] state_manager: {_sm.__file__}", flush=True)
-            print(f"[BOOT-DIAG] 含 IRQ_DIAG? {'IRQ_DIAG' in _sm_src}", flush=True)
-            print(f"[BOOT-DIAG] 含 _rebuild(sm)? {'_sync_all_peripheral_interrupts' in _sm_src}", flush=True)
-            print(f"[BOOT-DIAG] svd_generator: {_sg.__file__}", flush=True)
-            print(f"[BOOT-DIAG] 含 _rebuild(sg)? {'_rebuild_peripheral_interrupts' in _sg_src}", flush=True)
-        except Exception as _e:
-            print(f"[BOOT-DIAG] 诊断出错: {_e}", flush=True)
-        # ============================================================
         from svd_tool.main import main
         main()
