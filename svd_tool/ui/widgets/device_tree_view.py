@@ -9,7 +9,7 @@ from __future__ import annotations
 from math import sin, pi
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QRect, QPoint, QModelIndex, QTimer, QElapsedTimer
+from PyQt6.QtCore import Qt, QRect, QRectF, QPoint, QModelIndex, QTimer, QElapsedTimer
 from PyQt6.QtGui import (QPainter, QPen, QColor, QBrush, QLinearGradient,
                           QPainterPath, QFont, QPixmap)
 from PyQt6.QtWidgets import (
@@ -122,6 +122,47 @@ class DeviceTreeView(QTreeView):
             self._paint_onto_highlight(painter, r, pulse)
 
         painter.end()
+
+    def drawBranches(self, painter: QPainter, rect: QRect, index: QModelIndex):
+        """绘制行分支区域（含 chevron 箭头）。
+
+        关键修复：QSS 含 QTreeView::branch 规则时，Qt 对选中行的 branch 走 QSS
+        路径（item:selected 背景覆盖 + 不调 proxy style），导致选中行 chevron 消失。
+        重写 drawBranches（用 Qt 绘制流程里的同一个 painter，而非 paintEvent 后另开
+        painter——后者会因绘制缓冲被丢弃）：先让父类画默认内容（含非选中行箭头），
+        再对选中且有子节点的行补画对比色 chevron，画在选中背景之上确保可见。
+        """
+        super().drawBranches(painter, rect, index)
+        self._paint_chevron_if_selected(painter, rect, index)
+
+    def _paint_chevron_if_selected(self, painter: QPainter, rect: QRect, index: QModelIndex):
+        """若该 index 所在行被选中且有子节点，补画 chevron。
+        rect 是整行的 branch 区域（QTreeView.drawBranches 传入）。
+        """
+        m = self._model()
+        if m is None:
+            return
+        if index.column() != 0:
+            return
+        sm = self.selectionModel()
+        if sm is None or not sm.isSelected(index):
+            return
+        if not m.hasChildren(index):
+            return
+
+        from ...config.tree_branch_style import draw_chevron, selected_chevron_color
+        color = selected_chevron_color()
+        is_open = self.isExpanded(index)
+        # chevron 中心 = 该 index 深度对应的缩进格中心
+        indent = self.indentation()
+        depth = 0
+        p = index.parent()
+        while p.isValid():
+            depth += 1
+            p = p.parent()
+        chev_rect = QRectF(depth * indent, rect.y(), indent, rect.height())
+        draw_chevron(painter, chev_rect, is_open, color)
+
 
     def _paint_insert_line(self, painter: QPainter, r: QRect, pulse: float):
         """绘制插入指示线：渐变色线 + 三角箭头 + 半透明预览行"""
