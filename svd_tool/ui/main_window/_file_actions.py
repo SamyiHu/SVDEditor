@@ -86,8 +86,13 @@ class FileActionsMixin:
 
                         # 注册到文档管理器
                         try:
-                            self.document_manager.open_document(
+                            new_doc_id = self.document_manager.open_document(
                                 device_info, file_path=file_path)
+                            # 关键：注册后必须切换 active 到新文档，使 document_manager
+                            # 的 active_doc_id 与 state_manager.device_info 一致。
+                            # 否则 active 仍指向旧文档，后续 _save_current_document_state
+                            # 会把新文档的数据存回旧文档，造成"被其他文件覆盖"。
+                            self.document_manager.switch_to(new_doc_id)
                         except Exception as e:
                             self.logger.warning(f"注册文档到DocumentManager失败: {e}")
 

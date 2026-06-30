@@ -292,7 +292,19 @@ class DocumentActionsMixin:
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if reply != QMessageBox.StandardButton.Yes:
                 return
+
+        # 关键：关闭文档前必须先把当前编辑状态(state_manager)存回活动文档，
+        # 否则若关闭的正是活动文档，其未保存的编辑会丢失；且关闭后 switch 到
+        # 相邻文档时若不恢复，会显示错误数据（表现为"被其他文件覆盖"）。
+        self._save_current_document_state()
+        was_active = (doc_id == self.document_manager.active_doc_id)
         self.document_manager.close_document(doc_id)
+
+        # 若关闭的是活动文档，close_document 已 switch 到相邻文档，需恢复其状态
+        if was_active:
+            new_active = self.document_manager.active_document
+            if new_active:
+                self._restore_document_state(new_active)
 
     def _on_close_others(self, keep_doc_id: str):
         """关闭其他文档"""
