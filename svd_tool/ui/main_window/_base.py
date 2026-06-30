@@ -313,12 +313,20 @@ class MainWindowRefactored(
             # 连接选择变化信号以更新按钮状态
             irq_table.itemSelectionChanged.connect(self.update_interrupt_buttons_state)
 
+        # 订阅中断变更信号：AI 或任意路径改了中断后，自动重建中断表，
+        # 无需手动切换标签页。信号无参，重建基于当前 device_info 最终状态。
+        if hasattr(self, 'coordinator') and self.coordinator:
+            self.coordinator.interrupt_updated.connect(self._update_interrupt_table)
+
         # 连接位域表格双击编辑 + 选择联动
         field_table = self.layout_manager.get_widget('field_table')
         if field_table:
             field_table.doubleClicked.connect(self.on_field_table_double_clicked)
             # 位域表格行选择 → 高亮位域图
             field_table.itemSelectionChanged.connect(self.on_field_table_selection_changed)
+            # 安装事件过滤器：双击空白处弹出新建位域对话框
+            # （doubleClicked 信号捕获不到空白双击，需 eventFilter 拦截）
+            field_table.installEventFilter(self)
 
         # 连接紧凑模式复选框
         compact_tree_cb = self.layout_manager.get_widget('compact_tree_cb')

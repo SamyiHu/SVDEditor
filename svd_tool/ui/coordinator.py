@@ -17,6 +17,7 @@ class Coordinator(QObject):
     peripheral_added = pyqtSignal(str)  # 外设添加
     peripheral_updated = pyqtSignal(str)  # 外设更新
     peripheral_deleted = pyqtSignal(str)  # 外设删除
+    interrupt_updated = pyqtSignal()  # 中断列表变更（增删改），中断表据此自动重建
     selection_changed = pyqtSignal(dict)  # 选择变化
     status_updated = pyqtSignal(str)  # 状态更新
     data_stats_updated = pyqtSignal(dict)  # 数据统计更新
@@ -90,6 +91,8 @@ class Coordinator(QObject):
             self.peripheral_updated.emit(data)
         elif event_type == "peripheral_deleted":
             self.peripheral_deleted.emit(data)
+        elif event_type == "interrupt_updated":
+            self.interrupt_updated.emit()
         elif event_type == "selection_changed":
             self.selection_changed.emit(data)
         elif event_type == "status_updated":
@@ -161,6 +164,12 @@ class Coordinator(QObject):
     def notify_peripheral_deleted(self, peripheral_name: str):
         """通知外设删除"""
         self.emit_event("peripheral_deleted", peripheral_name)
+
+    def notify_interrupt_updated(self):
+        """通知中断列表变更（增删改）。订阅者（中断表）据此自动重建。
+        解决：AI 改完中断不刷新、需手动切标签页才更新的问题。
+        """
+        self.emit_event("interrupt_updated")
     
     # 服务方法
     def get_widget(self, widget_name: str):

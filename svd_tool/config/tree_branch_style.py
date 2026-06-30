@@ -9,7 +9,19 @@ from PyQt6.QtCore import Qt, QPointF
 
 class TreeBranchStyle(QProxyStyle):
     """自定义树形分支样式 - 绘制线条 chevron 箭头（> 和 v）"""
-    
+
+    def _selected_chevron_color(self) -> QColor:
+        """选中态 chevron 颜色：跟随当前主题的 selected_text。
+        该色在亮色/深色主题下都已在选中背景上保证可读对比度。
+        取不到主题时回退到深色（在浅蓝选中底上仍清晰）。
+        """
+        try:
+            from svd_tool.config.styles import get_style_scheme
+            hex_color = get_style_scheme().colors.selected_text
+            return QColor(hex_color)
+        except Exception:
+            return QColor("#1A1A1A")
+
     def drawPrimitive(self, element, option, painter, widget):
         """重写原始绘制方法"""
         from PyQt6.QtWidgets import QStyle
@@ -22,9 +34,13 @@ class TreeBranchStyle(QProxyStyle):
             if has_children:
                 rect = option.rect
                 
-                # 根据状态选择颜色
+                # 根据状态选择颜色。
+                # 关键：选中态不能硬编码蓝色——选中行有自己的背景色（亮色浅蓝、
+                # 深色深蓝 #264F78），蓝色箭头会在选中背景上融入而"消失"。
+                # 改为读取当前主题的 selected_text（亮色 #1A1A1A / 深色 #FFFFFF），
+                # 它本就是为保证在选中背景上可读而设计的对比色。
                 if state & QStyle.StateFlag.State_Selected:
-                    color = QColor("#4A90D9")
+                    color = self._selected_chevron_color()
                 elif state & QStyle.StateFlag.State_MouseOver:
                     color = QColor("#333333")
                 else:

@@ -262,6 +262,22 @@ class CommandExecutor:
         else:
             self._gui.post(_do_refresh)
 
+    def _notify_interrupt_updated(self) -> None:
+        """通知中断列表已变更，触发中断表自动重建。
+        通过 coordinator.interrupt_updated 信号派发（main_window 订阅后重建表格）。
+        工作线程派发到主线程发信号，避免跨线程 emit 的隐患。
+        """
+        def _do_notify():
+            try:
+                self.coordinator.notify_interrupt_updated()
+            except Exception:
+                logger.debug("中断变更通知失败（可忽略）", exc_info=True)
+
+        if threading.current_thread() is threading.main_thread():
+            _do_notify()
+        else:
+            self._gui.post(_do_notify)
+
     def _mark_modified(self) -> None:
         """标记当前文档已修改（见 _execute_undoable 的说明，用于多文档隔离）。"""
         dm = self.main_window.document_manager if self.main_window else None
@@ -1082,6 +1098,9 @@ class CommandExecutor:
         else:
             device.interrupts[name] = irq
         self._notify_refresh()
+        # 中断表靠 interrupt_updated 信号自动重建（_notify_refresh 的通用刷新
+        # 通道不含中断表）。显式触发，确保 AI 改完中断立刻刷新，无需切标签页。
+        self._notify_interrupt_updated()
         self._mark_modified()
 
         return {"success": True,
@@ -1140,6 +1159,7 @@ class CommandExecutor:
             device.interrupts[new_name] = updated
         self._notify_refresh()
         self._mark_modified()
+        self._notify_interrupt_updated()
 
         return {"success": True,
                 "message": t("ai.update_irq_done", name=new_name, default="已更新中断 '{name}'"),
@@ -1162,6 +1182,7 @@ class CommandExecutor:
             del device.interrupts[name]
         self._notify_refresh()
         self._mark_modified()
+        self._notify_interrupt_updated()
 
         return {"success": True,
                 "message": t("ai.remove_irq_done", name=name, default="已删除中断 '{name}'"),

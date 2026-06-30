@@ -3,10 +3,32 @@ EventHandlersMixin - 事件处理相关的方法
 从 main_window_refactored.py 中提取的事件处理器方法
 """
 from PyQt6.QtWidgets import QMessageBox, QMenu
+from PyQt6.QtCore import QEvent, QObject
 
 
 class EventHandlersMixin:
     """事件处理混入类 - 提供所有事件处理方法"""
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        """事件过滤器。
+        目前用于位域表格：双击空白处（点中无 item 的区域）时弹出新建位域对话框。
+        QTableWidget.doubleClicked 信号只在点中有效行时发射，捕获不到空白双击，
+        故在此拦截 MouseButtonDblClick 事件，用 itemAt 判断是否空白。
+        其它控件走默认处理（返回 False）。
+        """
+        if event.type() == QEvent.Type.MouseButtonDblClick:
+            field_table = self.layout_manager.get_widget('field_table') if hasattr(self, 'layout_manager') else None
+            # 仅对位域表格生效
+            if obj is field_table and field_table is not None:
+                pos = event.position().toPoint() if hasattr(event, 'position') else event.pos()
+                item = field_table.itemAt(pos)
+                if item is None:
+                    # 双击空白处 → 新建位域（add_field 内部会校验是否已选寄存器）
+                    if hasattr(self, 'add_field'):
+                        self.add_field()
+                        return True
+        return super().eventFilter(obj, event) if hasattr(super(), 'eventFilter') else False
+
 
     def on_peripheral_added(self, periph_name: str):
         """外设添加事件"""
