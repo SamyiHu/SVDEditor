@@ -60,7 +60,7 @@ class SVDGenerator:
         这里以顶层中断为唯一数据源重建，保证写出的中断与用户实际编辑的一致。
         """
         import logging
-        _irq_log = logging.getLogger("IRQ_DIAG")
+        _irq_log = logging.getLogger("svd_tool.IRQ_DIAG")
         _irq_log.info(f"[GEN-REBUILD] 顶层中断数: {len(self.device_info.interrupts)}: {[(i.name, i.value, i.peripherals) for i in self.device_info.interrupts.values()]}")
         before = {p.name: len(p.interrupts) for p in self.device_info.peripherals.values()}
         # 清空所有外设的 interrupts

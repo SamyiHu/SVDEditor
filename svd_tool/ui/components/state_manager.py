@@ -676,7 +676,7 @@ class StateManager:
     
     def _sync_all_peripheral_interrupts(self):
         """根据device_info.interrupts完全重建所有外设的interrupts列表"""
-        _irq_log = logging.getLogger("IRQ_DIAG")
+        _irq_log = logging.getLogger("svd_tool.IRQ_DIAG")
         _irq_log.info(f"[SYNC] 顶层中断: {[(i.name, i.value, i.peripherals) for i in self.device_info.interrupts.values()]}")
         # 先清空所有外设的中断列表
         for peripheral in self.device_info.peripherals.values():
@@ -698,7 +698,7 @@ class StateManager:
 
     def update_interrupt(self, name: str, interrupt: Interrupt):
         """更新中断（支持撤销）"""
-        _irq_log = logging.getLogger("IRQ_DIAG")
+        _irq_log = logging.getLogger("svd_tool.IRQ_DIAG")
         _irq_log.info(f"[UPDATE] 被调用: name={name} -> new(name={interrupt.name},value={interrupt.value},desc={interrupt.description!r},peripherals={interrupt.peripherals})")
         if name not in self.device_info.interrupts:
             _irq_log.warning(f"[UPDATE] 中断 {name} 不存在于 device_info.interrupts，直接返回（未更新）！")
