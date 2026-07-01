@@ -291,10 +291,16 @@ class StyleScheme:
         # 树形分支 chevron 箭头：用 QSS image 引用 SVG 矢量图标。
         # 由 QSS 在正确绘制层级处理选中/hover 行，无需 proxy style 事后补画，
         # 也就不需要 hover 时重绘——彻底消除闪烁/性能问题。
-        # 路径解析为包内资源的绝对路径（QSS url 不支持相对路径）。
+        # 路径解析兼容两种环境：PyInstaller 打包(sys._MEIPASS) 与 开发源码目录。
         import os as _os
-        _icon_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
-                                   "resources", "icons")
+        import sys as _sys
+        # PyInstaller 打包后资源在 _MEIPASS/svd_tool/resources/icons
+        # 开发环境在 svd_tool/config 的上级的 resources/icons
+        _base = getattr(_sys, '_MEIPASS', None) or _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+        _icon_dir = _os.path.join(_base, "resources", "icons")
+        if not _os.path.isdir(_icon_dir):
+            # 回退：直接用包内相对路径
+            _icon_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "resources", "icons")
         _ic_closed = _os.path.join(_icon_dir, "branch_closed.svg").replace("\\", "/")
         _ic_open = _os.path.join(_icon_dir, "branch_open.svg").replace("\\", "/")
         _ic_closed_sel = _os.path.join(_icon_dir, "branch_closed_selected.svg").replace("\\", "/")

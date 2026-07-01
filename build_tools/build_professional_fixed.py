@@ -177,6 +177,9 @@ a = Analysis(
 
         # 图标文件
         (r'{project_root_parent}/icon.ico', '.'),
+
+        # 树状图 chevron 箭头 SVG（QSS image 引用，必须打包否则打包版无箭头）
+        (r'{project_root_parent}/svd_tool/resources/icons', 'svd_tool/resources/icons'),
     ],
     hiddenimports=[
         # PyQt6模块

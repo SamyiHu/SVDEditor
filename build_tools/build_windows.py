@@ -56,10 +56,10 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('config.py', '.'),
         ('README.md', '.'),
         ('README_zh.md', '.'),
         ('LICENSE', '.'),
+        ('svd_tool/resources/icons', 'svd_tool/resources/icons'),
     ],
     hiddenimports=[
         'PyQt6.QtCore',
@@ -128,10 +128,10 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('config.py', '.'),
         ('README.md', '.'),
         ('README_zh.md', '.'),
         ('LICENSE', '.'),
+        ('svd_tool/resources/icons', 'svd_tool/resources/icons'),
     ],
     hiddenimports=[
         'PyQt6.QtCore',
@@ -211,8 +211,8 @@ def build_for_architecture(arch, console=False, onefile=False):
     # 创建spec文件
     spec_file = create_spec_file(arch, console, onefile)
     
-    # 构建命令
-    cmd = ['pyinstaller', '--clean', spec_file]
+    # 构建命令（用 python -m PyInstaller 避免 pyinstaller.exe 不在 PATH 的问题）
+    cmd = [sys.executable, '-m', 'PyInstaller', '--clean', spec_file]
     
     print(f"执行命令: {' '.join(cmd)}")
     
