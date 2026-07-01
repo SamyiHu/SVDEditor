@@ -13,13 +13,17 @@ class EventHandlersMixin:
         """事件过滤器。
         目前用于位域表格：双击空白处（点中无 item 的区域）时弹出新建位域对话框。
         QTableWidget.doubleClicked 信号只在点中有效行时发射，捕获不到空白双击，
-        故在此拦截 MouseButtonDblClick 事件，用 itemAt 判断是否空白。
+        故在此拦截 viewport 的 MouseButtonDblClick 事件，用 itemAt 判断是否空白。
         其它控件走默认处理（返回 False）。
         """
         if event.type() == QEvent.Type.MouseButtonDblClick:
             field_table = self.layout_manager.get_widget('field_table') if hasattr(self, 'layout_manager') else None
-            # 仅对位域表格生效
-            if obj is field_table and field_table is not None:
+            # obj 是 viewport（过滤器装在 viewport 上）；通过 property 标记识别
+            is_field_table_viewport = (
+                field_table is not None
+                and obj is field_table.viewport()
+            )
+            if is_field_table_viewport:
                 pos = event.position().toPoint() if hasattr(event, 'position') else event.pos()
                 item = field_table.itemAt(pos)
                 if item is None:

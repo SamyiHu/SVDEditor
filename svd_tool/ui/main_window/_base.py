@@ -326,7 +326,10 @@ class MainWindowRefactored(
             field_table.itemSelectionChanged.connect(self.on_field_table_selection_changed)
             # 安装事件过滤器：双击空白处弹出新建位域对话框
             # （doubleClicked 信号捕获不到空白双击，需 eventFilter 拦截）
-            field_table.installEventFilter(self)
+            # 关键：必须装在 viewport() 上——QTableWidget 的鼠标事件发给 viewport
+            # 而非 table 本身，装在 table 上拦截不到真实鼠标事件。
+            field_table.viewport().installEventFilter(self)
+            field_table.setProperty('_is_field_table', True)  # 标记，供 eventFilter 识别
 
         # 连接紧凑模式复选框
         compact_tree_cb = self.layout_manager.get_widget('compact_tree_cb')
