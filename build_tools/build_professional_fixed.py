@@ -399,8 +399,8 @@ VSVersionInfo(
   ffi=FixedFileInfo(
     # filevers and prodvers should be always a tuple with four items: (1, 2, 3, 4)
     # Set not needed items to zero 0.
-    filevers=(1, 1, 0, 0),
-    prodvers=(1, 1, 0, 0),
+    filevers=(1, 2, 0, 0),
+    prodvers=(1, 2, 0, 0),
     # Contains a bitmask that specifies the valid bits 'flags'r
     mask=0x3f,
     # Contains a bitmask that specifies the Boolean attributes of the file.
@@ -424,12 +424,12 @@ VSVersionInfo(
           u'040904B0',
           [StringStruct(u'CompanyName', u'SVD Tool Team'),
            StringStruct(u'FileDescription', u'SVD Editor - CMSIS SVD File Editor'),
-           StringStruct(u'FileVersion', u'1.1.0.0'),
+           StringStruct(u'FileVersion', u'1.2.0.0'),
            StringStruct(u'InternalName', u'SVDEditor'),
            StringStruct(u'LegalCopyright', u'Copyright © 2026 SVD Tool Team. GPL-3.0 License'),
            StringStruct(u'OriginalFilename', u'SVDEditor.exe'),
            StringStruct(u'ProductName', u'SVD Editor'),
-           StringStruct(u'ProductVersion', u'1.1.0.0')])
+           StringStruct(u'ProductVersion', u'1.2.0.0')])
       ]),
     VarFileInfo([VarStruct(u'Translation', [0x409, 1200])])
   ]
