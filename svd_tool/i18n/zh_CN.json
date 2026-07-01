@@ -832,7 +832,7 @@
   "about.author": "作者",
   "about.license": "开源协议",
   "about.copyright": "© {year} {author}",
-  "welcome.version": "V1.1",
+  "welcome.version": "V1.2",
   "welcome.description": "专业的SVD文件可视化编辑工具\n支持 CMSIS-SVD 标准格式",
   "welcome.open_file": "打开 SVD 文件",
   "welcome.open_file_desc": "选择一个现有的 .svd 文件进行编辑",

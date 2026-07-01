@@ -832,7 +832,7 @@
   "about.author": "Author",
   "about.license": "License",
   "about.copyright": "© {year} {author}",
-  "welcome.version": "V1.1",
+  "welcome.version": "V1.2",
   "welcome.description": "Professional SVD file visual editor\nSupports CMSIS-SVD standard format",
   "welcome.open_file": "Open SVD File",
   "welcome.open_file_desc": "Select an existing .svd file to edit",
