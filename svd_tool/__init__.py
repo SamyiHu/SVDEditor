@@ -3,7 +3,7 @@
 SVD工具包
 """
 
-__version__ = "V1.1"
+__version__ = "V1.2"
 __author__ = "SamyiHu"
 __author_url__ = "https://github.com/SamyiHu"
 __license__ = "GPL-3.0"
