@@ -264,6 +264,8 @@ a = Analysis(
         # （openai 用 httpx 传输 JSON，不依赖 PIL 做图像处理）。
         # 注：AI 助手的 openai/pydantic/httpx/crypto 等依赖链保留，确保 AI 功能可用。
         'PIL', 'Pillow',
+        # 时区数据库（~1.6MB），SVD 编辑器不用时区功能
+        'tzdata',
     ],
 
     # 减少误报的设置
@@ -281,6 +283,7 @@ _qt_binary_blacklist = [
     'Qt6Pdf', 'Qt6PdfWidgets', 'qpdf',  # PDF support
     'Qt6PrintSupport',  # printing
     'Qt6Multimedia', 'Qt6MultimediaWidgets',
+    'Qt6Network',     # Qt C++ 网络模块（AI 用 httpx 走 Python，不走 QtNetwork）~1.7MB
     'd3dcompiler',    # Qt-bundled DirectX shader compiler (multiple versions)
     # unused image format plugins (keep qico/qsvg/qgif/qjpeg)
     'qicns', 'qtga', 'qtiff', 'qwbmp', 'qwebp', 'qjp2',
