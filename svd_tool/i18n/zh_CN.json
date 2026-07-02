@@ -680,6 +680,7 @@
   "diff.added": "新增 [+]",
   "diff.removed": "删除 [-]",
   "diff.modified": "修改 [~]",
+  "diff.scrollbar_marker_hint": "滚动条上的色块标记差异位置（绿=新增/红=删除/黄=修改），点击可跳转",
   "status.periph_moved_up": "已上移外设: {name}",
   "status.periph_moved_down": "已下移外设: {name}",
   "msg.unnamed": "未命名",

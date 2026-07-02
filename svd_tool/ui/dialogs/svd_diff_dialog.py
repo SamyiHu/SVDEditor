@@ -24,6 +24,7 @@ from ...core.data_model import DeviceInfo
 from ...config.styles import get_style_scheme
 from ...i18n.i18n import t
 from ..widgets.toggle_switch import ToggleSwitch
+from ..widgets.diff_marker_scrollbar import DiffMarkerScrollBar
 
 # 合并操作下拉框选项
 _ACTION_OPTIONS = [
@@ -92,6 +93,11 @@ class SVDDiffDialog(QDialog):
         self.merger = SVDMerger()
         self.merge_items: list = []
         self._diffs: List[DiffItem] = []
+        self._diff_markers: List[Tuple[int, str]] = []  # 差异行标记(行号, 类别)
+        # 缓存上次生成的对齐 XML 行列表。开关变化时只需重做染色（_recolor_raw_xml），
+        # 无需重新生成文本（_generate_aligned_xml 很慢），且保留滚动位置。
+        self._xml_lines_a: List[str] = []
+        self._xml_lines_b: List[str] = []
         self._syncing_scroll = False
         self._current_mode = initial_mode  # "compare" or "merge"
         self._setup_ui()
@@ -308,7 +314,13 @@ class SVDDiffDialog(QDialog):
             }
         """)
 
-        # 同步滚动
+        # 换装带差异标记的滚动条：在滚动条上叠加差异色块，点击可跳转到差异行。
+        self._diff_sb = DiffMarkerScrollBar(self)
+        self.xml_edit_b.setVerticalScrollBar(self._diff_sb)
+        # 点击标记 → 平滑跳到对应行（两端同步随之生效）
+        self._diff_sb.marker_clicked.connect(self._jump_to_xml_line)
+
+        # 同步滚动（注意：换装后 xml_edit_b.verticalScrollBar() 即 self._diff_sb）
         self.xml_edit_b.verticalScrollBar().valueChanged.connect(self._sync_xml_scroll_from_b)
         self.xml_edit_a.verticalScrollBar().valueChanged.connect(self._sync_xml_scroll_from_a)
 
@@ -576,6 +588,12 @@ class SVDDiffDialog(QDialog):
         if self._current_mode == "merge":
             self._do_merge_analyze()
 
+        # 若当前正显示原始 XML 对比视图，也同步刷新染色与滚动条标记。
+        # 只重做染色（_recolor_raw_xml），不重新生成文本——开关变化只改过滤规则，
+        # XML 内容没变，重生成既慢又会丢失滚动位置。复用缓存的行列表即可。
+        if self.view_stack.currentIndex() == 1:
+            self._recolor_raw_xml()
+
     def _build_trees(self, diffs, parent_a, parent_b):
         """同时构建左右两棵树"""
         # 浅色背景 + 深色文字，清晰可见
@@ -663,18 +681,80 @@ class SVDDiffDialog(QDialog):
 
         try:
             lines_a, lines_b = self._generate_aligned_xml()
+            # 缓存对齐行列表，供开关变化时 _recolor_raw_xml 只重做染色、不重生成文本
+            self._xml_lines_a = lines_a
+            self._xml_lines_b = lines_b
             self.xml_edit_a.setPlainText("\n".join(lines_a))
             self.xml_edit_b.setPlainText("\n".join(lines_b))
 
-            # 用 QTextBlockFormat 设置行背景色（保证等宽行高，滚动不漂移）
+            # 用 QTextBlockFormat 设置行背景色（保证等宽行高，滚动不漂移）。
+            # 对 b 端着色时同步收集差异行索引，供滚动条标记使用。
+            self._diff_markers = []
             self._apply_block_colors(self.xml_edit_a, lines_a, lines_b, 'a')
             self._apply_block_colors(self.xml_edit_b, lines_a, lines_b, 'b')
+
+            # 把差异标记喂给自定义滚动条（总行数取 b 端文档行数）
+            if hasattr(self, "_diff_sb"):
+                total = self.xml_edit_b.document().blockCount()
+                # 去重相邻同类标记，避免同位置叠画
+                seen = set()
+                uniq = []
+                for ln, cat in self._diff_markers:
+                    key = (ln, cat)
+                    if key not in seen:
+                        seen.add(key)
+                        uniq.append((ln, cat))
+                self._diff_sb.set_markers(uniq, total_lines=total)
         except Exception as e:
             self.xml_edit_a.setPlainText(f"Error generating XML: {e}")
             self.xml_edit_b.clear()
+            self._xml_lines_a = []
+            self._xml_lines_b = []
+            if hasattr(self, "_diff_sb"):
+                self._diff_sb.clear_markers()
+
+    def _recolor_raw_xml(self):
+        """仅重做 XML 视图的染色与滚动条标记，不重新生成文本、不重置滚动位置。
+
+        开关（忽略描述/忽略复位）变化时调用：文本内容不变，只是过滤规则变了，
+        所以只需按新规则重新逐行判定背景色 + 标记。复用 _populate_raw_xml 缓存的
+        _xml_lines_a/_xml_lines_b，避免昂贵的 _generate_aligned_xml 重算。
+        """
+        if not self._xml_lines_a or not self._xml_lines_b:
+            # 尚未生成过 XML，退回全量生成
+            self._populate_raw_xml()
+            return
+
+        lines_a = self._xml_lines_a
+        lines_b = self._xml_lines_b
+        # 记住当前滚动位置（_apply_block_colors 不改文本但保险起见保留）
+        sb_b = self.xml_edit_b.verticalScrollBar()
+        pos_b = sb_b.value() if sb_b else 0
+
+        self._diff_markers = []
+        self._apply_block_colors(self.xml_edit_a, lines_a, lines_b, 'a')
+        self._apply_block_colors(self.xml_edit_b, lines_a, lines_b, 'b')
+
+        if hasattr(self, "_diff_sb"):
+            total = self.xml_edit_b.document().blockCount()
+            seen = set()
+            uniq = []
+            for ln, cat in self._diff_markers:
+                key = (ln, cat)
+                if key not in seen:
+                    seen.add(key)
+                    uniq.append((ln, cat))
+            self._diff_sb.set_markers(uniq, total_lines=total)
+
+        # 恢复滚动位置（双端同步）
+        if sb_b:
+            sb_b.setValue(pos_b)
 
     def _apply_block_colors(self, editor, lines_a, lines_b, side):
-        """用 QTextBlockFormat 设置每行背景色"""
+        """用 QTextBlockFormat 设置每行背景色。
+
+        side=='b' 时同步把差异行索引收集到 self._diff_markers，供滚动条标记使用。
+        """
         doc = editor.document()
         cursor = QTextCursor(doc)
         cursor.beginEditBlock()
@@ -683,7 +763,9 @@ class SVDDiffDialog(QDialog):
         for i in range(count):
             la = lines_a[i]
             lb = lines_b[i]
-            bg = self._line_bg_color(la, lb, la.strip() == "", lb.strip() == "", side)
+            a_empty = la.strip() == ""
+            b_empty = lb.strip() == ""
+            bg = self._line_bg_color(la, lb, a_empty, b_empty, side)
 
             block = doc.findBlockByNumber(i)
             cursor.setPosition(block.position())
@@ -694,13 +776,40 @@ class SVDDiffDialog(QDialog):
                 fmt.clearBackground()
             cursor.setBlockFormat(fmt)
 
+            # b 端收集差异行索引（滚动条标记基于 b 端坐标系）
+            if side == 'b':
+                cat = self._line_diff_category(la, lb, a_empty, b_empty)
+                if cat is not None:
+                    self._diff_markers.append((i, cat))
+
         cursor.endEditBlock()
+
+    def _is_ignored_tag_line(self, la: str, lb: str) -> bool:
+        """判断该行是否属于被"忽略描述/忽略复位"开关过滤的标签行。
+
+        pretty-print 后 <description>/<resetValue> 是独立单行；当对应开关开启时，
+        即使两边内容不同也不应标差异（与树形/合并视图的语义过滤保持一致，减少困惑）。
+        """
+        if not self.differ:
+            return False
+        sa = la.strip()
+        sb = lb.strip()
+        if self.differ.ignore_description:
+            if sa.startswith("<description>") or sb.startswith("<description>"):
+                return True
+        if self.differ.ignore_reset_value:
+            if sa.startswith("<resetValue>") or sb.startswith("<resetValue>"):
+                return True
+        return False
 
     def _line_bg_color(self, la, lb, a_empty, b_empty, side):
         """计算单行背景色"""
         if la.startswith("===") or lb.startswith("==="):
             return self._BG_SEP
         if a_empty and b_empty:
+            return None
+        # 被忽略的标签行：即使增删/修改也不标色
+        if self._is_ignored_tag_line(la, lb):
             return None
         if a_empty and not b_empty:
             return self._BG_ADDED_DIM if side == 'a' else self._BG_ADDED
@@ -709,6 +818,52 @@ class SVDDiffDialog(QDialog):
         if la == lb:
             return None
         return self._BG_MODIFIED
+
+    def _line_diff_category(self, la, lb, a_empty, b_empty):
+        """与 _line_bg_color 平行的分类器，返回差异类别字符串（供滚动条标记）。
+
+        返回 None 表示该行无差异（不画标记）。sep/added/removed/modified 对应
+        DiffMarkerScrollBar 的配色。
+        """
+        if la.startswith("===") or lb.startswith("==="):
+            return "sep"
+        if a_empty and b_empty:
+            return None
+        # 被忽略的标签行不画标记（与背景色判定一致）
+        if self._is_ignored_tag_line(la, lb):
+            return None
+        if a_empty and not b_empty:
+            return "added"
+        if not a_empty and b_empty:
+            return "removed"
+        if la == lb:
+            return None
+        return "modified"
+
+    def _jump_to_xml_line(self, line_index: int):
+        """点击滚动条差异标记后，平滑滚动两端 XML 视图到该行（行号从 0 起）。
+
+        用 QPropertyAnimation 让 xml_edit_b 的滚动条平滑过渡；xml_edit_a 由现有
+        同步机制随之滚动。
+        """
+        from PyQt6.QtCore import QPropertyAnimation, QEasingCurve
+        sb = self.xml_edit_b.verticalScrollBar()
+        doc = self.xml_edit_b.document()
+        total = doc.blockCount()
+        if total <= 0:
+            return
+        # 行号 → 滚动条 value：按比例映射到 [minimum, maximum]
+        vmax = sb.maximum()
+        vmin = sb.minimum()
+        frac = (line_index / float(total)) if total > 1 else 0.0
+        target = int(vmin + frac * (vmax - vmin))
+        target = max(vmin, min(vmax, target))
+        anim = QPropertyAnimation(sb, b"value", self)
+        anim.setDuration(220)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.setStartValue(sb.value())
+        anim.setEndValue(target)
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def _generate_aligned_xml(self) -> Tuple[List[str], List[str]]:
         """生成按 B（参考）顺序对齐的 XML 行列表

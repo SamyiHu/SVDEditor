@@ -680,6 +680,7 @@
   "diff.added": "Added [+]",
   "diff.removed": "Removed [-]",
   "diff.modified": "Modified [~]",
+  "diff.scrollbar_marker_hint": "Colored markers on the scrollbar show diff locations (green=added/red=removed/yellow=modified); click to jump",
   "status.periph_moved_up": "Moved peripheral up: {name}",
   "status.periph_moved_down": "Moved peripheral down: {name}",
   "msg.unnamed": "Unnamed",
