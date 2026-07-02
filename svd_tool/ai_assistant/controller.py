@@ -44,6 +44,8 @@ class AIAssistantController(QObject):
 
         # 工作线程
         self._worker: Optional[AgentLoop] = None
+        # AI 忙时排队的用户消息（任务结束后逐条串行发送）
+        self._queued_messages: list[str] = []
 
         # 初始化后端
         self._init_backend()
@@ -103,6 +105,35 @@ class AIAssistantController(QObject):
 
             self.logger.info("AI 配置已更新")
 
+    def send_or_queue(self, text: str):
+        """发送消息或入队。
+
+        AI 空闲时直接发送；忙时把消息入队，等当前 agent loop 结束后由
+        _on_loop_finished → _drain_queued_messages 自动发送（逐条串行，不开多 loop）。
+        """
+        if not text.strip():
+            return
+        if self.is_busy():
+            self._queued_messages.append(text)
+            if self.panel:
+                self.panel.append_system_message(t(
+                    "ai.queued_hint",
+                    n=len(self._queued_messages),
+                    default="⏳ AI 正在处理，已排队 {n} 条消息，完成后自动发送。"
+                ))
+            self.logger.info(f"AI 忙，消息入队（当前队列 {len(self._queued_messages)} 条）")
+            return
+        self.send_message(text)
+
+    def _drain_queued_messages(self):
+        """loop 结束后取出队首一条发送（若有）。逐条串行处理，避免并发开多个 loop。"""
+        if not self._queued_messages:
+            return
+        # 取首条，其余保留待下一轮结束继续
+        next_text = self._queued_messages.pop(0)
+        self.logger.info(f"发送排队消息（剩余 {len(self._queued_messages)} 条）")
+        self.send_message(next_text)
+
     def send_message(self, text: str):
         """发送用户消息（从 UI 输入）"""
         if not text.strip():
@@ -136,6 +167,9 @@ class AIAssistantController(QObject):
             self._init_backend()
             if not self.backend:
                 return
+
+        # 静默模式：开启后写操作只改数据、立即放行工作线程，UI 刷新推迟到结束统一刷
+        self.executor.set_silent_mode(getattr(self.config, "silent_mode", False))
 
         if self.panel:
             self.panel.set_streaming(True)
@@ -294,9 +328,18 @@ class AIAssistantController(QObject):
             self.panel.finalize_assistant_message(final_text)
             self.panel.end_streaming()
 
+        # 静默模式任务结束：把积累的待刷新 UI 变更一次性刷出
+        try:
+            self.executor.flush_pending_updates()
+        except Exception:
+            self.logger.debug("flush_pending_updates 失败", exc_info=True)
+
         # 清理本轮状态
         self._round_text_buffer = ""
         self._current_round_has_bubble = False
+
+        # 处理排队消息：若 AI 忙时有用户排队了消息，自动发送下一条
+        self._drain_queued_messages()
 
     def _on_continuation_requested(self, completed: int):
         """预算耗尽，工作线程在等用户决定是否继续（本槽在主线程执行）。
@@ -331,6 +374,11 @@ class AIAssistantController(QObject):
             self.panel.finalize_assistant_message("")
             self.panel.end_streaming()
             self.panel.append_system_message(t("ai.error.prefix", error=error_msg))
+        # 静默模式下出错也要刷新，避免界面停在旧状态
+        try:
+            self.executor.flush_pending_updates()
+        except Exception:
+            self.logger.debug("flush_pending_updates 失败", exc_info=True)
         self._round_text_buffer = ""
         self._current_round_has_bubble = False
 

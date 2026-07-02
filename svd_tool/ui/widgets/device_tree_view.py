@@ -38,16 +38,11 @@ class DeviceTreeView(QTreeView):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
         # ---- 列宽策略 ----
-        header = self.header()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
-        for col in range(2, 5):
-            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
-        header.resizeSection(0, 180)
-        header.resizeSection(1, 100)
-        header.resizeSection(2, 200)
-        header.resizeSection(3, 80)
-        header.resizeSection(4, 80)
+        # 注意：setSectionResizeMode 在 model 尚未绑定（section 不存在）时会静默失效，
+        # 因此 __init__ 里只设不依赖 section 的属性，真正的 resize mode 在
+        # _apply_column_policy()（setModel 后调用）里设。
+        self.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.header().setMinimumSectionSize(60)
 
         # ---- 拖拽状态 ----
         self._drop_indicator_rect = QRect()
@@ -78,6 +73,43 @@ class DeviceTreeView(QTreeView):
         if isinstance(m, DeviceTreeModel):
             return m
         return None
+
+    def setModel(self, model):
+        """重写：绑定 model 后再应用列宽策略。
+
+        关键修复：setSectionResizeMode 在 model 尚未绑定（header 无真实 section）时
+        会静默失效（读回变 Fixed/默认），导致 __init__ 里设的 ResizeToContents 根本
+        没生效——表现为名称列被省略成 IA/RCC_AP。改为在 setModel 后（section 已存在）
+        调用 _apply_column_policy()，确保 resize mode 真正写入。
+        """
+        super().setModel(model)
+        if model is not None:
+            self._apply_column_policy()
+
+    def _apply_column_policy(self):
+        """应用列宽策略（必须在 model 已绑定、section 真实存在后调用）。
+
+        名称列(0)：ResizeToContents —— 依据 model 的 SizeHintRole（见
+          device_tree_model._name_size_hint）按"文字宽+缩进"算列宽，深嵌套寄存器/
+          位域名也能完整显示。
+        offset/access/reset 列(1/3/4)：Interactive 固定宽度（数值列，可手动拖）。
+        描述列(2)：Interactive + 默认省略（描述常很长，不全展开，超出 ElideRight）。
+        末列 stretch 兜底：名称列 ResizeToContents 撑开后视口若有剩余，由末列吸收，
+          避免右侧出现空白区。
+        """
+        header = self.header()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
+        header.resizeSection(1, 100)   # offset
+        header.resizeSection(2, 200)   # description（默认省略，可拖宽）
+        header.resizeSection(3, 80)    # access
+        header.resizeSection(4, 80)    # reset value
+        header.setMinimumSectionSize(60)
+        header.setStretchLastSection(True)
+        self.setTextElideMode(Qt.TextElideMode.ElideRight)
 
     # ================================================================
     # 动画

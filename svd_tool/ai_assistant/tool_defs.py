@@ -357,6 +357,18 @@ def _build_tool_catalog() -> List[Dict[str, Any]]:
             "category": "read",
         },
         {
+            "name": "open_document",
+            "description": "打开一个 SVD 文件载入编辑器为新文档，并激活为当前文档。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "要打开的 SVD 文件绝对路径"},
+                },
+                "required": ["file_path"],
+            },
+            "category": "ui",
+        },
+        {
             "name": "switch_document",
             "description": "切换到另一个已打开的文档。",
             "parameters": {

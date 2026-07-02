@@ -1,7 +1,9 @@
 import os
 from PyQt6.QtWidgets import QApplication, QMessageBox, QFileDialog
+from PyQt6.QtCore import QEventLoop
 from ...core.svd_parser import SVDParser
 from ...core.svd_generator import SVDGenerator
+from ...core.svd_loader_worker import SVDLoaderWorker
 from ...utils.helpers import pretty_xml
 from ...i18n.i18n import t
 
@@ -10,110 +12,163 @@ class FileActionsMixin:
     """文件操作"""
 
     def open_svd_file(self):
-        """打开SVD文件（支持多选）"""
-        # 检查未保存的更改
-        if self.check_unsaved_changes():
-            file_paths, _ = QFileDialog.getOpenFileNames(
-                self, t("msg.svd_select_file"), "", t("msg.svd_file_filter")
-            )
+        """打开SVD文件（支持多选）。
 
-            if file_paths:
-                for file_path in file_paths:
-                    try:
-                        # 先保存当前文档状态（确保数据隔离）
-                        self._save_current_document_state()
+        重构后：解析在 QThreadPool 后台线程并发执行，主线程只做轻量装配，
+        避免多文档打开时 GUI 线程被阻塞导致卡顿。
+        """
+        if not self.check_unsaved_changes():
+            return
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self, t("msg.svd_select_file"), "", t("msg.svd_file_filter")
+        )
+        if file_paths:
+            self._open_files_async(file_paths)
 
-                        # 关键修复：先检查文件是否已打开。若已打开，直接切回该文档
-                        # 并恢复其状态，绝不能用新解析的完整数据覆盖 state_manager——
-                        # 否则用户在旧文档上的未保存删除/修改会被"还原"（用磁盘原始
-                        # 数据替换了内存中的编辑状态）。
-                        existing_doc_id = self.document_manager.find_by_file_path(file_path) \
-                            if hasattr(self.document_manager, 'find_by_file_path') else None
-                        if existing_doc_id:
-                            self.document_manager.switch_to(existing_doc_id)
-                            existing_doc = self.document_manager.get_document(existing_doc_id)
-                            if existing_doc:
-                                self._restore_document_state(existing_doc)
-                            self.layout_manager.update_status(
-                                t("status.file_loaded", name=os.path.basename(file_path)))
-                            continue
+    def _open_files_async(self, file_paths: list):
+        """并发解析并装配多个 SVD 文件（对话框 + 拖拽共用入口）。
 
-                        self.layout_manager.update_status(t("status.file_parsing", name=os.path.basename(file_path)))
-                        QApplication.processEvents()  # 更新UI
+        解析在后台线程，装配在主线程信号槽（天然串行，避免数据竞争）。
+        去重：已打开的文件不再重新解析，而是切回其文档（保留未保存编辑）。
+        警告：所有文件解析完后汇总弹一次（而非每文件弹一次）。
+        """
+        paths = [p for p in file_paths if p]
+        if not paths:
+            return
 
-                        # 解析文件
-                        parser = SVDParser()
-                        device_info = parser.parse_file(file_path)
+        # 先切到编辑器视图并给进度提示（UI 保持响应）
+        self.layout_manager.show_editor()
+        if len(paths) > 1:
+            self.layout_manager.update_status(
+                t("status.files_parsing", count=len(paths),
+                  default="正在后台解析 {count} 个文件…"))
+        else:
+            self.layout_manager.update_status(
+                t("status.file_parsing", name=os.path.basename(paths[0])))
 
-                        # 暂停通知，防止旧文档的树展开状态泄漏到新文档
-                        self.state_manager.pause_notifications()
+        # 收集本轮所有文件的警告，待全部完成后汇总弹一次
+        collected_warnings = []  # [(file_basename, [warnings])]
 
-                        try:
-                            # 更新状态管理器
-                            self.state_manager.device_info = device_info
-                            self.state_manager.clear_selection()
-                            self.state_manager.command_history.clear()
+        worker = SVDLoaderWorker(parent=self)
 
-                            # 重置预览器状态（新打开的文件不应该继承旧文件的选中/折叠状态）
-                            if self.preview_manager and self.preview_manager.preview_widget:
-                                pw = self.preview_manager.preview_widget
-                                pw.folded_elements = set()
-                                pw.current_selection = {
-                                    'type': None, 'peripheral': None, 'register': None,
-                                    'field': None, 'interrupt': None
-                                }
-                                if hasattr(pw, 'preview_edit') and pw.preview_edit:
-                                    pw.preview_edit.clear_highlight()
+        def _on_parsed(file_path, device_info, warnings):
+            try:
+                self._assemble_loaded_document(file_path, device_info)
+            except Exception as e:
+                self.logger.error(f"装配文件失败: {file_path} - {e}", exc_info=True)
+                QMessageBox.critical(
+                    self, t("msg.load_error"),
+                    t("msg.file_load_failed_detail", error=str(e)))
+            if warnings:
+                collected_warnings.append((os.path.basename(file_path), list(warnings)))
+            worker._mark_one_done()
 
-                            # 更新UI（不保留旧文档的展开状态）
-                            self.peripheral_manager.update_peripheral_tree(preserve_expanded=False)
-                            self.update_data_stats()
-                            self._update_interrupt_table()
-                        finally:
-                            # 恢复通知（此时树已正确重建，不会泄漏展开状态）
-                            self.state_manager.resume_notifications()
+        def _on_failed(file_path, error_msg):
+            self.logger.error(f"后台解析失败: {file_path} - {error_msg}")
+            QMessageBox.critical(
+                self, t("msg.load_error"),
+                t("msg.file_load_failed_detail", error=error_msg))
+            worker._mark_one_done()
 
-                        # 发射文件加载信号（触发实时预览刷新）
-                        if hasattr(self, 'coordinator') and self.coordinator:
-                            self.logger.debug("调用coordinator.emit_event(device_info_updated)")
-                            self.coordinator.emit_event("device_info_updated", device_info)
+        def _on_all_done():
+            # 汇总警告弹一次
+            if collected_warnings:
+                lines = []
+                total = 0
+                for name, ws in collected_warnings:
+                    total += len(ws)
+                    sample = ws[:5]
+                    lines.append(f"[{name}] ({len(ws)}): " + " | ".join(sample))
+                    if len(ws) > 5:
+                        lines.append(f"  …还有 {len(ws) - 5} 条")
+                QMessageBox.warning(
+                    self, t("msg.parse_warning"),
+                    t("msg.parse_warnings_summary", total=total,
+                      default="共 {total} 条解析警告：\n\n") + "\n".join(lines))
 
-                        # 更新基础信息
-                        if hasattr(self.layout_manager, 'update_basic_info'):
-                            self.layout_manager.update_basic_info(device_info)
+        worker.parsed.connect(_on_parsed)
+        worker.failed.connect(_on_failed)
+        worker.all_done.connect(_on_all_done)
 
-                        self.layout_manager.update_status(t("status.file_loaded", name=os.path.basename(file_path)))
+        # 保留引用防止被 GC（槽闭包期间 worker 须存活）
+        self._active_loaders = getattr(self, "_active_loaders", [])
+        self._active_loaders.append(worker)
 
-                        # 注册到文档管理器
-                        try:
-                            new_doc_id = self.document_manager.open_document(
-                                device_info, file_path=file_path)
-                            # 关键：注册后必须切换 active 到新文档，使 document_manager
-                            # 的 active_doc_id 与 state_manager.device_info 一致。
-                            # 否则 active 仍指向旧文档，后续 _save_current_document_state
-                            # 会把新文档的数据存回旧文档，造成"被其他文件覆盖"。
-                            self.document_manager.switch_to(new_doc_id)
-                        except Exception as e:
-                            self.logger.warning(f"注册文档到DocumentManager失败: {e}")
+        def _cleanup():
+            try:
+                self._active_loaders.remove(worker)
+            except (ValueError, AttributeError):
+                pass
+        worker.all_done.connect(_cleanup)
 
-                        # 切换到编辑器视图
-                        self.layout_manager.show_editor()
-                        self.layout_manager.add_recent_file(file_path)
+        worker.load_files(paths)
 
-                        # 显示警告
-                        if parser.warnings:
-                            warning_msg = "\n".join(parser.warnings[:10])
-                            if len(parser.warnings) > 10:
-                                warning_msg += t("msg.more_warnings", count=len(parser.warnings)-10)
-                            QMessageBox.warning(self, t("msg.parse_warning"), warning_msg)
+    def _assemble_loaded_document(self, file_path: str, device_info):
+        """在主线程装配一个已解析好的 device_info 到编辑器（去重 + 注册文档）。
 
-                    except Exception as e:
-                        self.logger.error(f"文件加载失败: {str(e)}")
-                        QMessageBox.critical(self, t("msg.load_error"), t("msg.file_load_failed_detail", error=str(e)))
+        与旧同步路径逻辑等价：先保存当前文档状态、去重检查、暂停通知更新
+        state_manager + 重建树 + 中断表、注册文档并切换 active、加入最近文件。
+        """
+        # 先保存当前文档状态（确保数据隔离）
+        self._save_current_document_state()
 
-                # 多文件加载完成后更新状态
-                if len(file_paths) > 1:
-                    self.layout_manager.update_status(t("status.files_loaded", count=len(file_paths)))
+        # 去重：已打开则切回，绝不用新解析数据覆盖（保留未保存编辑）
+        existing_doc_id = self.document_manager.find_by_file_path(file_path) \
+            if hasattr(self.document_manager, 'find_by_file_path') else None
+        if existing_doc_id:
+            self.document_manager.switch_to(existing_doc_id)
+            existing_doc = self.document_manager.get_document(existing_doc_id)
+            if existing_doc:
+                self._restore_document_state(existing_doc)
+            self.layout_manager.update_status(
+                t("status.file_loaded", name=os.path.basename(file_path)))
+            self.layout_manager.add_recent_file(file_path)
+            return
+
+        # 暂停通知，防止旧文档的树展开状态泄漏到新文档
+        self.state_manager.pause_notifications()
+        try:
+            self.state_manager.device_info = device_info
+            self.state_manager.clear_selection()
+            self.state_manager.command_history.clear()
+
+            # 重置预览器状态（新文件不应继承旧文件的选中/折叠状态）
+            if self.preview_manager and self.preview_manager.preview_widget:
+                pw = self.preview_manager.preview_widget
+                pw.folded_elements = set()
+                pw.current_selection = {
+                    'type': None, 'peripheral': None, 'register': None,
+                    'field': None, 'interrupt': None
+                }
+                if hasattr(pw, 'preview_edit') and pw.preview_edit:
+                    pw.preview_edit.clear_highlight()
+
+            # 更新UI（不保留旧文档的展开状态）
+            self.peripheral_manager.update_peripheral_tree(preserve_expanded=False)
+            self.update_data_stats()
+            self._update_interrupt_table()
+        finally:
+            self.state_manager.resume_notifications()
+
+        # 发射文件加载信号（触发实时预览刷新）
+        if hasattr(self, 'coordinator') and self.coordinator:
+            self.coordinator.emit_event("device_info_updated", device_info)
+
+        if hasattr(self.layout_manager, 'update_basic_info'):
+            self.layout_manager.update_basic_info(device_info)
+
+        self.layout_manager.update_status(t("status.file_loaded", name=os.path.basename(file_path)))
+
+        # 注册到文档管理器并切换 active
+        try:
+            new_doc_id = self.document_manager.open_document(device_info, file_path=file_path)
+            self.document_manager.switch_to(new_doc_id)
+        except Exception as e:
+            self.logger.warning(f"注册文档到DocumentManager失败: {e}")
+
+        self.layout_manager.show_editor()
+        self.layout_manager.add_recent_file(file_path)
+
 
     def save_svd_file(self):
         """保存SVD文件（多文档时保存全部）"""
@@ -317,70 +372,69 @@ class FileActionsMixin:
                 QMessageBox.critical(self, t("message.error"), t("msg.cannot_open_file", error=str(e)))
 
     def _load_svd_from_path(self, file_path: str):
-        """从指定路径加载SVD文件"""
-        # 先保存当前文档状态（确保数据隔离）
-        self._save_current_document_state()
+        """从指定路径加载单个 SVD 文件（最近文件/向导/AI 非静默路径共用）。
 
-        parser = SVDParser()
-        device_info = parser.parse_file(file_path)
+        解析在后台线程执行，用本地 QEventLoop 同步等待结果（保持同步调用语义，
+        调用方无需改造）。装配复用 _assemble_loaded_document。单文件影响小，
+        此处的阻塞等待主要是为了维持旧调用方的同步签名。
+        """
+        self.layout_manager.update_status(
+            t("status.file_parsing", name=os.path.basename(file_path)))
 
-        # 暂停通知，防止旧文档的树展开状态泄漏到新文档
-        self.state_manager.pause_notifications()
+        result_box = {"device_info": None, "error": None}
+        loop = QEventLoop()
+        worker = SVDLoaderWorker(parent=self)
 
-        try:
-            self.state_manager.device_info = device_info
-            self.state_manager.clear_selection()
-            self.state_manager.command_history.clear()
+        def _on_parsed(fp, device_info, warnings):
+            result_box["device_info"] = device_info
+            result_box["_warnings"] = warnings
+            worker._mark_one_done()
 
-            # 重置预览器状态（新打开的文件不应该继承旧文件的选中/折叠状态）
-            if self.preview_manager and self.preview_manager.preview_widget:
-                pw = self.preview_manager.preview_widget
-                pw.folded_elements = set()
-                pw.current_selection = {
-                    'type': None, 'peripheral': None, 'register': None,
-                    'field': None, 'interrupt': None
-                }
-                if hasattr(pw, 'preview_edit') and pw.preview_edit:
-                    pw.preview_edit.clear_highlight()
+        def _on_failed(fp, error_msg):
+            result_box["error"] = error_msg
+            worker._mark_one_done()
 
-            # 更新UI（不保留旧文档的展开状态）
-            self.peripheral_manager.update_peripheral_tree(preserve_expanded=False)
-            self.update_data_stats()
-            self._update_interrupt_table()
-        finally:
-            # 恢复通知（此时树已正确重建，不会泄漏展开状态）
-            self.state_manager.resume_notifications()
+        def _on_all_done():
+            loop.quit()
 
-        # 发射文件加载信号（触发实时预览刷新）
-        if hasattr(self, 'coordinator') and self.coordinator:
-            self.logger.debug("调用coordinator.emit_event(device_info_updated)")
-            self.coordinator.emit_event("device_info_updated", device_info)
+        worker.parsed.connect(_on_parsed)
+        worker.failed.connect(_on_failed)
+        worker.all_done.connect(_on_all_done)
+        self._active_loaders = getattr(self, "_active_loaders", [])
+        self._active_loaders.append(worker)
 
-        if hasattr(self.layout_manager, 'update_basic_info'):
-            self.layout_manager.update_basic_info(device_info)
-        self.layout_manager.update_status(t("status.file_loaded", name=os.path.basename(file_path)))
+        worker.load_files([file_path])
+        loop.exec()  # 阻塞直到 all_done
 
-        # 注册到文档管理器（创建型号标签页）
-        try:
-            self.document_manager.open_document(
-                device_info, file_path=file_path)
-        except Exception as e:
-            self.logger.warning(f"注册文档到DocumentManager失败: {e}")
+        if result_box["error"] is not None:
+            raise Exception(result_box["error"])
+        if result_box["device_info"] is None:
+            raise Exception("解析未返回结果")
+
+        device_info = result_box["device_info"]
+        self._assemble_loaded_document(file_path, device_info)
+
+        # 最近文件单文件路径也弹警告（与旧行为一致）
+        warnings = result_box.get("_warnings") or []
+        if warnings:
+            warning_msg = "\n".join(warnings[:10])
+            if len(warnings) > 10:
+                warning_msg += t("msg.more_warnings", count=len(warnings) - 10)
+            QMessageBox.warning(self, t("msg.parse_warning"), warning_msg)
 
     def validate_data(self):
         """验证 SVD 数据（CMSIS-SVD Schema 完整验证）"""
         self.file_operations.validate_svd()
 
     def _on_files_dropped(self, file_paths: list):
-        """处理拖拽打开的文件"""
-        for file_path in file_paths:
-            try:
-                self._load_svd_from_path(file_path)
-                self.layout_manager.show_editor()
-                self.layout_manager.add_recent_file(file_path)
-            except Exception as e:
-                self.logger.error(f"拖拽打开文件失败: {file_path} - {e}")
-                QMessageBox.critical(self, t("msg.load_error"), t("msg.file_load_failed_detail", error=str(e)))
+        """处理拖拽打开的文件（欢迎页拖拽多文件）。
+
+        复用 _open_files_async 后台并发解析 + 去重 + 警告汇总，
+        不再逐个同步解析（避免卡顿与重复拖拽覆盖未保存编辑）。
+        """
+        if file_paths:
+            self._open_files_async(file_paths)
+
 
     def export_document(self, format_type: str = "markdown"):
         """导出文档（CSV/Markdown/HTML）"""

@@ -48,6 +48,10 @@ class AIConfig:
     # 自定义系统提示词补充
     system_prompt_extra: str = ""
 
+    # 静默模式：开启后 AI 写操作只改数据模型并立即放行工作线程，
+    # UI 刷新推迟到任务结束统一执行（减少批量任务时主线程被反复刷新的卡顿）。
+    silent_mode: bool = False
+
     def is_configured(self) -> bool:
         """是否已配置（至少有 API Key）"""
         return bool(self.api_key.strip())

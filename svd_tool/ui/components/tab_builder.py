@@ -426,6 +426,8 @@ class TabBuilder:
         left_layout.addLayout(periph_toolbar)
 
         periph_tree = DeviceTreeView()
+        # 给左侧树容器一个最小宽度，保证名称列有足够空间自适应（避免过窄）
+        left_widget.setMinimumWidth(360)
         # chevron 箭头现由全局 QSS image(SVG)绘制，不再需要 proxy style
         left_layout.addWidget(periph_tree)
 
@@ -520,13 +522,25 @@ class TabBuilder:
         ])
         header = irq_table.horizontalHeader()
         if header:
+            # 列宽策略：关联外设列(2)用 ResizeToContents 按内容算宽——外设名多长就
+            # 给多宽，不会贪心占满剩余空间（避免 Stretch 把列撑太宽），且用户仍可
+            # 手动拖宽（ResizeToContents 算出初始宽后不锁死）。名称/值/描述列保持
+            # Interactive 固定宽度，末列 stretch 兜底吸收右侧剩余、防空白。
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
             header.setStretchLastSection(True)
         vheader = irq_table.verticalHeader()
         if vheader:
             vheader.setDefaultSectionSize(28)
         irq_table.setColumnWidth(0, 150)
         irq_table.setColumnWidth(1, 80)
-        irq_table.setColumnWidth(2, 120)
+        irq_table.setColumnWidth(2, 140)   # peripheral（ResizeToContents 会按内容扩，此为下限/初始）
+        irq_table.setColumnWidth(3, 220)   # description（默认省略，可拖宽）
+        # 描述列超出宽度时优雅省略，而非硬截断
+        irq_table.setTextElideMode(Qt.TextElideMode.ElideRight)
+        irq_table.setWordWrap(False)
         irq_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         irq_table.setAlternatingRowColors(True)
         irq_table.setShowGrid(True)

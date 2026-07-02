@@ -266,16 +266,13 @@ class AIChatPanel(QDockWidget):
         return container
 
     def _on_send(self):
-        """发送消息"""
-        if self.controller.is_busy():
-            return
-
+        """发送消息。AI 忙时改为入队（controller.send_or_queue），空闲后自动发送。"""
         text = self._input_edit.toPlainText().strip()
         if not text:
             return
 
         self._input_edit.clear()
-        self.controller.send_message(text)
+        self.controller.send_or_queue(text)
 
     def _on_stop(self):
         """停止 AI 响应"""
@@ -327,9 +324,11 @@ class AIChatPanel(QDockWidget):
         """设置流式状态（仅切换按钮，不预建气泡）。
 
         气泡由 new_streaming_bubble 按需创建（每轮文本开始时），避免空气泡。
+
+        注意：输入框始终可编辑——AI 忙时用户仍可打字，发送的消息进入队列，
+        AI 空闲后自动发送（见 controller.send_or_queue）。
         """
-        self._send_btn.setEnabled(not active)
-        self._input_edit.setEnabled(not active)
+        # 输入框不禁用（允许忙时打字/排队）；发送按钮保持可点（走 send_or_queue）
         self._stop_btn.setVisible(active)
         if active:
             # 进入流式状态：清空当前气泡引用，等待 new_streaming_bubble 按需创建

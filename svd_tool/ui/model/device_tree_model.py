@@ -6,9 +6,9 @@ from __future__ import annotations
 from typing import Optional, List, Any
 
 from PyQt6.QtCore import (
-    Qt, QAbstractItemModel, QModelIndex, QMimeData, QByteArray,
+    Qt, QAbstractItemModel, QModelIndex, QMimeData, QByteArray, QSize,
 )
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QFontMetrics, QFont
 
 from ...core.data_model import DeviceInfo, Peripheral, Register, Field
 from ...i18n.i18n import t
@@ -246,7 +246,36 @@ class DeviceTreeModel(QAbstractItemModel):
             return None
         elif role == Qt.ItemDataRole.BackgroundRole:
             return None
+        elif role == Qt.ItemDataRole.SizeHintRole:
+            # 仅名称列(0)提供精确宽度提示，配合 header 的 ResizeToContents 让
+            # 该列按"每行实际文字 + 层级缩进"计算宽度，确保深嵌套寄存器/位域
+            # 名字（如 IAP_KEY、RCC_APB0）完整显示不被省略成 IA/RCC_AP。
+            # 其它列返回 None（用 header 的 Interactive 固定宽度）。
+            if col != 0:
+                return None
+            return self._name_size_hint(node)
         return None
+
+    def _name_size_hint(self, node: TreeNode) -> QSize:
+        """计算名称列单元格的理想尺寸：文字宽度 + 层级缩进 + 内边距。
+
+        仅用于 SizeHintRole，驱动 header ResizeToContents。宽度取足够容纳
+        该节点显示文本的最小值，避免长名被省略。
+        """
+        text = self._get_display_data(node, 0) or ""
+        fm = QFontMetrics(QFont())
+        text_w = fm.horizontalAdvance(text)
+        # 层级缩进：peripheral=0, register=1, field=2（按 parent 链深度）
+        depth = 0
+        p = node.parent
+        while p is not None:
+            depth += 1
+            p = p.parent
+        # QTreeView 默认每级缩进约 20px；再加缩进箭头/内边距余量
+        indent = depth * 20 + 24
+        # 行高用标准行高即可（uniformRowHeights=True，宽度才是重点）
+        h = fm.height() + 8
+        return QSize(text_w + indent, h)
 
     def headerData(self, section: int, orientation: Qt.Orientation,
                    role: int = Qt.ItemDataRole.DisplayRole) -> Any:

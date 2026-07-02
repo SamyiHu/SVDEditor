@@ -214,6 +214,12 @@ class AISettingsDialog(QDialog):
         ))
         form.addRow(t("ai.settings.extra_prompt", default="额外提示词:"), self._system_prompt_edit)
 
+        # 静默模式 — AI 写操作只改数据、立即放行，UI 刷新推迟到任务结束统一执行
+        self._silent_check = ToggleSwitch(t(
+            "ai.settings.silent_mode",
+            default="静默模式（批量任务时不实时刷界面，任务结束统一刷新，减少卡顿）"))
+        form.addRow("", self._silent_check)
+
         return group
 
     def _load_config(self):
@@ -243,6 +249,7 @@ class AISettingsDialog(QDialog):
         self._tool_iter_edit.setText(str(self.config.max_tool_iterations))
         self._compact_chars_edit.setText(str(self.config.compact_max_chars))
         self._system_prompt_edit.setPlainText(self.config.system_prompt_extra)
+        self._silent_check.setChecked(getattr(self.config, "silent_mode", False))
 
     def _safe_float(self, text: str, default: float, lo: float, hi: float) -> float:
         """安全解析浮点数"""
@@ -275,6 +282,7 @@ class AISettingsDialog(QDialog):
             max_tool_iterations=self._safe_int(self._tool_iter_edit.text(), 0, 0, 9999),
             compact_max_chars=self._safe_int(self._compact_chars_edit.text(), 400, 0, 10000),
             system_prompt_extra=self._system_prompt_edit.toPlainText().strip(),
+            silent_mode=self._silent_check.isChecked(),
         )
 
     def _on_api_type_changed(self, index: int):

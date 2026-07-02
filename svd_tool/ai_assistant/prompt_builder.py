@@ -138,7 +138,7 @@ class PromptBuilder:
 常用工具速览：
 - 查询类：info（设备摘要）、search（按名字搜索）、get_peripheral（外设寄存器列表）、get_register（寄存器位域列表）、get_field（位域详情含枚举值）、list_interrupts（中断列表）、conflicts（地址冲突）、validate（校验）
 - 修改类：update_device、add/update/remove_peripheral、add/update/remove_register、add/update/remove_field
-- 界面类：jump（跳转高亮）、diff（差异比较）、switch_document、save_document、batch_save
+- 界面类：jump（跳转高亮）、diff（差异比较）、open_document（打开新文件载入编辑器）、switch_document（切换已打开文档）、save_document、batch_save
 
 使用建议：
 - 信息分层获取：先用 info 看整体，再用 get_peripheral 看某外设的寄存器，需要时才用 get_register 看位域、get_field 看枚举值，避免一次取过多数据

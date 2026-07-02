@@ -113,6 +113,10 @@ class CommandExecutor:
         self.main_window = main_window
         # 跨线程 GUI 桥（在主线程构造，affinity 正确）
         self._gui = _GuiBridge()
+        # 静默模式：开启后写操作只改数据模型、立即放行工作线程，
+        # UI 刷新推迟到 flush_pending_updates() 统一执行。
+        self._silent = False
+        self._dirty = False  # 静默期间是否有待刷新的 UI 变更
         self._operation_map = {
             "validate": self._op_validate,
             "info": self._op_info,
@@ -144,6 +148,7 @@ class CommandExecutor:
             "update_interrupt": self._op_update_interrupt,
             "remove_interrupt": self._op_remove_interrupt,
             # 多文档操作
+            "open_document": self._op_open_document,
             "switch_document": self._op_switch_document,
             "save_document": self._op_save_document,
             "batch_save": self._op_batch_save,
@@ -237,7 +242,15 @@ class CommandExecutor:
         实际也在主线程被调用。但保留通过 _gui 派发的兜底，确保即使将来从其它
         线程调用也能安全地切到主线程操作 GUI（state_manager 的 QTimer、树视图等）。
         旧实现用 QTimer.singleShot 在工作线程不可靠（无事件循环），已弃用。
+
+        静默模式下：不立即刷新，只标记 _dirty，由 flush_pending_updates() 统一刷。
+        这样工作线程在 call_blocking 中等到的"主线程写操作"不含重刷新，立即放行。
         """
+        # 静默模式：仅标记待刷新，不执行（写操作本身已在主线程完成数据修改）
+        if getattr(self, "_silent", False):
+            self._dirty = True
+            return
+
         def _do_refresh():
             try:
                 state_manager = self.coordinator.get_component("state_manager")
@@ -266,7 +279,13 @@ class CommandExecutor:
         """通知中断列表已变更，触发中断表自动重建。
         通过 coordinator.interrupt_updated 信号派发（main_window 订阅后重建表格）。
         工作线程派发到主线程发信号，避免跨线程 emit 的隐患。
+
+        静默模式下推迟到 flush。
         """
+        if getattr(self, "_silent", False):
+            self._dirty = True
+            return
+
         def _do_notify():
             try:
                 self.coordinator.notify_interrupt_updated()
@@ -277,6 +296,50 @@ class CommandExecutor:
             _do_notify()
         else:
             self._gui.post(_do_notify)
+
+    def set_silent_mode(self, enabled: bool) -> None:
+        """开启/关闭静默模式。由 controller 在启动每个 agent loop 前根据配置设置。"""
+        self._silent = bool(enabled)
+        # 切换模式时复位待刷新标记（新一轮任务从干净状态开始）
+        self._dirty = False
+
+    def flush_pending_updates(self) -> None:
+        """静默模式任务结束时调用：把积累的待刷新 UI 变更一次性刷出。
+
+        用 _gui.post（非阻塞）派发，主线程异步执行完整刷新，工作线程/调用方不等。
+        若 _dirty 为 False 则什么都不做。
+        """
+        if not getattr(self, "_silent", False) and not self._dirty:
+            return
+        if not self._dirty:
+            return
+
+        self._dirty = False  # 已安排刷新，清标记
+
+        def _do_flush():
+            try:
+                state_manager = self.coordinator.get_component("state_manager")
+                if state_manager:
+                    state_manager._notify_state_change()
+                # 中断表重建
+                try:
+                    self.coordinator.notify_interrupt_updated()
+                except Exception:
+                    pass
+                # 基本信息页
+                layout_manager = self.coordinator.get_component("layout_manager")
+                if layout_manager and hasattr(layout_manager, 'update_basic_info') and state_manager:
+                    try:
+                        layout_manager.update_basic_info(state_manager.device_info)
+                    except Exception:
+                        pass
+            except Exception:
+                logger.debug("flush 刷新失败（可忽略）", exc_info=True)
+
+        if threading.current_thread() is threading.main_thread():
+            _do_flush()
+        else:
+            self._gui.post(_do_flush)
 
     def _mark_modified(self) -> None:
         """标记当前文档已修改（见 _execute_undoable 的说明，用于多文档隔离）。"""
@@ -462,6 +525,32 @@ class CommandExecutor:
         except Exception as e:
             return {"success": False, "message": t("ai.conflicts_fail", error=str(e)), "data": None}
 
+    def _parse_external_device(self, file_path: str):
+        """解析外部 SVD 文件为 DeviceInfo，带 (path, mtime) 缓存。
+
+        静默/批量任务中 AI 可能反复对同一文件做对比，重复解析浪费；缓存按文件
+        mtime 失效（文件改动则重新解析）。仅缓存纯数据 DeviceInfo，不缓存 Qt 对象。
+        """
+        import os
+        if not hasattr(self, "_ext_parse_cache"):
+            self._ext_parse_cache = {}  # {file_path: (mtime, device_info)}
+        try:
+            mtime = os.path.getmtime(file_path)
+        except OSError:
+            mtime = None
+        cached = self._ext_parse_cache.get(file_path)
+        if cached and cached[0] == mtime:
+            return cached[1]
+        from svd_tool.core.svd_parser import SVDParser
+        device_info = SVDParser().parse_file(file_path)
+        self._ext_parse_cache[file_path] = (mtime, device_info)
+        # 限制缓存大小，避免长时间运行无限增长
+        if len(self._ext_parse_cache) > 16:
+            # 丢掉最旧的一半（dict 保持插入顺序）
+            keep = list(self._ext_parse_cache.items())[-8:]
+            self._ext_parse_cache = dict(keep)
+        return device_info
+
     def _op_diff(self, params: Dict) -> Dict[str, Any]:
         """比较当前 SVD 与另一个文件或已打开的文档"""
         device = self._get_device_info()
@@ -500,9 +589,7 @@ class CommandExecutor:
                 return {"success": False, "message": t("ai.diff_file_not_found", path=file_path), "data": None}
 
             try:
-                from svd_tool.core.svd_parser import SVDParser
-                parser = SVDParser()
-                other_device = parser.parse_file(file_path)
+                other_device = self._parse_external_device(file_path)
                 other_name = os.path.basename(file_path)
             except Exception as e:
                 return {"success": False, "message": t("ai.diff_parse_fail", error=str(e)), "data": None}
@@ -540,8 +627,9 @@ class CommandExecutor:
                 }
             }
 
-            # 弹出可视化 diff 对话框让用户查看
-            if self.main_window:
+            # 弹出可视化 diff 对话框让用户查看。
+            # 静默模式下不弹框（AI 场景只需文本结果，减少打断）；用户仍可手动 Ctrl+D 弹框。
+            if self.main_window and not getattr(self, "_silent", False):
                 from PyQt6.QtCore import QTimer
                 dm = self.main_window.document_manager if hasattr(self.main_window, 'document_manager') else None
                 QTimer.singleShot(100, lambda: self._show_diff_dialog(device, other_device, dm))
@@ -588,8 +676,7 @@ class CommandExecutor:
             if not os.path.isfile(file_path):
                 return {"success": False, "message": t("ai.diff_file_not_found", path=file_path), "data": None}
             try:
-                from svd_tool.core.svd_parser import SVDParser
-                other_device = SVDParser().parse_file(file_path)
+                other_device = self._parse_external_device(file_path)
                 other_name = os.path.basename(file_path)
             except Exception as e:
                 return {"success": False, "message": t("ai.diff_parse_fail", error=str(e)), "data": None}
@@ -1720,6 +1807,107 @@ class CommandExecutor:
         return {"success": True, "message": t("ai.remove_field_done", name=field_name, reg=reg_name), "data": {"name": field_name}}
 
     # ==================== 多文档操作 ====================
+
+    def _op_open_document(self, params: Dict) -> Dict[str, Any]:
+        """打开一个 SVD 文件载入编辑器为新文档。
+
+        静默模式下：工作线程内解析（纯数据构造，线程安全），再 call_blocking 到
+        主线程做"最小装配"（state_manager.device_info + 树重建 + 注册文档），
+        跳过中断表/预览/基础信息等重刷新（推迟到 flush）。
+        非静默：整体 call_blocking 调 main_window._load_svd_from_path 复用完整流程。
+        """
+        file_path = params.get("file_path", "") or params.get("file", "")
+        if isinstance(file_path, str):
+            file_path = file_path.strip()
+        if not file_path:
+            return {"success": False, "message": t("ai.open_doc_no_path"), "data": None}
+
+        import os
+        if not os.path.isfile(file_path):
+            return {"success": False, "message": t("ai.diff_file_not_found", path=file_path), "data": None}
+
+        if not self.main_window:
+            return {"success": False, "message": t("ai.doc_mgr_unavailable"), "data": None}
+
+        # 静默模式：工作线程解析 + 主线程最小装配
+        if getattr(self, "_silent", False):
+            try:
+                from svd_tool.core.svd_parser import SVDParser
+                parser = SVDParser()
+                device_info = parser.parse_file(file_path)
+            except Exception as e:
+                return {"success": False, "message": t("ai.diff_parse_fail", error=str(e)), "data": None}
+
+            doc_id_box = {"doc_id": None, "name": None}
+
+            def _assemble():
+                try:
+                    mw = self.main_window
+                    # 去重：已打开则切回，不重新解析覆盖（保留未保存编辑）
+                    existing = mw.document_manager.find_by_file_path(file_path) \
+                        if hasattr(mw.document_manager, "find_by_file_path") else None
+                    if existing:
+                        mw._save_current_document_state()
+                        mw.document_manager.switch_to(existing)
+                        ex = mw.document_manager.get_document(existing)
+                        if ex:
+                            mw._restore_document_state(ex)
+                        doc_id_box["doc_id"] = existing
+                        doc_id_box["name"] = ex.display_name if ex else os.path.basename(file_path)
+                        return
+
+                    mw._save_current_document_state()
+                    mw.state_manager.pause_notifications()
+                    try:
+                        mw.state_manager.device_info = device_info
+                        mw.state_manager.clear_selection()
+                        mw.state_manager.command_history.clear()
+                        mw.peripheral_manager.update_peripheral_tree(preserve_expanded=False)
+                    finally:
+                        mw.state_manager.resume_notifications()
+                    new_doc_id = mw.document_manager.open_document(device_info, file_path=file_path)
+                    mw.document_manager.switch_to(new_doc_id)
+                    if hasattr(mw.layout_manager, "show_editor"):
+                        mw.layout_manager.show_editor()
+                    doc_id_box["doc_id"] = new_doc_id
+                    doc_id_box["name"] = device_info.name or os.path.basename(file_path)
+                except Exception as e:
+                    logger.error(f"open_document 静默装配失败: {e}", exc_info=True)
+                    raise
+
+            try:
+                self._gui.call_blocking(_assemble)
+            except Exception as e:
+                return {"success": False, "message": t("ai.op_failed", error=str(e)), "data": None}
+
+            self._dirty = True
+            return {
+                "success": True,
+                "message": t("ai.open_doc_done", name=doc_id_box["name"]),
+                "data": {"doc_id": doc_id_box["doc_id"], "name": doc_id_box["name"]},
+            }
+
+        # 非静默：复用完整流程（含警告弹窗、中断表/预览/基础信息刷新）
+        def _open_full():
+            try:
+                self.main_window._load_svd_from_path(file_path)
+                if hasattr(self.main_window.layout_manager, "show_editor"):
+                    self.main_window.layout_manager.show_editor()
+                return os.path.basename(file_path)
+            except Exception as e:
+                logger.error(f"open_document 打开失败: {e}", exc_info=True)
+                raise
+
+        try:
+            name = self._gui.call_blocking(_open_full)
+        except Exception as e:
+            return {"success": False, "message": t("ai.diff_parse_fail", error=str(e)), "data": None}
+
+        return {
+            "success": True,
+            "message": t("ai.open_doc_done", name=name),
+            "data": {"name": name},
+        }
 
     def _op_switch_document(self, params: Dict) -> Dict[str, Any]:
         """切换到指定文档"""
