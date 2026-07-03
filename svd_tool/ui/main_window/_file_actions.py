@@ -1,6 +1,7 @@
 import os
 from PyQt6.QtWidgets import QApplication, QMessageBox, QFileDialog
 from PyQt6.QtCore import QEventLoop
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent
 from ...core.svd_parser import SVDParser
 from ...core.svd_generator import SVDGenerator
 from ...core.svd_loader_worker import SVDLoaderWorker
@@ -10,6 +11,48 @@ from ...i18n.i18n import t
 
 class FileActionsMixin:
     """文件操作"""
+
+    def _accept_svd_drop(self, event) -> bool:
+        """判断拖拽事件是否含 SVD/XML 文件。供 dragEnterEvent/dragMoveEvent 复用。"""
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.isLocalFile():
+                    if url.toLocalFile().lower().endswith(('.svd', '.xml')):
+                        return True
+        return False
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        """主窗口级拖拽进入：接受 SVD/XML 文件（欢迎页之外也能拖拽打开，Bug 修复）。
+
+        注意：device_tree_view 自己 setAcceptDrops 处理外设重排序，树上的拖拽由它
+        自身消费、不冒泡到主窗口；其余区域（编辑器空白、标签栏、预览等）的事件冒泡
+        到这里，统一走文件打开。
+        """
+        if self._accept_svd_drop(event):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        """拖拽移动：保持接受状态（某些平台 dropEvent 需要 dragMoveEvent 接受才触发）。"""
+        if self._accept_svd_drop(event):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event: QDropEvent):
+        """拖拽放下：收集所有 SVD/XML 文件路径，走统一后台解析入口。"""
+        file_paths = []
+        for url in event.mimeData().urls():
+            if url.isLocalFile():
+                path = url.toLocalFile()
+                if path.lower().endswith(('.svd', '.xml')):
+                    file_paths.append(path)
+        if file_paths:
+            event.acceptProposedAction()
+            self._on_files_dropped(file_paths)
+        else:
+            event.ignore()
 
     def open_svd_file(self):
         """打开SVD文件（支持多选）。
@@ -120,6 +163,20 @@ class FileActionsMixin:
             existing_doc = self.document_manager.get_document(existing_doc_id)
             if existing_doc:
                 self._restore_document_state(existing_doc)
+            self.layout_manager.update_status(
+                t("status.file_loaded", name=os.path.basename(file_path)))
+            self.layout_manager.add_recent_file(file_path)
+            return
+
+        # 达文档上限时必须先拒绝，绝不能先改 state_manager 再让 open_document 抛异常——
+        # 否则第 21 个文件的数据会写进当前活动文档(state_manager.device_info 已被赋值)，
+        # 但没有新标签页、也没 switch_to，导致 UI 内容与标签错位（Bug 修复）。
+        max_docs = getattr(self.document_manager, "_max_documents", 20)
+        if len(self.document_manager._documents) >= max_docs:
+            QMessageBox.warning(
+                self, t("message.warning"),
+                t("msg.max_documents_reached", max=max_docs,
+                  default="已达到最大文档数限制({max})，无法打开更多文件。\n请先关闭部分文档。"))
             self.layout_manager.update_status(
                 t("status.file_loaded", name=os.path.basename(file_path)))
             self.layout_manager.add_recent_file(file_path)

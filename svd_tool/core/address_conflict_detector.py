@@ -29,6 +29,8 @@ class ConflictType(Enum):
     REGISTER_ADDRESS_OVERLAP = "register_address_overlap"         # 寄存器地址重叠
     FIELD_BIT_OVERLAP = "field_bit_overlap"                       # 位域位重叠
     INTERRUPT_VALUE_DUPLICATE = "interrupt_value_duplicate"       # 中断号重复
+    DERIVED_FROM_ORDER = "derived_from_order"                     # derivedFrom 引用顺序违规
+    ADDRESS_BLOCK_TOO_SMALL = "address_block_too_small"           # addressBlock 大小不足容纳寄存器
 
 
 class ConflictSeverity(Enum):
@@ -128,6 +130,13 @@ class AddressConflictDetector:
         # 4. 中断号重复检测
         self._detect_interrupt_conflicts(device)
 
+        # 5. derivedFrom 顺序检测（CMSIS-SVD 规则：被引用的外设必须先于引用者定义）
+        self._detect_derived_from_order(device)
+
+        # 6. addressBlock 大小不足检测（声明大小 < 寄存器总占用空间）
+        for pname, periph in device.peripherals.items():
+            self._detect_address_block_too_small(pname, periph)
+
         logger.info(f"冲突检测完成: 发现 {len(self.conflicts)} 个冲突")
         self._notify_conflicts_updated()
         return self.conflicts
@@ -163,6 +172,9 @@ class AddressConflictDetector:
         # 检测位域冲突
         for rname, reg in periph.registers.items():
             self._detect_field_conflicts(peripheral_name, rname, reg)
+
+        # 检测 addressBlock 大小是否足以容纳寄存器
+        self._detect_address_block_too_small(peripheral_name, periph)
 
         self._notify_conflicts_updated()
         return self.conflicts
@@ -333,6 +345,102 @@ class AddressConflictDetector:
                     interrupt=names[0],
                     detail=f"中断号 {val} 被以下中断共用: {', '.join(names)}",
                 ))
+
+    # ==================== derivedFrom 顺序 / addressBlock 大小 ====================
+
+    def _detect_derived_from_order(self, device: DeviceInfo):
+        """检测 derivedFrom 顺序违规。
+
+        CMSIS-SVD 规则：被 derivedFrom 引用的外设必须**先于**引用它的外设定义。
+        device.peripherals 是 dict（保留插入顺序 = SVD 定义顺序），故用位置索引判断。
+        违规为 ERROR（可能导致部分工具解析失败）。
+        """
+        names = list(device.peripherals.keys())
+        # 位置索引：name -> 定义顺序
+        pos = {n: i for i, n in enumerate(names)}
+        for name, periph in device.peripherals.items():
+            src = (periph.derived_from or "").strip()
+            if not src:
+                continue
+            src_pos = pos.get(src)
+            if src_pos is None:
+                # 引用了不存在的外设（解析阶段通常会清空 derived_from，这里兜底）
+                self.conflicts.append(ConflictItem(
+                    conflict_type=ConflictType.DERIVED_FROM_ORDER,
+                    severity=ConflictSeverity.WARNING,
+                    message=f"外设 '{name}' 的 derivedFrom='{src}' 引用的外设不存在",
+                    location=f"peripheral.{name}",
+                    peripheral=name,
+                    detail=f"derivedFrom 指向不存在的外设 '{src}'",
+                ))
+                continue
+            if src_pos >= pos[name]:
+                self.conflicts.append(ConflictItem(
+                    conflict_type=ConflictType.DERIVED_FROM_ORDER,
+                    severity=ConflictSeverity.ERROR,
+                    message=f"外设 '{name}' 的 derivedFrom='{src}' 违反定义顺序：被引用者必须在前",
+                    location=f"peripheral.{name}",
+                    peripheral=name,
+                    detail=(f"'{src}' 定义位置({src_pos + 1}) 在 '{name}'({pos[name] + 1}) 之后。"
+                            f" CMSIS-SVD 要求被 derivedFrom 引用的外设必须先于引用者定义。"),
+                ))
+
+    def _detect_address_block_too_small(self, periph_name: str, periph: Peripheral):
+        """检测 addressBlock.size 不足以容纳该外设全部寄存器。
+
+        计算外设内寄存器占用的最大地址（max(offset + size)）+ addressBlock.offset，
+        与 addressBlock.size 比较；若声明大小 < 实际占用，发 WARNING（不影响解析但
+        可能导致地址映射/调试工具空间分配不足）。
+        """
+        ab = periph.address_block or {}
+        ab_offset = parse_hex(ab.get("offset", "0x0"))
+        ab_size = parse_hex(ab.get("size", "0x0"))
+        if ab_offset is None or ab_size is None or ab_size <= 0:
+            return
+
+        # 计算寄存器相对外设基地址的最大占用末端
+        max_end = 0
+        has_reg = False
+        for rname, reg in periph.registers.items():
+            roff = parse_hex(reg.offset)
+            rsize = parse_hex(reg.size)
+            if roff is None:
+                continue
+            rsize_val = rsize if (rsize is not None and rsize > 0) else 4  # 缺省 4 字节
+            end = roff + rsize_val
+            if end > max_end:
+                max_end = end
+            has_reg = True
+
+        # 同样计入 cluster（cluster 有 address_offset + size）
+        for cname, cl in periph.clusters.items():
+            coff = parse_hex(getattr(cl, "address_offset", "0x0"))
+            csize = parse_hex(getattr(cl, "size", "0x0"))
+            if coff is None:
+                continue
+            csize_val = csize if (csize is not None and csize > 0) else 4
+            end = coff + csize_val
+            if end > max_end:
+                max_end = end
+            has_reg = True
+
+        if not has_reg:
+            return
+
+        # 实际占用 = addressBlock.offset + 寄存器覆盖范围
+        actual_needed = ab_offset + max_end
+        if actual_needed > ab_size:
+            self.conflicts.append(ConflictItem(
+                conflict_type=ConflictType.ADDRESS_BLOCK_TOO_SMALL,
+                severity=ConflictSeverity.WARNING,
+                message=(f"外设 '{periph_name}' 的 addressBlock 大小(0x{ab_size:X}) "
+                         f"小于寄存器实际占用(0x{actual_needed:X})"),
+                location=f"peripheral.{periph_name}",
+                peripheral=periph_name,
+                detail=(f"addressBlock: offset=0x{ab_offset:X}, size=0x{ab_size:X}；"
+                        f"寄存器最大占用末端=0x{max_end:X}，实际需要 0x{actual_needed:X}。"
+                        f" 建议将 addressBlock.size 调整为不小于 0x{actual_needed:X}。"),
+            ))
 
     # ==================== 查询接口 ====================
 

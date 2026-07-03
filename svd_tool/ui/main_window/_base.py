@@ -247,6 +247,10 @@ class MainWindowRefactored(
         # 连接文档管理器的所有关闭信号
         self.document_manager.all_documents_closed.connect(self._on_all_documents_closed_show_welcome)
 
+        # 启用主窗口级拖拽：编辑器视图（非欢迎页）也能拖拽 SVD/XML 文件打开。
+        # dragEnterEvent/dropEvent 由 FileActionsMixin 提供，过滤 .svd/.xml。
+        self.setAcceptDrops(True)
+
     def init_data(self):
         """初始化数据"""
         # 可以在这里加载默认数据或上次保存的数据
