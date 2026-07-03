@@ -175,6 +175,23 @@ class SVDSchemaValidator:
                                    f"peripheral.{name}.derivedFrom",
                                    t("val.derived_confirm", derived=periph.derived_from))
 
+        # 检查 derivedFrom 定义顺序（CMSIS-SVD 规则：被引用的外设必须先于引用者定义）
+        # device.peripherals 是 dict，保留插入顺序 = SVD 文件中的定义顺序。
+        pos = {n: i for i, n in enumerate(periph_names)}
+        for name, periph in device.peripherals.items():
+            src = (periph.derived_from or "").strip()
+            if not src:
+                continue
+            src_pos = pos.get(src)
+            if src_pos is not None and src_pos >= pos[name]:
+                self._add_error(
+                    t("val.cat.derived_ref"),
+                    t("val.derived_order_violation", name=name, derived=src,
+                      default=f"外设 '{name}' 的 derivedFrom='{src}' 违反定义顺序：被引用者必须在前"),
+                    f"peripheral.{name}.derivedFrom",
+                    t("val.derived_order_suggestion", derived=src,
+                      default=f"将 '{src}' 移到 '{name}' 之前定义"))
+
         # 收集所有外设地址范围，检查重叠
         periph_ranges: List[Tuple[str, int, int]] = []  # (name, base_addr, end_addr)
         for name, periph in device.peripherals.items():
@@ -225,6 +242,80 @@ class SVDSchemaValidator:
                              f"peripheral.{name}.registers")
         else:
             self._validate_registers(name, periph)
+
+        # 检查 addressBlock 大小是否足以容纳寄存器/cluster 的实际占用
+        self._check_address_block_size(name, periph)
+
+    def _check_address_block_size(self, name: str, periph: Peripheral):
+        """检查 addressBlock.size 是否小于寄存器实际占用空间。
+
+        遍历寄存器与 cluster 计算 max(offset+size)，与 addressBlock 声明大小比较；
+        声明大小 < 实际占用 → WARNING（不影响解析，但可能导致地址映射/调试工具
+        空间分配不足）。建议将 size 调整为不小于实际占用值。
+        """
+        ab = periph.address_block or {}
+        ab_offset = parse_hex(ab.get("offset", "0x0"))
+        ab_size = parse_hex(ab.get("size", "0x0"))
+        if ab_offset is None or ab_size is None or ab_size <= 0:
+            return
+
+        max_end = 0
+        has_content = False
+        for rname, reg in periph.registers.items():
+            roff = parse_hex(reg.offset)
+            rsize_bits = parse_hex(reg.size)
+            if roff is None:
+                continue
+            # 寄存器 size 单位是位(bits)，转字节(÷8)；缺省 32 位=4 字节。
+            # register.offset 与 addressBlock.size 都是字节，不能直接拿 bits 相加。
+            if rsize_bits is None or rsize_bits <= 0:
+                rsize_bytes = 4  # CMSIS-SVD 缺省 32 位
+            else:
+                rsize_bytes = rsize_bits // 8
+                if rsize_bits % 8 != 0:
+                    rsize_bytes += 1  # 非字节对齐向上取整
+            end = roff + rsize_bytes
+            if end > max_end:
+                max_end = end
+            has_content = True
+
+        for cname, cl in periph.clusters.items():
+            coff = parse_hex(getattr(cl, "address_offset", "0x0"))
+            csize_bits = parse_hex(getattr(cl, "size", "0x0"))
+            if coff is None:
+                continue
+            # cluster.size 同样是位(bits)，转字节
+            if csize_bits is None or csize_bits <= 0:
+                csize_bytes = 4
+            else:
+                csize_bytes = csize_bits // 8
+                if csize_bits % 8 != 0:
+                    csize_bytes += 1
+            end = coff + csize_bytes
+            if end > max_end:
+                max_end = end
+            has_content = True
+
+        if not has_content:
+            return
+
+        # 寄存器 offset 相对外设基地址；addressBlock 覆盖 [ab_offset, ab_offset+ab_size)。
+        # 寄存器末端 max_end 必须落在 addressBlock 内，故所需 size = max_end - ab_offset。
+        # （不是 ab_offset + max_end —— 那是双重计算，会多算一个 ab_offset。）
+        if max_end < ab_offset:
+            # 寄存器全部落在 addressBlock 起始之前，不属于本 addressBlock 管辖
+            return
+        actual_needed = max_end - ab_offset
+        if actual_needed > ab_size:
+            self._add_warning(
+                t("val.cat.addr_block", default="地址块"),
+                t("val.addr_block_too_small", name=name, declared=f"0x{ab_size:X}",
+                  needed=f"0x{actual_needed:X}",
+                  default=f"外设 '{name}' 的 addressBlock 大小({f'0x{ab_size:X}'}) "
+                          f"小于寄存器实际占用({f'0x{actual_needed:X}'})"),
+                f"peripheral.{name}.addressBlock",
+                t("val.addr_block_suggestion", needed=f"0x{actual_needed:X}",
+                  default=f"建议将 addressBlock.size 调整为不小于 0x{actual_needed:X}"))
 
     # ==================== 寄存器级验证 ====================
 
