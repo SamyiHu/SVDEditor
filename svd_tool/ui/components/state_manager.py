@@ -76,16 +76,29 @@ class StateManager:
         self._state_notify_timer.start()
     
     def _do_notify_state_change(self):
-        """实际执行状态变更通知"""
+        """实际执行状态变更通知。
+        每个回调独立 try/except：一个回调抛异常不应饿死后续回调（尤其是树重建），
+        否则单点异常会导致整个 UI 停在旧状态。
+        """
         for callback in self._state_change_callbacks:
-            callback()
-    
+            try:
+                callback()
+            except Exception:
+                import logging
+                logging.getLogger("svd_tool.StateManager").debug(
+                    "状态变更回调异常（已忽略，不影响其它回调）", exc_info=True)
+
     def _notify_state_change_immediate(self):
         """立即通知状态变更（不带防抖）"""
         if getattr(self, '_notifications_paused', False):
             return
         for callback in self._state_change_callbacks:
-            callback()
+            try:
+                callback()
+            except Exception:
+                import logging
+                logging.getLogger("svd_tool.StateManager").debug(
+                    "状态变更回调异常（已忽略，不影响其它回调）", exc_info=True)
     
     def _notify_selection_change(self):
         """通知选择变更（防抖：合并快速选择操作）"""
@@ -368,13 +381,22 @@ class StateManager:
                 else:
                     new_peripherals[name] = self.device_info.peripherals[name]
             self.device_info.peripherals = new_peripherals
-            
+
+            # 同步更新顶层 interrupts 里的外设名引用：中断的 peripherals 列表
+            # 存的是外设名，改名后必须迁移，否则生成器 _rebuild_peripheral_interrupts
+            # 用旧名查不到外设，导致保存后中断丢失（Bug 修复）。
+            for irq in self.device_info.interrupts.values():
+                if old_name in (irq.peripherals or []):
+                    irq.peripherals = [new_name if p == old_name else p for p in irq.peripherals]
+                if getattr(irq, "peripheral", "") == old_name:
+                    irq.peripheral = new_name
+
             # 更新选中状态
             if was_current:
                 self.current_peripheral = new_name
                 self._notify_selection_change()
             self._notify_state_change()
-        
+
         # 创建撤销函数
         def undo():
             # 恢复旧的外设字典
@@ -385,7 +407,14 @@ class StateManager:
                 else:
                     old_peripherals[name] = self.device_info.peripherals[name]
             self.device_info.peripherals = old_peripherals
-            
+
+            # 撤销时把中断里的外设名引用改回旧名
+            for irq in self.device_info.interrupts.values():
+                if new_name in (irq.peripherals or []):
+                    irq.peripherals = [old_name if p == new_name else p for p in irq.peripherals]
+                if getattr(irq, "peripheral", "") == new_name:
+                    irq.peripheral = old_name
+
             # 恢复选中状态
             if was_current:
                 self.current_peripheral = old_name

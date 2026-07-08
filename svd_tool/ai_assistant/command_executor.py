@@ -1420,7 +1420,28 @@ class CommandExecutor:
                 setattr(periph, key, val)
 
         self._execute_undoable(f"AI: 更新外设 '{effective_name}'", lambda: None, undo)
-        self._notify_refresh(effective_name)
+
+        # 改名是结构变化（外设 dict key 变了）。批量模式下 _notify_state_change 被暂停、
+        # _notify_refresh 被静默吞，round 结束的 end_batch 通知又可能被 _skip_next_tree_rebuild
+        # 或回调链异常跳过——导致树不刷新（仍显示旧名）。改名时直接强制重建树，不依赖延迟通知。
+        if rename_done:
+            def _force_rebuild():
+                try:
+                    mw = self.main_window
+                    if mw and hasattr(mw, 'peripheral_manager'):
+                        # 清除可能被文档恢复设置的跳过标志，确保本次重建不被跳过
+                        mw.peripheral_manager._skip_next_tree_rebuild = False
+                        mw.peripheral_manager.update_peripheral_tree()
+                        if hasattr(mw, '_update_interrupt_table'):
+                            mw._update_interrupt_table()
+                except Exception:
+                    logger.debug("改名后强制重建树失败", exc_info=True)
+            if threading.current_thread() is threading.main_thread():
+                _force_rebuild()
+            else:
+                self._gui.post(_force_rebuild)
+        else:
+            self._notify_refresh(effective_name)
 
         return {"success": True, "message": t("ai.update_periph_done", name=effective_name),
                 "data": {"name": effective_name, "updates": list(updates.keys()), "renamed": rename_done}}
