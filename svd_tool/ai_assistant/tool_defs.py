@@ -392,6 +392,61 @@ def _build_tool_catalog() -> List[Dict[str, Any]]:
             },
             "category": "ui",
         },
+        # ---------- 数据手册集成工具（资源导入 / 自动生成 / 核对） ----------
+        {
+            "name": "parse_datasheet",
+            "description": "解析 Excel/Word/PDF 数据手册（单源或多源融合），把寄存器/位域结构载入缓存，"
+                           "返回设备名 + 外设/寄存器/位域统计 + 置信度分布。不修改当前文档。"
+                           "后续可用 import_to_svd 导入，或 verify_against_datasheet 核对。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sources": {
+                        "type": "object",
+                        "description": "来源映射，key 为来源类型（excel/word/pdf），value 为文件或目录绝对路径。"
+                                       "单个来源=单源解析；多个来源=多源融合（置信度加权）。",
+                        "additionalProperties": {"type": "string"},
+                    },
+                    "strategy": {
+                        "type": "string", "enum": ["single", "fusion"], "default": "single",
+                        "description": "single=取 primary_source 直通；fusion=多源置信度加权融合（仅多来源时生效）",
+                    },
+                    "primary_source": {
+                        "type": "string", "enum": ["excel", "word", "pdf"],
+                        "description": "strategy=single 时指定的主源；省略则按权重（excel>word>pdf）取首个",
+                    },
+                    "chip_name": {"type": "string", "description": "设备名（顶层 ChipData.chip_name），留空则从文件名推断"},
+                },
+                "required": ["sources"],
+            },
+            "category": "read",
+        },
+        {
+            "name": "import_to_svd",
+            "description": "把上一次 parse_datasheet 的解析结果导入编辑器。"
+                           "mode=new_document：新建文档并切换；mode=merge：并入当前文档（同名外设跳过以免覆盖）。"
+                           "返回导入统计与被跳过的冲突项。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mode": {
+                        "type": "string", "enum": ["new_document", "merge"], "default": "new_document",
+                        "description": "new_document=作为新文档打开；merge=并入当前活跃文档",
+                    },
+                    "chip_name": {"type": "string", "description": "覆盖设备名（可选）"},
+                },
+                "required": ["mode"],
+            },
+            "category": "write",
+        },
+        {
+            "name": "verify_against_datasheet",
+            "description": "用上一次 parse_datasheet 的解析结果核对当前 SVD，返回结构化差异项"
+                           "（缺失寄存器/位域、地址/复位/访问/位宽不符），每项含严重度、置信度、建议值。"
+                           "不改文档——修复请用 add/update 系列工具。仅返回前 30 条 + 各类计数。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+            "category": "read",
+        },
         {
             "name": "batch_save",
             "description": "批量保存多个文档。",

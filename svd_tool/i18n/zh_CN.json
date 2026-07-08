@@ -1275,5 +1275,9 @@
   "ai.prompt.other_docs": "其他已打开的文档",
   "ai.prompt.other_files": "当前编辑器中还打开了以下文件（可通过 diff 操作直接比较）：",
   "ai.role_user": "你",
-  "ai.stop": "停止"
+  "ai.stop": "停止",
+  "menu.tools.import_datasheet": "从数据手册导入…",
+  "menu.tools.fusion_review": "多源融合审阅…",
+  "menu.tools.verify_svd": "SVD 核对…",
+  "toolbar.import": "导入"
 }

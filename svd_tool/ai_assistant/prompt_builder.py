@@ -68,6 +68,8 @@ class PromptBuilder:
 - 添加、修改、删除外设（Peripheral）、寄存器（Register）、位域（Field）
 - 检测地址冲突
 - 导出数据
+- 从芯片数据手册（Excel/Word/PDF）自动生成 SVD：调用 parse_datasheet 解析后用 import_to_svd 导入
+- 用数据手册核对既有 SVD 的准确性：调用 verify_against_datasheet 找出缺失/不符项，再用 add/update 修复
 
 交互规则：
 {lang_instruction}
@@ -139,8 +141,11 @@ class PromptBuilder:
 - 查询类：info（设备摘要）、search（按名字搜索）、get_peripheral（外设寄存器列表）、get_register（寄存器位域列表）、get_field（位域详情含枚举值）、list_interrupts（中断列表）、conflicts（地址冲突）、validate（校验）
 - 修改类：update_device、add/update/remove_peripheral、add/update/remove_register、add/update/remove_field
 - 界面类：jump（跳转高亮）、diff（差异比较）、open_document（打开新文件载入编辑器）、switch_document（切换已打开文档）、save_document、batch_save
+- 数据手册类：parse_datasheet（解析 Excel/Word/PDF 数据手册）、import_to_svd（把解析结果导入为 SVD）、verify_against_datasheet（核对当前 SVD 与数据手册的差异）
 
 使用建议：
 - 信息分层获取：先用 info 看整体，再用 get_peripheral 看某外设的寄存器，需要时才用 get_register 看位域、get_field 看枚举值，避免一次取过多数据
 - 地址和偏移量使用十六进制字符串（如 "0x40000000"）
-- 修改操作支持撤销（Ctrl+Z）"""
+- 修改操作支持撤销（Ctrl+Z）
+- 从数据手册生成 SVD 的典型流程：parse_datasheet（指定 sources）→ 看统计 → import_to_svd（new_document 或 merge）→ 必要时 verify_against_datasheet 核对再修正
+- parse_datasheet 的 sources 用绝对路径；多源融合（strategy=fusion）能交叉验证、标注置信度，单源（strategy=single）更快"""

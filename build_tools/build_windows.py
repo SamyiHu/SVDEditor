@@ -49,6 +49,10 @@ def create_spec_file(arch, console=False, onefile=False):
 import sys
 sys.setrecursionlimit(5000)
 
+# 注意：若需打包「数据手册导入」功能，须在此加入 Parser 包依赖：
+#   pathex 加入 ../Parser；datas 加入 ('../Parser/parser', 'parser')；
+#   hiddenimports 加入 'parser', 'openpyxl', 'docx', 'pdfplumber', 'fitz', 'yaml'
+# （build_professional_fixed.py 已完整配置，本文件为简化备用入口）
 block_cipher = None
 
 a = Analysis(
@@ -121,6 +125,10 @@ exe = EXE(
 import sys
 sys.setrecursionlimit(5000)
 
+# 注意：若需打包「数据手册导入」功能，须在此加入 Parser 包依赖：
+#   pathex 加入 ../Parser；datas 加入 ('../Parser/parser', 'parser')；
+#   hiddenimports 加入 'parser', 'openpyxl', 'docx', 'pdfplumber', 'fitz', 'yaml'
+# （build_professional_fixed.py 已完整配置，本文件为简化备用入口）
 block_cipher = None
 
 a = Analysis(

@@ -156,12 +156,15 @@ sys.setrecursionlimit(5000)
 # 项目根目录（父目录）
 project_root = r'{project_root_parent}'
 
+# Parser 包根目录（仓库同级 ../Parser），供打包时发现 `parser` 包
+parser_root = os.path.join(os.path.dirname(project_root), 'Parser')
+
 block_cipher = None
 
 # 分析配置 - 使用run.py的绝对路径
 a = Analysis(
     [r'{run_py_path}'],
-    pathex=[project_root],
+    pathex=[project_root, parser_root],
     binaries=[],
     datas=[
         # 文档和许可证
@@ -180,6 +183,10 @@ a = Analysis(
 
         # 树状图 chevron 箭头 SVG（QSS image 引用，必须打包否则打包版无箭头）
         (r'{project_root_parent}/svd_tool/resources/icons', 'svd_tool/resources/icons'),
+
+        # Parser 包源码（仓库同级 ../Parser/parser），数据手册导入功能依赖。
+        # 用 glob 把整个 parser/ 目录打包到顶层 parser/，运行时 sys.path 兜底即可 import。
+        (parser_root + '/parser', 'parser'),
     ],
     hiddenimports=[
         # PyQt6模块
@@ -216,6 +223,18 @@ a = Analysis(
         'anyio', 'sniffio', 'distro',
         'pydantic', 'pydantic_core',
         'tqdm', 'jiter',
+
+        # 数据手册导入依赖（datasource/parser_bridge.py 懒加载 import）：
+        # Parser 包本身 + 其重依赖（Excel/Word/PDF 解析），打包后必须显式收集。
+        'parser',
+        'parser.models', 'parser.source_fusion', 'parser.quality_report',
+        'parser.parsers', 'parser.extractors', 'parser.generators', 'parser.transforms',
+        'parser.enhanced_parser', 'parser.excel_parser',
+        'openpyxl',
+        'docx',
+        'pdfplumber',
+        'fitz',
+        'yaml',
     ],
     hookspath=[],
     hooksconfig={{}},

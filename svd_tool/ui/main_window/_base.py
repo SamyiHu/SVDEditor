@@ -51,6 +51,7 @@ from ...utils.logger import Logger
 from ...core.chain_rules import ChainRulesEngine
 from ...core.address_conflict_detector import AddressConflictDetector, ConflictType, ConflictSeverity
 from ...core.document_manager import DocumentManager, DocumentState
+from ..managers.datasource_manager import DatasourceManager
 
 # Mixin 导入
 from ._file_actions import FileActionsMixin
@@ -150,6 +151,10 @@ class MainWindowRefactored(
 
         # 初始化多文档管理器
         self.document_manager = DocumentManager(self)
+
+        # 初始化数据源管理器（资源导入 / SVD 核对）
+        self.datasource_manager = DatasourceManager(self.coordinator, self)
+        self.coordinator.register_component("datasource_manager", self.datasource_manager)
 
         # 初始化 AI 助手（可选依赖，未安装时不影响其他功能）
         self.ai_assistant = None

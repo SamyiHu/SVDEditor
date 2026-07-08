@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import QMessageBox, QTableWidget, QTableWidgetItem, QHeader
 from ...i18n.i18n import t
 from ...core.address_conflict_detector import ConflictType, ConflictSeverity
 from ..managers.batch_operations_manager import BatchOperationsManager
+from ..managers.datasource_manager import DatasourceManager
 
 
 class ToolActionsMixin:
@@ -176,6 +177,67 @@ class ToolActionsMixin:
         layout.addLayout(btn_layout)
 
         dialog.exec()
+
+    # ════════════════════════════════════════════════════
+    # 数据源集成：资源导入 / 多源融合审阅 / SVD 核对
+    # ════════════════════════════════════════════════════
+
+    def import_datasheet(self):
+        """打开数据手册导入向导（Excel/Word/PDF → SVD）。
+
+        向导内部通过 self.datasource_manager.run_parse 启动后台解析，
+        解析完成后让用户选择「新建文档」或「并入当前文档」。
+        """
+        from ..dialogs.import_wizard import ImportWizard
+        mgr: DatasourceManager = self.datasource_manager
+        if mgr is None:
+            QMessageBox.warning(self, t("message.info"),
+                                t("datasource.unavailable", default="数据源功能不可用"))
+            return
+        wizard = ImportWizard(self, mgr)
+        wizard.exec()
+
+    def show_fusion_review(self):
+        """打开多源融合审阅对话框（展示 FusionReport 的冲突/提升，供人工裁定）。
+
+        仅在最近一次解析是多源融合时有效；否则提示用户。
+        """
+        mgr: DatasourceManager = self.datasource_manager
+        if mgr is None or getattr(mgr, "last_result", None) is None:
+            QMessageBox.information(
+                self, t("datasource.fusion_review_title", default="多源融合审阅"),
+                t("datasource.no_data_to_review",
+                  default="没有可审阅的数据。请先从「工具 → 从数据手册导入」执行多源融合导入。"))
+            return
+        from ..dialogs.fusion_review_dialog import FusionReviewDialog
+        dlg = FusionReviewDialog(self, mgr.last_result, mgr)
+        dlg.show()
+
+    def verify_svd(self):
+        """打开 SVD 核对面板（当前 SVD vs 最近解析的数据手册）。
+
+        核对前若没有缓存的解析结果，提示用户先导入。
+        """
+        mgr: DatasourceManager = self.datasource_manager
+        if mgr is None:
+            QMessageBox.warning(self, t("message.info"),
+                                t("datasource.unavailable", default="数据源功能不可用"))
+            return
+        if getattr(mgr, "last_chip_data", None) is None:
+            QMessageBox.information(
+                self, t("datasource.verify_title", default="SVD 核对"),
+                t("datasource.no_data_to_verify",
+                  default="没有可核对的数据手册解析结果。请先从「工具 → 从数据手册导入」。"))
+            return
+        from ..dialogs.svd_verify_dialog import SVDVerifyDialog
+        # 复用单例面板（非模态，支持「重新核对」）
+        if getattr(self, "_svd_verify_dialog", None) is None:
+            self._svd_verify_dialog = SVDVerifyDialog(self, mgr)
+        self._svd_verify_dialog.refresh()
+        self._svd_verify_dialog.show()
+        self._svd_verify_dialog.raise_()
+        self._svd_verify_dialog.activateWindow()
+
 
     def _on_data_changed_detect_conflicts(self):
         """数据变更时执行冲突检测"""

@@ -274,6 +274,23 @@ class MenuBarBuilder:
         tools_menu.addAction(validate_action)
 
         tools_menu.addSeparator()
+
+        # 数据手册集成：资源导入 / 多源融合审阅 / SVD 核对
+        import_action = QAction(t("menu.tools.import_datasheet", default="从数据手册导入…"), self.parent)
+        import_action.triggered.connect(self.main_window.import_datasheet)
+        import_action.setShortcut(QKeySequence("Ctrl+Shift+I"))
+        tools_menu.addAction(import_action)
+
+        fusion_action = QAction(t("menu.tools.fusion_review", default="多源融合审阅…"), self.parent)
+        fusion_action.triggered.connect(self.main_window.show_fusion_review)
+        tools_menu.addAction(fusion_action)
+
+        verify_action = QAction(t("menu.tools.verify_svd", default="SVD 核对…"), self.parent)
+        verify_action.triggered.connect(self.main_window.verify_svd)
+        verify_action.setShortcut(QKeySequence("Ctrl+Shift+V"))
+        tools_menu.addAction(verify_action)
+
+        tools_menu.addSeparator()
         
         # 导出文档子菜单
         export_menu = tools_menu.addMenu(t("menu.tools.export_doc"))

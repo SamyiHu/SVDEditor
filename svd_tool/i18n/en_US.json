@@ -1275,5 +1275,9 @@
   "ai.prompt.other_docs": "Other open documents",
   "ai.prompt.other_files": "The following files are also open in the editor (can be compared via the diff operation):",
   "ai.role_user": "You",
-  "ai.stop": "Stop"
+  "ai.stop": "Stop",
+  "menu.tools.import_datasheet": "Import from Datasheet…",
+  "menu.tools.fusion_review": "Multi-source Fusion Review…",
+  "menu.tools.verify_svd": "Verify SVD…",
+  "toolbar.import": "Import"
 }

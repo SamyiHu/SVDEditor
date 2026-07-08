@@ -101,6 +101,7 @@ class CommandExecutor:
         "validate", "info", "search", "conflicts",
         "get_peripheral", "get_register", "get_field", "list_interrupts",
         "list_directory", "find_duplicate_svds", "diff_peripheral",
+        "parse_datasheet", "verify_against_datasheet",
     })
 
     def __init__(self, coordinator, main_window=None):
@@ -152,6 +153,10 @@ class CommandExecutor:
             "switch_document": self._op_switch_document,
             "save_document": self._op_save_document,
             "batch_save": self._op_batch_save,
+            # 数据手册集成（资源导入 / 自动生成 / 核对）
+            "parse_datasheet": self._op_parse_datasheet,
+            "import_to_svd": self._op_import_to_svd,
+            "verify_against_datasheet": self._op_verify_against_datasheet,
         }
 
     def execute(self, action: Dict[str, Any]) -> Dict[str, Any]:
@@ -2101,3 +2106,190 @@ class CommandExecutor:
 
         msg = t("ai.doc_batch_done", saved=len(saved), failed=len(failed))
         return {"success": len(failed) == 0, "message": msg, "data": {"saved": saved, "failed": failed}}
+
+    # ════════════════════════════════════════════════════════════════
+    # 数据手册集成：资源导入 / 自动生成 / SVD 核对
+    # ════════════════════════════════════════════════════════════════
+
+    def _get_datasource_manager(self):
+        """获取 DatasourceManager（可能未注册，返回 None）。"""
+        if self.coordinator:
+            return self.coordinator.get_component("datasource_manager")
+        return None
+
+    def _op_parse_datasheet(self, params: Dict) -> Dict[str, Any]:
+        """解析 Excel/Word/PDF 数据手册（单源或多源融合）。结果缓存到 DatasourceManager。
+
+        read-only：不修改当前文档，结果供 import_to_svd / verify_against_datasheet 复用。
+        """
+        from ..core.datasource.parser_bridge import (
+            ParseRequest, ParserUnavailableError,
+        )
+        sources = params.get("sources") or {}
+        if not sources or not isinstance(sources, dict):
+            return {"success": False,
+                    "message": t("ai.parse_no_sources", default="未提供数据源（sources 为空）"),
+                    "data": None}
+        # 清洗：value 统一为字符串路径
+        clean_sources = {}
+        for k, v in sources.items():
+            if isinstance(v, str) and v.strip():
+                clean_sources[str(k).strip().lower()] = v.strip()
+        if not clean_sources:
+            return {"success": False,
+                    "message": t("ai.parse_no_sources", default="未提供有效数据源路径"),
+                    "data": None}
+
+        request = ParseRequest(
+            sources=clean_sources,
+            strategy=params.get("strategy", "single"),
+            primary_source=params.get("primary_source", ""),
+            chip_name=params.get("chip_name", ""),
+        )
+
+        mgr = self._get_datasource_manager()
+        # 解析（read-only，可在 worker 线程直跑）
+        try:
+            result = mgr.parse_sync(request) if mgr else None
+        except ParserUnavailableError as e:
+            return {"success": False,
+                    "message": t("ai.parser_unavailable", msg=str(e),
+                                 default=f"Parser 不可用：{e}"),
+                    "data": {"missing_deps": list(e.missing_deps)}}
+        if result is None:
+            # 没有管理器：直接用桥跑，但不缓存（AI 后续 import/verify 会失败）
+            from ..core.datasource.parser_bridge import ParserBridge
+            try:
+                result = ParserBridge().parse_sync(request)
+            except ParserUnavailableError as e:
+                return {"success": False,
+                        "message": t("ai.parser_unavailable", msg=str(e),
+                                     default=f"Parser 不可用：{e}"),
+                        "data": {"missing_deps": list(e.missing_deps)}}
+
+        if not result.ok:
+            return {"success": False,
+                    "message": t("ai.parse_failed", errors="；".join(result.errors[:3]),
+                                 default="解析失败：" + "；".join(result.errors[:3])),
+                    "data": {"errors": result.errors}}
+
+        # 缓存到管理器（供 import/verify 工具复用）
+        if mgr is not None:
+            mgr.last_result = result
+            mgr.last_chip_data = result.chip_data
+
+        cd = result.chip_data
+        periph_names = [p.name for p in (getattr(cd, "peripherals", []) or [])][:100]
+        q = result.quality or {}
+        data = {
+            "chip_name": getattr(cd, "chip_name", ""),
+            "strategy": result.strategy,
+            "peripherals": q.get("peripherals", 0),
+            "registers": q.get("registers", 0),
+            "fields": q.get("fields", 0),
+            "field_confidence": q.get("field_confidence", {}),
+            "peripheral_names": periph_names,
+            "fusion": {
+                "conflicts": len(result.fusion_report.conflicts) if result.fusion_report else 0,
+                "promotions": len(result.fusion_report.promotions) if result.fusion_report else 0,
+            },
+        }
+        warnings_str = f"（含 {len(result.warnings)} 条警告）" if result.warnings else ""
+        msg = t("ai.parse_done", name=data["chip_name"], p=data["peripherals"],
+                r=data["registers"], f=data["fields"], warn=warnings_str,
+                default=(f"已解析 {data['chip_name']}：{data['peripherals']} 外设 / "
+                         f"{data['registers']} 寄存器 / {data['fields']} 位域{warnings_str}。"
+                         f"可用 import_to_svd 导入，或 verify_against_datasheet 核对。"))
+        return {"success": True, "message": msg, "data": data}
+
+    def _op_import_to_svd(self, params: Dict) -> Dict[str, Any]:
+        """把缓存的解析结果导入编辑器（新建文档 或 并入当前文档）。
+
+        write op：并入模式走撤销栈 + 刷新。
+        """
+        mgr = self._get_datasource_manager()
+        if mgr is None or getattr(mgr, "last_chip_data", None) is None:
+            return {"success": False,
+                    "message": t("ai.import_no_cache",
+                                 default="没有缓存的解析结果。请先调用 parse_datasheet。"),
+                    "data": None}
+
+        mode = params.get("mode", "new_document")
+        chip_name = params.get("chip_name", "")
+        chip_data = mgr.last_chip_data
+        if chip_name:
+            try:
+                chip_data.chip_name = chip_name
+            except Exception:
+                pass
+
+        if mode == "new_document":
+            # 新建文档：在主线程执行（涉及 DocumentManager + UI 切换）
+            def _do_new():
+                return mgr.import_as_new_document(chip_data, display_name=chip_name or "")
+            doc_id = self._gui.call_blocking(_do_new)
+            n_p = len(chip_data.peripherals or [])
+            n_r = sum(len(p.registers) for p in chip_data.peripherals or [])
+            msg = t("ai.import_new_done", p=n_p, r=n_r,
+                    default=f"已作为新文档导入：{n_p} 外设 / {n_r} 寄存器")
+            return {"success": bool(doc_id), "message": msg,
+                    "data": {"doc_id": doc_id, "peripherals": n_p, "registers": n_r}}
+
+        # merge 模式：并入当前文档
+        if not self._get_device_info():
+            return {"success": False,
+                    "message": t("ai.no_file_open"), "data": None}
+
+        def _do_merge():
+            return mgr.merge_into_current(chip_data)
+        result = self._gui.call_blocking(_do_merge)
+        report = result.get("report", {}) if isinstance(result, dict) else {}
+        skipped = sum(1 for i in report.get("issues", [])
+                      if i.get("kind") == "skipped_peripheral")
+        msg = t("ai.import_merge_done", added=report.get("peripherals_added", 0),
+                skipped=skipped, regs=report.get("registers_added", 0),
+                default=(f"已并入当前文档：新增 {report.get('peripherals_added', 0)} 外设 / "
+                         f"{report.get('registers_added', 0)} 寄存器"
+                         f"（跳过 {skipped} 个同名外设）"))
+        return {"success": True, "message": msg,
+                "data": {"doc_id": result.get("doc_id", ""), "report": report}}
+
+    def _op_verify_against_datasheet(self, params: Dict) -> Dict[str, Any]:
+        """核对当前 SVD 与缓存的数据手册解析结果。read-only：不改文档。"""
+        mgr = self._get_datasource_manager()
+        if mgr is None or getattr(mgr, "last_chip_data", None) is None:
+            return {"success": False,
+                    "message": t("ai.verify_no_cache",
+                                 default="没有缓存的解析结果。请先调用 parse_datasheet。"),
+                    "data": None}
+        device = self._get_device_info()
+        if not device:
+            return {"success": False, "message": t("ai.no_file_open"), "data": None}
+
+        items = mgr.run_verify()
+        # 分类计数
+        counts = {"error": 0, "warning": 0, "info": 0}
+        by_kind = {}
+        for it in items:
+            counts[it.severity] = counts.get(it.severity, 0) + 1
+            by_kind[it.kind] = by_kind.get(it.kind, 0) + 1
+        # 前 30 条精简展示
+        preview = []
+        for it in items[:30]:
+            preview.append({
+                "level": it.level, "peripheral": it.peripheral,
+                "register": it.register, "field": it.field,
+                "kind": it.kind, "severity": it.severity,
+                "confidence": it.confidence,
+                "svd_value": it.svd_value, "source_value": it.source_value,
+                "suggested": it.suggested,
+            })
+        msg = t("ai.verify_done", total=len(items), err=counts.get("error", 0),
+                warn=counts.get("warning", 0),
+                default=(f"核对完成：共 {len(items)} 项差异"
+                         f"（{counts.get('error', 0)} 错误, {counts.get('warning', 0)} 警告）。"
+                         f"修复请用 add/update 系列工具。"))
+        return {"success": True, "message": msg,
+                "data": {"total": len(items), "counts": counts, "by_kind": by_kind,
+                         "preview": preview}}
+
