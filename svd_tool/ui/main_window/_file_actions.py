@@ -412,7 +412,7 @@ class FileActionsMixin:
 
         if file_path:
             generator = HeaderGenerator(self.state_manager.device_info)
-            if generator.save_to_file(file_path):
+            if generator.save_to_file(file_path, style="cmsis"):
                 QMessageBox.information(self, t("msg.export_success"), t("msg.export_header_saved", path=file_path))
                 self.layout_manager.update_status(t("status.header_exported", path=file_path))
             else:

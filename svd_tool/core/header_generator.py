@@ -3,6 +3,8 @@ C语言头文件生成器
 从SVD数据生成C语言头文件，供固件开发使用
 """
 import os
+import re
+import datetime
 import logging
 from typing import Optional
 
@@ -18,12 +20,20 @@ class HeaderGenerator:
         """生成C头文件内容
 
         Args:
-            style: 命名风格 (upper_case, camel_case)
+            style: 命名风格 (upper_case, camel_case, cmsis)
             prefix: 自定义前缀
 
         Returns:
             C头文件内容字符串
         """
+        if style == "cmsis":
+            return self.generate_cmsis()
+        return self._generate_plain(style, prefix)
+
+    # ------------------------------------------------------------------
+    # 原有风格：每实例独立结构体 + PERIPH_REG_FIELD 位定义
+    # ------------------------------------------------------------------
+    def _generate_plain(self, style: str = "upper_case", prefix: str = "") -> str:
         device = self.device_info
         device_name = self._safe_name(device.name or "DEVICE")
         guard = f"__{device_name}_H__"
@@ -107,6 +117,660 @@ class HeaderGenerator:
         lines.append("")
         return "\n".join(lines)
 
+    # ==================================================================
+    # CMSIS Device Peripheral Access Layer 风格
+    # ==================================================================
+    def generate_cmsis(self) -> str:
+        """生成对标 ST CMSIS 的 Device 头文件。"""
+        device = self.device_info
+        dev_name = self._safe_name(device.name or "DEVICE")
+        guard = f"__{dev_name}_H"
+        lines: list[str] = []
+
+        lines.append(self._render_file_header_block())
+        lines.append("")
+        lines.append("/** @addtogroup CMSIS_Device")
+        lines.append("  * @{")
+        lines.append("  */")
+        lines.append("")
+        lines.append(f"/** @addtogroup {dev_name}")
+        lines.append("  * @{")
+        lines.append("  */")
+        lines.append("")
+        lines.append(f"#ifndef {guard}")
+        lines.append(f"#define {guard}")
+        lines.append("")
+        lines.append("#ifdef __cplusplus")
+        lines.append('extern "C" {')
+        lines.append("#endif /* __cplusplus */")
+        lines.append("")
+
+        lines.append(self._render_core_config_block())
+        lines.append("")
+        lines.append(self._render_irqn_block())
+        lines.append("")
+        lines.append(self._render_core_includes_block())
+        lines.append("")
+        lines.append(self._render_type_and_macro_block())
+
+        # ---- 结构体合并组 ----
+        groups = self._group_peripherals()
+        # 按 typedef 名去重（不同布局但同名，如 TIM1/TIM6 都叫 TIM），
+        # 仅用于 typedef 定义与位定义，避免重复 #define
+        seen_td: set = set()
+        groups_dedup = []
+        for g in groups:
+            if g["typedef"] in seen_td:
+                continue
+            seen_td.add(g["typedef"])
+            groups_dedup.append(g)
+        # typedef 定义
+        lines.append("/** @addtogroup Peripheral_registers_structures")
+        lines.append("  * @{")
+        lines.append("  */")
+        lines.append(self._render_typedefs_block(groups_dedup))
+        lines.append("/**")
+        lines.append("  * @}")
+        lines.append("*/")
+        lines.append("")
+
+        # 内存映射
+        lines.append(self._render_memory_map_block(groups))
+        lines.append("")
+
+        # 外设声明 (XXX = (XXX_TypeDef *) XXX_BASE)
+        lines.append("/** @addtogroup Peripheral_declaration")
+        lines.append("  * @{")
+        lines.append("  */")
+        lines.append(self._render_peripheral_declarations(groups))
+        lines.append("/**")
+        lines.append("  * @}")
+        lines.append("*/")
+        lines.append("")
+
+        # 位定义（用去重后的组，避免重复 #define）
+        lines.append(self._render_bit_definitions_block(groups_dedup))
+
+        # 尾部
+        lines.append("")
+        lines.append("#ifdef __cplusplus")
+        lines.append("}")
+        lines.append("#endif /* __cplusplus */")
+        lines.append("")
+        lines.append(f"#endif /* {dev_name}_H */")
+        lines.append("")
+        lines.append("/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/")
+        lines.append("")
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # CMSIS 段：① 文件头
+    # ------------------------------------------------------------------
+    def _render_file_header_block(self) -> str:
+        device = self.device_info
+        name = device.name or "DEVICE"
+        author = device.author or "ST"
+        version = device.version or "V1.0"
+        today = datetime.date.today().strftime("%Y-%m-%d")
+        brief = (device.description or
+                 "CMSIS Cortex-M Device Peripheral Access Layer Header File.")
+        copyright_text = (device.copyright or "").strip()
+        if not copyright_text:
+            year = datetime.date.today().year
+            copyright_text = (
+                f"© Copyright (c) {year} STMicroelectronics.\n"
+                " * All rights reserved."
+            )
+        # 将多行版权折进块内
+        cr_lines = copyright_text.replace("\r\n", "\n").split("\n")
+
+        bar = "*" * 76
+        out = ["/**", " " + bar, f" * @file    {name}.h",
+               f" * @author  {author}", f" * @version {version}",
+               f" * @date    {today}", f" * @brief   {brief}",
+               " *", " *          This file contains:",
+               " *           - Data structures and the address mapping for all peripherals",
+               " *           - Peripheral's registers declarations and bits definition",
+               " *           - Macros to access peripheral's registers hardware",
+               " " + bar,
+               " * @attention", " *",
+               " * Redistribution and use in source and binary forms, with or without modification,",
+               " * are permitted provided that the following conditions are met:",
+               " *   1. Redistributions of source code must retain the above copyright notice,",
+               " *      this list of conditions and the following disclaimer.",
+               " *   2. Redistributions in binary form must reproduce the above copyright notice,",
+               " *      this list of conditions and the following disclaimer in the documentation",
+               " *      and/or other materials provided with the distribution.",
+               " *   3. Neither the name of STMicroelectronics nor the names of its contributors",
+               " *      may be used to endorse or promote products derived from this software",
+               " *      without specific prior written permission.",
+               " *",
+               " * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\"",
+               " * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE",
+               " * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE",
+               " * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE",
+               " * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL",
+               " * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR",
+               " * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER",
+               " * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,",
+               " * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE",
+               " * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.",
+               " *",
+               " *******************************************************************************",
+               " * Additional notice:"]
+        for cl in cr_lines:
+            out.append(f" * {cl}".rstrip())
+        out.append(" **/")
+        return "\n".join(out)
+
+    # ------------------------------------------------------------------
+    # CMSIS 段：② Cortex-M 内核配置
+    # ------------------------------------------------------------------
+    def _render_core_config_block(self) -> str:
+        device = self.device_info
+        cpu = device.cpu
+        core, rev = self._core_macro(cpu)
+        prio_bits = int(cpu.nvic_prio_bits) if cpu.nvic_prio_bits else 4
+        vtor = 1 if core in ("CM0PLUS", "CM23", "CM33", "CM35P", "CM55") else 0
+        out = [
+            "/** @addtogroup Configuration_section_for_CMSIS",
+            "  * @{",
+            "  */",
+            "/**",
+            f"  * @brief Configuration of the {self._core_title(core)} Processor and Core Peripherals",
+            "   */",
+            f"#define __{core}_REV             {self._rev_int(rev)}U /*!< Core Revision {rev}            */",
+            f"#define __MPU_PRESENT             {1 if cpu.mpu_present else 0}U /*!< {self._core_title(core)} provides an MPU                  */",
+            f"#define __VTOR_PRESENT            {vtor}U /*!< Vector Table Register supported             */",
+            f"#define __NVIC_PRIO_BITS          {prio_bits}U /*!< {device.name or 'Device'} uses {prio_bits} Bits for the Priority Levels    */",
+            f"#define __Vendor_SysTickConfig    {1 if cpu.vendor_systick_config else 0}U /*!< Set to 1 if different SysTick Config is used  */",
+        ]
+        if core in ("CM4", "CM7", "CM33", "CM35P", "CM55"):
+            out.append(f"#define __FPU_PRESENT             {1 if cpu.fpu_present else 0}U /*!< FPU present                                  */")
+        if core in ("CM33", "CM35P", "CM55"):
+            out.append(f"#define __DSP_PRESENT             {1 if cpu.fpu_present else 0}U /*!< DSP present                                  */")
+        out.append("/**")
+        out.append("  * @}")
+        out.append("  */")
+        return "\n".join(out)
+
+    @staticmethod
+    def _core_macro(cpu):
+        """返回 (CORE 大写宏前缀, revision)。映射 CPU name -> CMSIS 宏。"""
+        name = (cpu.name or "CM0+").upper().replace(" ", "")
+        m = {
+            "CM0+": "CM0PLUS", "CM0PLUS": "CM0PLUS", "SC000": "SC000",
+            "CM0": "CM0PLUS",  # Cortex-M0 与 M0+ 共用 core_cm0plus.h
+            "CM1": "CM1",
+            "CM3": "CM3", "SC300": "SC300",
+            "CM4": "CM4", "CM7": "CM7",
+            "CM23": "CM23", "CM33": "CM33", "CM35P": "CM35P", "CM55": "CM55",
+        }
+        core = m.get(name, "CM0PLUS")
+        return core, (cpu.revision or "r0p1")
+
+    @staticmethod
+    def _rev_int(rev: str) -> int:
+        """r0p1 -> 0x0001"""
+        rm = re.match(r"r(\d+)p(\d+)", rev.strip(), re.IGNORECASE)
+        if rm:
+            return int(rm.group(1)) << 16 | int(rm.group(2))
+        return 0
+
+    # ------------------------------------------------------------------
+    # CMSIS 段：③ IRQn_Type 枚举
+    # ------------------------------------------------------------------
+    def _render_irqn_block(self) -> str:
+        device = self.device_info
+        core, _ = self._core_macro(device.cpu)
+        out = [
+            "/** @addtogroup Peripheral_interrupt_number_definition",
+            "  * @{",
+            "  */",
+            "",
+            "/**",
+            f" * @brief {device.name or 'Device'} Interrupt Number Definition",
+            " */",
+            "",
+            "/*!< Interrupt Number Definition */",
+            "typedef enum",
+            "{",
+            f"    /******  {self._core_title(core)} Processor Exceptions Numbers *******************************/",
+        ]
+        core_irqs = [
+            ("RESET_IRQn", -15, "1  Reset Interrupt"),
+            ("NonMaskableInt_IRQn", -14, "2  Non Maskable Interrupt"),
+            ("HardFault_IRQn", -13, "3  Cortex-M Hard Fault Interrupt"),
+            ("MemoryManagement_IRQn", -12, "4  Cortex-M Memory Management Interrupt"),
+            ("BusFault_IRQn", -11, "5  Cortex-M Bus Fault Interrupt"),
+            ("UsageFault_IRQn", -10, "6  Cortex-M Usage Fault Interrupt"),
+            ("SVCall_IRQn", -5, "11 Cortex-M SV Call Interrupt"),
+            ("DebugMonitor_IRQn", -4, "12 Cortex-M Debug Monitor Interrupt"),
+            ("PendSV_IRQn", -2, "14 Cortex-M Pend SV Interrupt"),
+            ("SysTick_IRQn", -1, "15 Cortex-M System Tick Interrupt"),
+        ]
+        user_irqs = []
+        if device.interrupts:
+            user_irqs = sorted(device.interrupts.values(), key=lambda x: x.value)
+
+        # 收集所有行 + 在内核异常与用户中断之间插入分类标题
+        all_rows = []
+        core_rows = [(nm, val, desc) for nm, val, desc in core_irqs]
+        user_rows = []
+        for irq in user_irqs:
+            nm = self._safe_name(irq.name).upper()
+            if not nm.endswith("IRQn"):
+                nm = nm + "_IRQn"
+            desc = self._clean_desc(irq.description or (irq.name + " Interrupt"))
+            user_rows.append((nm, int(irq.value), desc))
+
+        name_w = max((len(n) for n, _, _ in core_rows + user_rows), default=10)
+
+        # 内核异常
+        for nm, val, desc in core_rows:
+            out.append(f"    {nm:<{name_w}} = {val:>4},      /*!< {desc:<45}*/")
+        # 用户外设中断
+        if user_rows:
+            out.append(f"    /******  {device.name or 'Device'} specific Interrupt Numbers *****************************/")
+            for nm, val, desc in user_rows:
+                out.append(f"    {nm:<{name_w}} = {val:>4},      /*!< {desc:<45}*/")
+        out.append("} IRQn_Type;")
+        out.append("")
+        out.append("/**")
+        out.append("  * @}")
+        out.append("  */")
+        return "\n".join(out)
+
+    @staticmethod
+    def _core_title(core: str) -> str:
+        """CM0PLUS -> Cortex-M0+, CM3 -> Cortex-M3 ..."""
+        titles = {
+            "CM0PLUS": "Cortex-M0+", "CM0": "Cortex-M0", "CM1": "Cortex-M1",
+            "CM3": "Cortex-M3", "CM4": "Cortex-M4", "CM7": "Cortex-M7",
+            "CM23": "Cortex-M23", "CM33": "Cortex-M33", "CM35P": "Cortex-M35P",
+            "CM55": "Cortex-M55", "SC000": "SecureCore SC000", "SC300": "SecureCore SC300",
+        }
+        return titles.get(core, "Cortex-M")
+
+    @staticmethod
+    def _clean_desc(desc: str) -> str:
+        """折叠多行描述、去除换行/多余空白，截断超长。"""
+        if not desc:
+            return ""
+        one = " ".join(str(desc).split())
+        return one
+
+    # ------------------------------------------------------------------
+    # CMSIS 段：④ core 头文件包含
+    # ------------------------------------------------------------------
+    def _render_core_includes_block(self) -> str:
+        device = self.device_info
+        core, _ = self._core_macro(device.cpu)
+        inc = {
+            "CM0PLUS": "core_cm0plus.h", "CM0": "core_cm0plus.h", "SC000": "core_sc000.h",
+            "CM1": "core_cm1.h", "CM3": "core_cm3.h", "SC300": "core_sc300.h",
+            "CM4": "core_cm4.h", "CM7": "core_cm7.h",
+            "CM23": "core_cm23.h", "CM33": "core_cm33.h", "CM35P": "core_cm35p.h", "CM55": "core_cm55.h",
+        }.get(core, "core_cm0plus.h")
+        core_title = self._core_title(core)
+        return (
+            f'#include "{inc}"               /* {core_title} processor and core peripherals */\n'
+            '#include <stdint.h>'
+        )
+
+    # ------------------------------------------------------------------
+    # CMSIS 段：⑤ 类型枚举 + 位操作宏
+    # ------------------------------------------------------------------
+    def _render_type_and_macro_block(self) -> str:
+        return """/** @addtogroup Exported_types
+  * @{
+  */
+typedef enum
+{
+    SC_RESET = 0,
+    SC_SET = !SC_RESET
+} FlagStatus, ITStatus;
+
+typedef enum
+{
+    SC_DISABLE = 0,
+    SC_ENABLE = !SC_DISABLE
+} FunctionalState;
+
+#define IS_FUNCTIONAL_STATE(STATE) (((STATE) == SC_DISABLE) || ((STATE) == SC_ENABLE))
+
+typedef enum
+{
+    SC_SUCCESS = 0,
+    SC_ERROR = !SC_SUCCESS
+} ErrorStatus;
+
+typedef enum
+{
+    SC_FALSE = 0,
+    SC_TRUE = !SC_FALSE
+} boolType;
+
+/** @addtogroup Exported_macros
+  * @{
+  */
+#define SET_BIT(REG, BIT)     ((REG) |= (BIT))
+
+#define CLEAR_BIT(REG, BIT)   ((REG) &= ~(BIT))
+
+#define READ_BIT(REG, BIT)    ((REG) & (BIT))
+
+#define CLEAR_REG(REG)        ((REG) = (0x0))
+
+#define WRITE_REG(REG, VAL)   ((REG) = (VAL))
+
+#define READ_REG(REG)         ((REG))
+
+#define REG_SET(REG, BIT)     ((REG) &= ~(BIT));((REG) |= (BIT))
+
+#define REG_SETn(REG, BITs, BIT)     ((REG) &= ~(BITs));((REG) |= (BIT))
+
+/**
+  * @}
+  */"""
+
+    # ------------------------------------------------------------------
+    # 外设分组（布局签名去重）
+    # ------------------------------------------------------------------
+    def _group_peripherals(self) -> list:
+        """返回 [{names, members, typedef, signature, regs}], 同布局合并。"""
+        device = self.device_info
+        buckets: dict = {}  # signature -> list[(periph_name, periph)]
+        order: list = []
+        for pname, periph in device.peripherals.items():
+            sig = self._layout_signature(periph)
+            if sig not in buckets:
+                buckets[sig] = []
+                order.append(sig)
+            buckets[sig].append((pname, periph))
+
+        groups = []
+        for sig in order:
+            members = buckets[sig]
+            names = [n for n, _ in members]
+            first = members[0][1]
+            groups.append({
+                "names": names,
+                "members": members,
+                "typedef": self._base_typedef_name(names),
+                "signature": sig,
+                "regs": first.registers,
+            })
+        return groups
+
+    def _layout_signature(self, periph) -> tuple:
+        """布局指纹：(每寄存器 (offset, size, name))。"""
+        sig = []
+        for rname, reg in periph.registers.items():
+            off = reg.offset
+            if isinstance(off, str):
+                try:
+                    off = int(off, 0)
+                except (ValueError, TypeError):
+                    off = 0
+            size = reg.size
+            if isinstance(size, str):
+                try:
+                    size = int(size, 0)
+                except (ValueError, TypeError):
+                    size = 0x20
+            sig.append((off, size, rname))
+        return tuple(sig)
+
+    def _base_typedef_name(self, names: list) -> str:
+        """{UART0..UART5}->UART；单元素去掉末尾数字。"""
+        if len(names) == 1:
+            base = self._safe_name(names[0]).upper()
+            return re.sub(r"\d+$", "", base) or base
+        safe = [self._safe_name(n).upper() for n in names]
+        prefix = os.path.commonprefix(safe)
+        # 砍掉末尾的数字/下划线残留
+        prefix = re.sub(r"[\d_]+$", "", prefix)
+        return prefix or self._safe_name(names[0]).upper()
+
+    # ------------------------------------------------------------------
+    # CMSIS 段：⑥ typedef 结构体（合并组）
+    # ------------------------------------------------------------------
+    def _render_typedefs_block(self, groups: list) -> str:
+        out = []
+        for g in groups:
+            td = g["typedef"]
+            regs = g["regs"]
+            names = g["names"]
+            first = g["members"][0][1]
+            desc = self._clean_desc(first.description or td)
+            if len(names) > 1:
+                brief = f"{td} ({', '.join(names)}) - {desc}"
+            else:
+                brief = desc
+            out.append("/**")
+            out.append(f"  * @brief {brief}")
+            out.append("  */")
+            out.append("typedef struct")
+            out.append("{")
+            members = self._render_struct_members(regs)
+            out.extend(members)
+            out.append(f"}} {td}_TypeDef;")
+            out.append("")
+        return "\n".join(out)
+
+    def _render_struct_members(self, regs) -> list:
+        """生成结构体成员行，正确处理寄存器间空隙的 RESERVED。"""
+        out = []
+        reg_list = []
+        for rname, reg in regs.items():
+            off = reg.offset
+            if isinstance(off, str):
+                try:
+                    off = int(off, 0)
+                except (ValueError, TypeError):
+                    off = 0
+            size = reg.size
+            if isinstance(size, str):
+                try:
+                    size = int(size, 0)
+                except (ValueError, TypeError):
+                    size = 0x20
+            reg_list.append((off, size, rname, reg))
+        reg_list.sort(key=lambda x: x[0])
+
+        cur = 0
+        reserved_idx = 0
+        # 成员名+分号对齐宽度（NAME; 后到 /*!< 的列宽）
+        member_w = max((len(self._reg_member_name(rn)) + 1 for _, _, rn, _ in reg_list), default=8)
+        member_w = max(member_w, 12)
+        for off, size, rname, reg in reg_list:
+            # 填充空隙
+            gap = off - cur
+            if gap > 0:
+                unit = 4  # 默认按 32 位字填
+                cnt = gap // unit
+                rem = gap % unit
+                if cnt > 0:
+                    rname_s = f"RESERVED{reserved_idx}[{cnt}];"
+                    out.append(f"  __IO uint32_t {rname_s:<{member_w}}/*!< Reserved,                                   Address offset: 0x{cur:02X} */")
+                    reserved_idx += 1
+                    cur += cnt * unit
+                if rem > 0:
+                    rname_s = f"RESERVED{reserved_idx};"
+                    out.append(f"  __IO uint8_t  {rname_s:<{member_w}}/*!< Reserved,                                   Address offset: 0x{cur:02X} */")
+                    reserved_idx += 1
+                    cur += rem
+            kw = self._access_kw(reg.access)
+            mname = self._reg_member_name(rname)
+            desc = self._clean_desc(reg.description or rname)
+            # 截断过长描述，保持列对齐
+            if len(desc) > 38:
+                desc = desc[:35] + "..."
+            decl = f"{mname};"
+            out.append(f"  {kw} uint32_t {decl:<{member_w}}/*!< {desc:<41}, Address offset: 0x{off:02X} */")
+            cur = off + (size if size and size > 0 else 4)
+        return out
+
+    def _reg_member_name(self, rname: str) -> str:
+        """寄存器成员名：安全化 + 大写。"""
+        return self._safe_name(rname).upper()
+
+    @staticmethod
+    def _access_kw(access) -> str:
+        a = (access or "read-write").lower()
+        if a in ("read-only", "readonly"):
+            return "__I"
+        if a in ("write-only", "writeonly"):
+            return "__O"
+        return "__IO"
+
+    # ------------------------------------------------------------------
+    # CMSIS 段：⑦ 内存映射
+    # ------------------------------------------------------------------
+    def _render_memory_map_block(self, groups: list) -> str:
+        device = self.device_info
+        out = [
+            "/** @addtogroup Peripheral_memory_map",
+            "  * @{",
+            "  */",
+            "#define FLASH_BASE            (0x08000000UL)  /*!< FLASH base address */",
+            "#define SRAM_BASE             (0x20000000UL)  /*!< SRAM base address */",
+            "#define PERIPH_BASE           (0x40000000UL)  /*!< Peripheral base address */",
+            "",
+            "/*!< Peripheral memory map */",
+        ]
+        # 推断总线段
+        segments = self._infer_segments(groups)
+        segname_map = {0x00000000: "AHBPERIPH_BASE", 0x20000: "APB0PERIPH_BASE",
+                       0x21000: "APB1PERIPH_BASE", 0x22000: "APB2PERIPH_BASE",
+                       0x10800: "DMAPERIPH_BASE", 0x11000: "IOPORTPERIPH_BASE"}
+        for off in sorted(segments.keys()):
+            if off in segname_map:
+                out.append(f"#define {segname_map[off]:22} (PERIPH_BASE + 0x{off:05X})")
+        out.append("")
+        # 各总线外设
+        periph_to_typedef = {}
+        for g in groups:
+            for n, _ in g["members"]:
+                periph_to_typedef[n] = g["typedef"]
+
+        labeled = {0x00000000: "AHB", 0x20000: "APB0", 0x21000: "APB1",
+                   0x22000: "APB2", 0x10800: "DMA", 0x11000: "IOPORT"}
+        for off in sorted(segments.keys()):
+            if off not in labeled:
+                continue
+            out.append(f"/*!< {labeled[off]} peripherals */")
+            for base, pname in segments[off]:
+                safe = self._safe_name(pname).upper()
+                out.append(f"#define {safe + '_BASE':22} ({segname_map[off]} + (0x{base:08X}UL))")
+            out.append("")
+        return "\n".join(out)
+
+    def _infer_segments(self, groups: list) -> dict:
+        """返回 {总线偏移: [(periph_addr_offset, periph_name), ...]}。"""
+        periph_base = 0x40000000
+        seg_keys = [0x00000000, 0x20000, 0x21000, 0x22000, 0x10800, 0x11000]
+        segments: dict = {}
+        seen = set()
+        for g in groups:
+            for pname, periph in g["members"]:
+                ba = periph.base_address
+                if isinstance(ba, str):
+                    try:
+                        ba = int(ba, 0)
+                    except (ValueError, TypeError):
+                        ba = 0
+                if not ba:
+                    continue
+                rel = ba - periph_base
+                # 选最大可减的段键
+                best = 0x00000000
+                for k in seg_keys:
+                    if rel >= k:
+                        best = k
+                off_in_seg = rel - best
+                key = best
+                if key not in segments:
+                    segments[key] = []
+                segments[key].append((off_in_seg, pname))
+        # 排序
+        for k in segments:
+            segments[k].sort()
+        return segments
+
+    # ------------------------------------------------------------------
+    # CMSIS 段：外设声明
+    # ------------------------------------------------------------------
+    def _render_peripheral_declarations(self, groups: list) -> str:
+        out = []
+        for g in groups:
+            td = g["typedef"]
+            for pname, _ in g["members"]:
+                safe = self._safe_name(pname).upper()
+                out.append(f"#define {safe:16} (({td}_TypeDef *) {safe}_BASE)")
+        return "\n".join(out)
+
+    # ------------------------------------------------------------------
+    # CMSIS 段：⑧ 位定义
+    # ------------------------------------------------------------------
+    def _render_bit_definitions_block(self, groups: list) -> str:
+        out = [
+            "/** @addtogroup Peripheral_Registers_Bits_Definition",
+            "* @{",
+            "*/",
+            "",
+            "/******************************************************************************/",
+            "/*                         Peripheral Registers Bits Definition               */",
+            "/******************************************************************************/",
+            "",
+        ]
+        for g in groups:
+            td = g["typedef"]
+            regs = g["regs"]
+            out.append(self._bit_section_banner(td))
+            for rname, reg in regs.items():
+                if not reg.fields:
+                    continue
+                rname_safe = self._reg_member_name(rname)
+                out.append(f"/********************  Bit definition for {rname_safe} register  ********************/")
+                for fname, field in reg.fields.items():
+                    f_safe = self._safe_name(fname).upper()
+                    bo = int(field.bit_offset or 0)
+                    bw = int(field.bit_width or 1)
+                    mask_val = ((1 << bw) - 1) << bo if bw < 32 else 0xFFFFFFFF
+                    macro = f"{rname_safe}_{f_safe}"
+                    # 用 #ifndef 包裹，防止不同外设同名寄存器（如 USART/UART 都有 CR1）
+                    # 产生宏重定义冲突；首个定义生效。
+                    out.append(f"#ifndef {macro}_Pos")
+                    out.append(f"#define {macro}_Pos          ({bo}U)")
+                    if bw == 32:
+                        out.append(f"#define\t{macro}_Msk          (0xFFFFFFFFUL << {macro}_Pos)")
+                    elif bw == 1:
+                        out.append(f"#define\t{macro}_Msk          (0x1UL << {macro}_Pos)")
+                    else:
+                        out.append(f"#define\t{macro}_Msk          (0x{mask_val:X}UL << {macro}_Pos)")
+                    out.append(f"#define {macro}            {macro}_Msk")
+                    out.append("#endif")
+                    out.append("")
+                out.append("")
+        out.append("/**")
+        out.append("* @}")
+        out.append("*/")
+        return "\n".join(out)
+
+    @staticmethod
+    def _bit_section_banner(title: str) -> str:
+        title = title.strip()
+        return (
+            "/******************************************************************************/\n"
+            "/*                                                                            */\n"
+            f"/*                      {title:<60}*/\n"
+            "/*                                                                            */\n"
+            "/******************************************************************************/"
+        )
+
+    # ------------------------------------------------------------------
     def _safe_name(self, name: str) -> str:
         """将名称转为安全的C标识符"""
         safe = name.replace(" ", "_").replace("-", "_").replace(".", "_")

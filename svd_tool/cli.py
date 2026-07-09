@@ -1080,9 +1080,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_header.add_argument("input", help="输入 SVD 文件路径")
     p_header.add_argument(
         "--style",
-        choices=["upper_case", "camel_case"],
+        choices=["upper_case", "camel_case", "cmsis"],
         default="upper_case",
-        help="命名风格（默认: upper_case）",
+        help="命名风格（默认: upper_case；cmsis 为对标 ST CMSIS 的完整风格）",
     )
     p_header.add_argument("--prefix", help="自定义宏前缀（如: CHIP_）")
     p_header.add_argument("-o", "--output", help="输出头文件路径（默认: <input>.h）")
