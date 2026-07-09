@@ -143,6 +143,40 @@ class ParserBridge:
     # 已知来源 → Parser 注册表中的 source 名
     _VALID_SOURCES = ("excel", "word", "pdf")
 
+    def _parse_source(self, registry, src: str, path: str) -> list:
+        """解析单个来源。
+
+        Word 来源优先用 TRMWordParser（针对 SC32/STM32 风格 TRM 三段式结构，
+        含寄存器映射表 + 位域详表 + 归一化匹配，比 Parser 包原生 WordParser 准确得多）。
+        若 TRM 解析拿到结果则用它；否则回退到 Parser 包原生 word 解析。
+        Excel/PDF 走 Parser 包原生解析器。
+        """
+        from .trm_parser import TRMWordParser
+
+        if src == "word":
+            # 先试 TRM 解析器（pandoc→md 或 python-docx 回退）
+            try:
+                trm = TRMWordParser()
+                if os.path.isdir(path):
+                    periphs = trm.parse_dir(path)
+                else:
+                    periphs = trm.parse_file(path)
+                if periphs:
+                    return periphs
+            except Exception as e:
+                logger.warning(f"TRM 解析失败，回退到原生 word 解析: {e}")
+            # 回退：Parser 包原生 WordParser
+            periphs = registry.get_for_source(src).parse(path)
+            from parser.quality_report import stamp_confidence
+            stamp_confidence(periphs, "word")
+            return periphs
+
+        # Excel / PDF：原生解析器 + 置信度打标
+        periphs = registry.get_for_source(src).parse(path)
+        from parser.quality_report import stamp_confidence
+        stamp_confidence(periphs, src)
+        return periphs
+
     def parse_sync(self, request: ParseRequest) -> ParseResult:
         """执行解析。在 worker 线程内调用。"""
         result = ParseResult(
@@ -186,10 +220,7 @@ class ParserBridge:
         parse_errors: list[str] = []
         for src, path in request.sources.items():
             try:
-                parser_obj = registry.get_for_source(src)
-                periphs = parser_obj.parse(path)
-                # 抽取出口统一打置信度档位
-                stamp_confidence(periphs, src)
+                periphs = self._parse_source(registry, src, path)
                 parsed[src] = periphs or []
                 logger.info(f"解析 {src}（{path}）: {len(periphs or [])} 个外设")
             except Exception as e:

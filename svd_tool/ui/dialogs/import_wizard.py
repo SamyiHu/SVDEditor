@@ -208,21 +208,30 @@ class SourceSelectPage(QWizardPage):
         super().__init__(wizard)
         self.setTitle(t("datasource.step2_title", default="选择数据来源"))
         self.setSubTitle(t("datasource.step2_subtitle",
-                           default="选择 Excel/Word/PDF 文件或目录。按扩展名自动识别来源类型"))
-        self._slots = {}   # source_name → (QLineEdit, browse_btn)
+                           default="每个来源可选「目录」或「多选文件」。一个外设一个文件时选目录"))
+        self._slots = {}   # source_name → QLineEdit
 
         layout = QVBoxLayout(self)
 
-        # 单源槽（始终显示，单源模式只用第一个）
+        # 格式说明
+        hint = QLabel(t("datasource.format_hint",
+            default="💡 Excel：推荐选目录（一个外设一个 .xlsx）；也可多选文件。"
+                    "Word：选 TRM 参考手册 .docx（自动走 pandoc 三段式解析）。"
+                    "PDF：选技术手册 .pdf 或其所在目录。"))
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: gray; padding: 4px; font-size: 9pt;")
+        layout.addWidget(hint)
+
+        # 三个来源槽，每个有「选目录」+「选文件(多选)」两个按钮
         self._build_slot(layout, "excel",
                          t("datasource.source_excel", default="Excel SFR 表"),
-                         t("datasource.source_excel_filter", default="Excel 文件 (*.xlsx *.xls);;目录"))
+                         "Excel 文件 (*.xlsx *.xls)")
         self._build_slot(layout, "word",
-                         t("datasource.source_word", default="Word 文档"),
-                         t("datasource.source_word_filter", default="Word 文件 (*.docx);;目录"))
+                         t("datasource.source_word", default="Word 文档（TRM）"),
+                         "Word 文件 (*.docx)")
         self._build_slot(layout, "pdf",
                          t("datasource.source_pdf", default="PDF 手册"),
-                         t("datasource.source_pdf_filter", default="PDF 文件 (*.pdf);;目录"))
+                         "PDF 文件 (*.pdf)")
 
         # 主源选择（多源融合时用）
         primary_box = QGroupBox(t("datasource.primary_source_group", default="融合策略"))
@@ -243,31 +252,55 @@ class SourceSelectPage(QWizardPage):
         row = QHBoxLayout()
         row.addWidget(QLabel(label + ":"))
         edit = QLineEdit()
-        edit.setPlaceholderText(t("datasource.path_hint", default="文件或目录绝对路径"))
+        edit.setPlaceholderText(t("datasource.path_hint",
+            default="目录路径，或多个文件路径（分号分隔）"))
         row.addWidget(edit, 1)
-        browse = QPushButton(t("button.browse", default="浏览…"))
-        browse.clicked.connect(lambda _checked, e=edit, f=file_filter, n=name:
-                               self._on_browse(e, f, n))
-        row.addWidget(browse)
+        # 「选目录」按钮（目录优先）
+        dir_btn = QPushButton(t("datasource.btn_choose_dir", default="选目录"))
+        dir_btn.clicked.connect(lambda _checked, e=edit: self._choose_dir(e))
+        row.addWidget(dir_btn)
+        # 「选文件」按钮（支持多选）
+        file_btn = QPushButton(t("datasource.btn_choose_files", default="选文件…"))
+        file_btn.clicked.connect(lambda _checked, e=edit, f=file_filter, n=name:
+                                 self._choose_files(e, f, n))
+        row.addWidget(file_btn)
         parent_layout.addLayout(row)
-        self._slots[name] = (edit, browse)
+        self._slots[name] = edit
 
-    def _on_browse(self, edit: QLineEdit, file_filter: str, name: str):
-        # 先尝试选文件，取消则选目录
-        path, selected = QFileDialog.getOpenFileName(self, t("button.browse"), "", file_filter)
-        if not path:
-            dir_path = QFileDialog.getExistingDirectory(self, t("button.browse"))
-            if dir_path:
-                path = dir_path
-        if path:
-            edit.setText(path)
+    def _choose_dir(self, edit: QLineEdit):
+        dir_path = QFileDialog.getExistingDirectory(self, t("datasource.btn_choose_dir", default="选目录"))
+        if dir_path:
+            edit.setText(dir_path)
+
+    def _choose_files(self, edit: QLineEdit, file_filter: str, name: str):
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, t("datasource.btn_choose_files", default="选择文件（可多选）"), "", file_filter)
+        if paths:
+            edit.setText(";".join(paths))
 
     def collect_sources(self, mode: str) -> dict:
-        """根据模式收集非空来源。单源模式只用第一个非空槽；多源用全部非空槽。"""
+        """根据模式收集非空来源。
+
+        多个文件用分号分隔时：若是同一目录下的多文件，返回该目录（Excel 一个外设一文件场景更友好）；
+        否则保留分号串（Parser 的 parse 接目录，TRM 解析器接文件/目录，分号串由各解析器处理）。
+        单源模式只用第一个非空槽。
+        """
         result = {}
-        for name, (edit, _) in self._slots.items():
+        for name, edit in self._slots.items():
             text = edit.text().strip()
-            if text:
+            if not text:
+                continue
+            # 多文件：若都在同一目录，归约成目录
+            if ";" in text:
+                parts = [p.strip() for p in text.split(";") if p.strip()]
+                if parts:
+                    import os
+                    dirs = {os.path.dirname(p) for p in parts}
+                    if len(dirs) == 1:
+                        result[name] = parts[0] if len(parts) == 1 else next(iter(dirs))
+                    else:
+                        result[name] = text  # 跨目录：保留分号串
+            else:
                 result[name] = text
         if mode == "single" and result:
             # 单源：按权重取首个
