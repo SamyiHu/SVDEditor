@@ -194,14 +194,74 @@ class DatasourceManager(QObject):
         return {"doc_id": dm.active_doc_id or "", "report": report.to_dict()}
 
     def _open_as_document(self, device: DeviceInfo, display_name: str) -> str:
-        """新建文档并切换（复用 DocumentManager + 主窗口加载流程）。"""
-        dm = self.main_window.document_manager if self.main_window else None
-        if not dm:
+        """把 device 作为新文档打开并完整切换 UI 到它。
+
+        必须复刻主窗口 _assemble_loaded_document 的关键步骤：
+        1. 保存当前文档状态（保证数据隔离）
+        2. 暂停通知 → 把 state_manager.device_info 换成新 device → 重建树/中断表/预览
+        3. 注册文档到 DocumentManager 并切换 active
+        4. 显示编辑器页面（从欢迎页切换）
+
+        只调 new_document()+switch_to() 是不够的——那不会更新 state_manager.device_info，
+        也不会重建树/切换到编辑器页，表现为「新建标签但内容是旧文档/停留在欢迎页」。
+        """
+        mw = self.main_window
+        if mw is None:
             self.import_finished.emit("")
             return ""
         try:
-            doc_id = dm.new_document(device, display_name=display_name)
+            # 1. 保存当前文档状态（保证数据隔离）
+            if hasattr(mw, "_save_current_document_state"):
+                mw._save_current_document_state()
+
+            # 2. 把新 device 装入 state_manager 并重建 UI（暂停通知避免多次刷新）
+            sm = self.coordinator.get_component("state_manager")
+            if sm is None:
+                self.import_finished.emit("")
+                return ""
+            if hasattr(sm, "pause_notifications"):
+                sm.pause_notifications()
+            try:
+                sm.device_info = device
+                if hasattr(sm, "clear_selection"):
+                    sm.clear_selection()
+                if hasattr(sm, "command_history") and sm.command_history is not None:
+                    sm.command_history.clear()
+                # 重置预览器选中/折叠状态
+                pm = getattr(mw, "preview_manager", None)
+                if pm and getattr(pm, "preview_widget", None):
+                    pw = pm.preview_widget
+                    pw.folded_elements = set()
+                    if hasattr(pw, "current_selection"):
+                        pw.current_selection = {'type': None, 'peripheral': None,
+                                                'register': None, 'field': None, 'interrupt': None}
+                    if hasattr(pw, "preview_edit") and pw.preview_edit:
+                        pw.preview_edit.clear_highlight()
+                # 重建树（不保留旧文档展开状态）
+                if hasattr(mw, "peripheral_manager") and mw.peripheral_manager:
+                    mw.peripheral_manager.update_peripheral_tree(preserve_expanded=False)
+                if hasattr(mw, "update_data_stats"):
+                    mw.update_data_stats()
+                if hasattr(mw, "_update_interrupt_table"):
+                    mw._update_interrupt_table()
+            finally:
+                if hasattr(sm, "resume_notifications"):
+                    sm.resume_notifications()
+
+            # 3. 注册到文档管理器并切换 active
+            dm = mw.document_manager
+            doc_id = dm.open_document(device, file_path=None, display_name=display_name)
             dm.switch_to(doc_id)
+
+            # 4. 显示编辑器页面（从欢迎页切换过来）
+            if hasattr(mw, "layout_manager") and mw.layout_manager:
+                if hasattr(mw.layout_manager, "show_editor"):
+                    mw.layout_manager.show_editor()
+                if hasattr(mw.layout_manager, "update_basic_info"):
+                    mw.layout_manager.update_basic_info(device)
+                if hasattr(mw.layout_manager, "update_status"):
+                    mw.layout_manager.update_status(display_name)
+
             self.import_finished.emit(doc_id)
             return doc_id
         except Exception as e:
