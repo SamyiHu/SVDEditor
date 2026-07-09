@@ -93,52 +93,48 @@ class SVDVerifier:
         src_periphs = getattr(chip_data, "peripherals", []) or []
 
         # 外设层：按归一化名对齐
-        svd_by_norm = {}
-        for pname, p in svd_periphs.items():
-            svd_by_norm.setdefault(_normalize_name(pname), []).append(pname)
-        src_by_norm = {}
-        for pblk in src_periphs:
-            src_by_norm.setdefault(_normalize_name(pblk.name), []).append(pblk)
+        # 外设层对齐：用精确名匹配（外设实例名不同即不同外设，如 UART0≠UART1）。
+        # 注意：不能用 _normalize_name（数字→N），否则 UART0/UART1/UART2 会被归并成
+        # 同一个 UARTN，导致删除其中一个后核对器认为"还有数据"而不报缺失。
+        # 归一化匹配只用于寄存器级（同一外设内的寄存器模板 PWM0_DTx→PWMn_DTn）。
+        svd_names_exact = set(svd_periphs.keys())
+        src_names_exact = {pblk.name for pblk in src_periphs}
+        svd_periph_map = {pname: pblk for pname, pblk in svd_periphs.items()}
+        src_periph_map = {pblk.name: pblk for pblk in src_periphs}
 
-        all_norm = sorted(set(svd_by_norm) | set(src_by_norm))
+        all_names = sorted(svd_names_exact | src_names_exact)
 
-        for norm in all_norm:
-            svd_names = svd_by_norm.get(norm, [])
-            src_blocks = src_by_norm.get(norm, [])
+        for pname in all_names:
+            in_svd = pname in svd_names_exact
+            in_src = pname in src_names_exact
 
-            if not svd_names:
+            if in_src and not in_svd:
                 # 源有、SVD 无
-                for pblk in src_blocks:
-                    items.append(VerifyItem(
-                        level="peripheral", peripheral=pblk.name,
-                        kind=VerifyKind.PERIPH_MISSING_IN_SVD.value,
-                        detail=f"SVD 中缺少外设 {pblk.name}（源中存在）",
-                        severity=VerifySeverity.ERROR.value,
-                        confidence=_periph_confidence(pblk),
-                        source_value=pblk.base_address or "",
-                        suggested=self._suggest_peripheral(pblk),
-                    ))
+                pblk = src_periph_map[pname]
+                items.append(VerifyItem(
+                    level="peripheral", peripheral=pname,
+                    kind=VerifyKind.PERIPH_MISSING_IN_SVD.value,
+                    detail=f"SVD 中缺少外设 {pname}（源中存在）",
+                    severity=VerifySeverity.ERROR.value,
+                    confidence=_periph_confidence(pblk),
+                    source_value=pblk.base_address or "",
+                    suggested=self._suggest_peripheral(pblk),
+                ))
                 continue
-            if not src_blocks:
+            if in_svd and not in_src:
                 # SVD 有、源无
-                for pname in svd_names:
-                    items.append(VerifyItem(
-                        level="peripheral", peripheral=pname,
-                        kind=VerifyKind.PERIPH_MISSING_IN_SOURCE.value,
-                        detail=f"数据手册中未见外设 {pname}（仅 SVD 中存在）",
-                        severity=VerifySeverity.INFO.value,
-                        confidence="unknown",
-                    ))
+                items.append(VerifyItem(
+                    level="peripheral", peripheral=pname,
+                    kind=VerifyKind.PERIPH_MISSING_IN_SOURCE.value,
+                    detail=f"数据手册中未见外设 {pname}（仅 SVD 中存在）",
+                    severity=VerifySeverity.INFO.value,
+                    confidence="unknown",
+                ))
                 continue
 
-            # 配对（取首个，多匹配时记 info）
-            svd_periph = svd_periphs[svd_names[0]]
-            src_periph = src_blocks[0]
-            if len(svd_names) > 1 or len(src_blocks) > 1:
-                items.append(VerifyItem(
-                    level="peripheral", peripheral=svd_names[0],
-                    kind="info", detail="同名外设存在多个匹配，按首个核对",
-                    severity=VerifySeverity.INFO.value))
+            # 两边都有：配对核对内部
+            svd_periph = svd_periph_map[pname]
+            src_periph = src_periph_map[pname]
 
             self._verify_peripheral(svd_periph, src_periph, items)
 
