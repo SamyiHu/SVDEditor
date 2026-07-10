@@ -408,6 +408,9 @@ class TRMWordParser:
         # ── 第 2 遍：位域（#### 寄存器标题 + 位域详表）──
         i = 0
         current_section_insts = None  # ## 章节的实例号集合
+        # 寄存器详情表里读到的 access（比映射表准），用于覆盖
+        access_override: dict[str, str] = {}
+        current_reg_header = ""
         while i < total:
             line = lines[i].strip()
             if line.startswith("#### "):
@@ -422,6 +425,27 @@ class TRMWordParser:
                             if "_" in best:
                                 current_reg_header += " " + best
                                 break
+
+            # 寄存器详情表（非位域表）：| REG | 读/写 | 说明 | 复位值 |
+            # 比寄存器映射表更准确（如 SYST_CALIB 这里标只读，映射表标读/写）
+            is_reg_detail = _is_table_row(line) and "寄存器" in line and "读/写" in line and "说明" in line
+            if is_reg_detail:
+                j = i + 1
+                while j < total:
+                    jline = lines[j].rstrip()
+                    if _SEP_LINE_RE.match(jline) or not jline.strip():
+                        j += 1; continue
+                    if not _is_table_row(jline):
+                        break
+                    cells, _ = _extract_cells(jline)
+                    if len(cells) >= 4 and re.match(r'^[A-Z]', cells[0]):
+                        reg_name = cells[0]
+                        acc = cells[1] if len(cells) > 1 else ""
+                        if acc and acc != '读/写':
+                            access_override[reg_name] = acc
+                    j += 1
+                i = j
+                continue
 
             # 位域表头：含「位编号」+「位符号」
             line_text = _TAG_RE.sub('', line) if "<td" in line.lower() else line
@@ -471,6 +495,11 @@ class TRMWordParser:
                 i = j
                 continue
             i += 1
+
+        # 应用寄存器详情表的 access 覆盖（比映射表准）
+        for r in unique_regs:
+            if r["name"] in access_override:
+                r["access"] = access_override[r["name"]]
 
         return peripherals, unique_regs, bitfields
 
