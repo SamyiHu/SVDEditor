@@ -221,9 +221,17 @@ class SVDGenerator:
         if hasattr(register, 'derived_from') and register.derived_from:
             attrs["derivedFrom"] = register.derived_from
         reg_elem = ET.Element("register", attrs)
-        
+
         ET.SubElement(reg_elem, "name").text = register.name
-        
+
+        # dim 信息（寄存器数组）：dim/dimIncrement/dimIndex 紧跟 name 之后
+        # 仅当 dim 有值时输出，保持向后兼容（不带 dim 的寄存器不受影响）
+        if getattr(register, 'dim', None) is not None:
+            ET.SubElement(reg_elem, "dim").text = str(register.dim)
+            ET.SubElement(reg_elem, "dimIncrement").text = register.dim_increment or "0x0"
+            if register.dim_index:
+                ET.SubElement(reg_elem, "dimIndex").text = ",".join(register.dim_index)
+
         # 添加显示名称（如果有）
         if register.display_name:
             ET.SubElement(reg_elem, "displayName").text = register.display_name

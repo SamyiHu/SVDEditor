@@ -78,6 +78,11 @@ class Register:
     reset_mask: str = "0xFFFFFFFF"
     fields: Dict[str, Field] = field(default_factory=dict)
     derived_from: str = ""  # derivedFrom 属性（寄存器级继承）
+    # dim 信息（CMSIS-SVD 寄存器数组：一组地址连续、结构相同的寄存器）
+    # 规范要求 name 含 %s 占位符，如 "TXBUF[%s]" + dim=8 → TXBUF0~TXBUF7
+    dim: Optional[int] = None
+    dim_increment: str = "0x0"
+    dim_index: List[str] = field(default_factory=list)
     xml_start_line: int = 0  # XML起始行号
     xml_end_line: int = 0  # XML结束行号
 
@@ -114,6 +119,9 @@ class Register:
             reset_mask=data.get("reset_mask", "0xFFFFFFFF"),
             fields=fields,
             derived_from=data.get("derived_from", ""),
+            dim=data.get("dim"),
+            dim_increment=data.get("dim_increment", "0x0"),
+            dim_index=data.get("dim_index", []),
         )
 
     def __deepcopy__(self, memo):
@@ -129,6 +137,9 @@ class Register:
             reset_mask=self.reset_mask,
             fields={k: copy.deepcopy(v, memo) for k, v in self.fields.items()},
             derived_from=self.derived_from,
+            dim=self.dim,
+            dim_increment=self.dim_increment,
+            dim_index=list(self.dim_index),
             xml_start_line=self.xml_start_line,
             xml_end_line=self.xml_end_line,
         )

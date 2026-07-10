@@ -460,7 +460,31 @@ class SVDParser(BaseSVDParser):
         reset_mask_nodes = reg_node.getElementsByTagName("resetMask")
         if reset_mask_nodes and reset_mask_nodes[0].firstChild:
             register.reset_mask = reset_mask_nodes[0].firstChild.data.strip()
-        
+
+        # dim 信息（寄存器数组，CMSIS-SVD 规范：dim/dimIncrement/dimIndex）
+        dim_nodes = reg_node.getElementsByTagName("dim")
+        if dim_nodes and dim_nodes[0].firstChild:
+            try:
+                register.dim = int(dim_nodes[0].firstChild.data.strip())
+            except ValueError:
+                pass
+
+        dim_inc_nodes = reg_node.getElementsByTagName("dimIncrement")
+        if dim_inc_nodes and dim_inc_nodes[0].firstChild:
+            register.dim_increment = dim_inc_nodes[0].firstChild.data.strip()
+
+        dim_idx_nodes = reg_node.getElementsByTagName("dimIndex")
+        if dim_idx_nodes and dim_idx_nodes[0].firstChild:
+            idx_text = dim_idx_nodes[0].firstChild.data.strip()
+            if "-" in idx_text:
+                try:
+                    start, end = idx_text.split("-")
+                    register.dim_index = [str(i) for i in range(int(start), int(end) + 1)]
+                except ValueError:
+                    register.dim_index = idx_text.split(",")
+            else:
+                register.dim_index = idx_text.split(",")
+
         # 解析位域
         self._parse_fields_for_register(reg_node, register)
         

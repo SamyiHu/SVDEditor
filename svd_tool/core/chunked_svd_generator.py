@@ -131,7 +131,14 @@ class ChunkedSVDGenerator:
         # 添加寄存器属性
         ET.SubElement(reg_elem, "name").text = register.name
         ET.SubElement(reg_elem, "addressOffset").text = register.offset
-        
+
+        # dim 信息（寄存器数组）
+        if getattr(register, 'dim', None) is not None:
+            ET.SubElement(reg_elem, "dim").text = str(register.dim)
+            ET.SubElement(reg_elem, "dimIncrement").text = register.dim_increment or "0x0"
+            if register.dim_index:
+                ET.SubElement(reg_elem, "dimIndex").text = ",".join(register.dim_index)
+
         if register.description:
             ET.SubElement(reg_elem, "description").text = register.description
         
