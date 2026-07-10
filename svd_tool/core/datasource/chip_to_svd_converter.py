@@ -268,11 +268,24 @@ class ChipToSvdConverter:
         descs = [r.description for r in converted if r.description]
         merged_desc = " / ".join(descs) if descs else merged_name
 
-        merged_fields = {}
+        # 合并位域：同位置不同模式的位域合并为复合名（如 PDT+FCAP→PDT_FCAP）
+        merged_fields: dict[tuple, Field] = {}
         for r in converted:
             for fn, f in r.fields.items():
-                if fn not in merged_fields:
-                    merged_fields[fn] = f
+                if fn in ('-', '—', ''):  # 跳过占位符
+                    continue
+                key = (f.bit_offset, f.bit_width)
+                if key in merged_fields:
+                    existing = merged_fields[key]
+                    if fn not in existing.name:
+                        existing.name = existing.name + '_' + fn
+                else:
+                    merged_fields[key] = f
+        # 转成 name→Field 的普通 dict
+        named_fields = {}
+        for f in merged_fields.values():
+            if f.name not in ('-', '—', ''):
+                named_fields[f.name] = f
 
         first = converted[0]
         return Register(
@@ -284,7 +297,7 @@ class ChipToSvdConverter:
             access=first.access,
             reset_value=first.reset_value,
             reset_mask=first.reset_mask,
-            fields=merged_fields,
+            fields=named_fields,
         )
 
     # ---------- 寄存器级 ----------
