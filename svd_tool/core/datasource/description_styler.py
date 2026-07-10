@@ -203,15 +203,19 @@ class DescriptionStyler:
         for i, item in enumerate(batch):
             input_map[str(i)] = item[2][:500]  # 限制长度，超长的截断
         prompt = (
-            "You are translating embedded MCU register descriptions from Chinese to English. "
-            "Rules:\n"
-            "- Translate to concise, technical English (like a CMSIS-SVD field/register description).\n"
-            "- For register descriptions, use '<function> register' format (e.g., 'ADC control register').\n"
-            "- For field descriptions, use a short phrase (e.g., 'ADC enable', 'Receive interrupt flag').\n"
-            "- Keep register/field NAMES, hex values (0x...), and bit references unchanged.\n"
-            "- Be concise; drop verbose explanations, keep the core meaning.\n"
-            "Return ONLY a JSON object mapping the input number to the English translation. "
-            "No markdown, no explanation.\n\n"
+            "You are translating embedded MCU register descriptions from Chinese to English.\n"
+            "Style rules (match CMSIS-SVD convention, be VERY concise):\n"
+            "- Field description: a SHORT noun phrase only. 3-6 words typically.\n"
+            "  Examples: 'ADC enable', 'VREFS select', 'Receive interrupt flag', 'DMA enable', 'Port mode bits'.\n"
+            "- Register description: '<function> register'. Examples: 'ADC control register', 'Status register'.\n"
+            "- Peripheral description: short English name. Examples: 'Analog to Digital Converter', 'Watchdog'.\n"
+            "- CRITICAL: Drop ALL enumerated values and detailed explanations.\n"
+            "  '参考电压选择控制位 00：选择VDD 01：...' -> 'Reference voltage selection' (NOT '00: VDD').\n"
+            "  '使能位 0：关闭 1：开启' -> 'Enable'.\n"
+            "  Keep only the core functional meaning; no value tables, no bit-by-bit explanations.\n"
+            "- Keep register/field NAMES and hex values (0x...) unchanged.\n"
+            "- Average description length: under 30 characters. Never exceed 60.\n"
+            "Return ONLY a JSON object mapping input number to English translation. No markdown.\n\n"
             f"Input:\n{json.dumps(input_map, ensure_ascii=False)}"
         )
         messages = [{"role": "user", "content": prompt}]
