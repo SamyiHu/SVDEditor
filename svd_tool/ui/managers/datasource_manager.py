@@ -147,18 +147,26 @@ class DatasourceManager(QObject):
     # 导入
     # ════════════════════════════════════════════════════
 
-    def import_as_new_document(self, chip_data: Any, display_name: str = "") -> str:
+    def import_as_new_document(self, chip_data: Any, display_name: str = "",
+                               style_english: bool = False) -> str:
         """把 ChipData 转为 DeviceInfo 并作为新文档打开。
 
+        Args:
+            style_english: True 时对描述做英文风格化（AI 翻译 + 格式修正），
+                           使输出符合参考 SVD 风格。需配置 AI。
         Returns:
             doc_id 或 ""（失败）
         """
         device, report = self._converter.convert(chip_data)
+        if style_english:
+            self._apply_description_style(device)
         return self._open_as_document(device, display_name or device.name)
 
-    def merge_into_current(self, chip_data: Any) -> dict:
+    def merge_into_current(self, chip_data: Any, style_english: bool = False) -> dict:
         """把 ChipData 并入当前活跃文档（撤销栈）。
 
+        Args:
+            style_english: True 时对描述做英文风格化。
         Returns:
             {"doc_id": str, "report": ConversionReport.to_dict()}
         """
@@ -170,6 +178,8 @@ class DatasourceManager(QObject):
 
         target = state_manager.device_info
         device, report = self._converter.convert(chip_data, target=target, merge=True)
+        if style_english:
+            self._apply_description_style(device)
 
         # 通过撤销栈整体替换 device_info 的外设/中断
         # 记录旧快照用于撤销
@@ -268,6 +278,31 @@ class DatasourceManager(QObject):
             logger.exception("新建文档失败")
             self.import_finished.emit("")
             return ""
+
+    # ════════════════════════════════════════════════════
+    # 描述风格化（英文翻译 + 格式修正）
+    # ════════════════════════════════════════════════════
+
+    def _apply_description_style(self, device) -> dict:
+        """对 device 的描述做英文风格化（AI 翻译 + 格式对齐参考 SVD）。
+
+        从已配置的 AI 读取 config；AI 未配置则用词典回退。
+        """
+        from ...core.datasource.description_styler import DescriptionStyler
+        ai_config = None
+        try:
+            from ...ai_assistant.config import AIConfigManager
+            cfg = AIConfigManager().load()
+            if cfg.api_key:
+                ai_config = cfg
+        except Exception:
+            pass
+        styler = DescriptionStyler()
+
+        def _progress(done, total, msg):
+            self.parse_progress.emit(msg)
+
+        return styler.style(device, ai_config=ai_config, progress_cb=_progress)
 
     # ════════════════════════════════════════════════════
     # 核对

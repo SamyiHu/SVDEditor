@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QLabel, QLineEdit, QComboBox, QGroupBox, QTextEdit, QPlainTextEdit,
     QPushButton, QRadioButton, QButtonGroup, QFileDialog, QMessageBox,
     QTreeWidget, QTreeWidgetItem, QProgressBar, QHeaderView, QSizePolicy,
+    QCheckBox,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
@@ -100,6 +101,10 @@ class ImportWizard(QWizard):
     def import_mode(self) -> str:
         return "merge" if self.import_page.merge_radio.isChecked() else "new_document"
 
+    @property
+    def style_english(self) -> bool:
+        return self.import_page.style_english_chk.isChecked()
+
     # ---------- 页面切换 ----------
 
     def _on_page_changed(self, page_id: int):
@@ -127,7 +132,7 @@ class ImportWizard(QWizard):
                 pass
         try:
             if self.import_mode == "merge":
-                res = self.mgr.merge_into_current(chip_data)
+                res = self.mgr.merge_into_current(chip_data, style_english=self.style_english)
                 report = res.get("report", {})
                 QMessageBox.information(
                     self, t("datasource.import_done", default="导入完成"),
@@ -139,7 +144,9 @@ class ImportWizard(QWizard):
                                f"{report.get('registers_added', 0)} 寄存器"
                                f"（跳过 {report.get('peripherals_skipped', 0)} 个同名外设）")))
             else:
-                doc_id = self.mgr.import_as_new_document(chip_data, display_name=self.chip_name or "")
+                doc_id = self.mgr.import_as_new_document(
+                    chip_data, display_name=self.chip_name or "",
+                    style_english=self.style_english)
                 n_p = len(chip_data.peripherals or [])
                 if doc_id:
                     QMessageBox.information(
@@ -538,6 +545,16 @@ class ImportOptionsPage(QWizardPage):
         self.merge_radio = QRadioButton(t("datasource.import_merge", default="并入当前文档（同名外设跳过）"))
         layout.addWidget(self.new_radio)
         layout.addWidget(self.merge_radio)
+
+        # 英文描述风格化开关（AI 翻译中文描述 → 英文，并对齐参考 SVD 格式）
+        self.style_english_chk = QCheckBox(t("datasource.style_english",
+            default="应用英文描述风格（AI 翻译 + displayName/resetValue 格式对齐）"))
+        style_hint = QLabel(t("datasource.style_english_hint",
+            default="💡 勾选后中文描述由 AI 翻译为英文，并补齐 displayName、补 8 位 resetValue、归一化 groupName。需配置 AI 助手"))
+        style_hint.setWordWrap(True)
+        style_hint.setStyleSheet("color: gray; font-size: 9pt; margin-left: 24px;")
+        layout.addWidget(self.style_english_chk)
+        layout.addWidget(style_hint)
 
         # 设备名
         form = QFormLayout()
