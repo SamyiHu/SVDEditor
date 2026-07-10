@@ -315,9 +315,11 @@ class RegisterEditDialog(BaseEditDialog):
 
         # 连接预览刷新信号
         for w in [self.name_edit, self.offset_edit, self.display_name_edit,
-                  self.desc_edit, self.reset_edit, self.size_edit]:
+                  self.desc_edit, self.reset_edit, self.size_edit,
+                  self.dim_edit, self.dim_increment_edit, self.dim_index_edit]:
             self._connect_preview_signal(w)
         self._connect_preview_signal(self.access_combo)
+        self._connect_preview_signal(self.dim_enable_chk)
 
         if register:
             self.load_data(register)
@@ -358,19 +360,66 @@ class RegisterEditDialog(BaseEditDialog):
         self.size_edit.setText("0x20")
         self.size_edit.setPlaceholderText(t("placeholder.size"))
         self.add_form_row(t("label.size") + ":", self.size_edit)
-    
+
+        # ── 寄存器数组（dim）配置 ──
+        # CMSIS-SVD 规范：dim/dimIncrement/dimIndex 描述一组地址连续、结构相同的寄存器。
+        # 勾选启用后，name 应含 %s 占位符（如 TXBUF[%s]），dim=8 dimIncrement=0x4 → TXBUF0~7
+        dim_group = QGroupBox(t("label.dim_group", default="寄存器数组 (dim)"))
+        dim_layout = QVBoxLayout(dim_group)
+        # 启用开关
+        self.dim_enable_chk = QCheckBox(t("label.dim_enable", default="启用数组（dim）"))
+        self.dim_enable_chk.toggled.connect(self._on_dim_enable_toggled)
+        dim_layout.addWidget(self.dim_enable_chk)
+        # 三个字段
+        dim_row = QHBoxLayout()
+        dim_row.addWidget(QLabel(t("label.dim_count", default="数量")))
+        self.dim_edit = QLineEdit()
+        self.dim_edit.setPlaceholderText("8")
+        dim_row.addWidget(self.dim_edit)
+        dim_row.addWidget(QLabel(t("label.dim_increment", default="步长")))
+        self.dim_increment_edit = QLineEdit()
+        self.dim_increment_edit.setPlaceholderText("0x4")
+        self.dim_increment_edit.setText("0x4")
+        dim_row.addWidget(self.dim_increment_edit)
+        dim_layout.addLayout(dim_row)
+        # dimIndex
+        idx_row = QHBoxLayout()
+        idx_row.addWidget(QLabel(t("label.dim_index", default="索引")))
+        self.dim_index_edit = QLineEdit()
+        self.dim_index_edit.setPlaceholderText(t("placeholder.dim_index",
+            default="留空=0,1,2..；范围=0-7；自定义=0,1,3,4,5,2"))
+        idx_row.addWidget(self.dim_index_edit, 1)
+        dim_layout.addLayout(idx_row)
+        # 提示
+        hint = QLabel(t("label.dim_hint",
+            default="💡 启用后寄存器名需含 %s，如 TXBUF[%s]；生成时展开为 TXBUF0、TXBUF1…"))
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: gray; font-size: 9pt;")
+        dim_layout.addWidget(hint)
+        self.add_form_row("", dim_group)
+        # 初始禁用 dim 字段（未勾选时）
+        self.dim_edit.setEnabled(False)
+        self.dim_increment_edit.setEnabled(False)
+        self.dim_index_edit.setEnabled(False)
+
+    def _on_dim_enable_toggled(self, checked: bool):
+        """启用/禁用 dim 输入字段。"""
+        self.dim_edit.setEnabled(checked)
+        self.dim_increment_edit.setEnabled(checked)
+        self.dim_index_edit.setEnabled(checked)
+
     def load_data(self, register: Register):
         """加载数据"""
         if not hasattr(self, 'name_edit'):
             return  # UI元素可能还没创建
-            
+
         self.name_edit.setText(register.name)
         self.offset_edit.setText(register.offset)
         self.display_name_edit.setText(register.display_name)
         self.desc_edit.setText(register.description)
         self.reset_edit.setText(register.reset_value)
         self.size_edit.setText(register.size)
-        
+
         # 设置访问权限
         if register.access:
             index = self.access_combo.findText(register.access)
@@ -378,7 +427,15 @@ class RegisterEditDialog(BaseEditDialog):
                 self.access_combo.setCurrentIndex(index)
         else:
             self.access_combo.setCurrentIndex(0)  # 设置为"无"
-    
+
+        # dim 信息回填
+        has_dim = getattr(register, 'dim', None) is not None
+        self.dim_enable_chk.setChecked(has_dim)
+        if has_dim:
+            self.dim_edit.setText(str(register.dim) if register.dim is not None else "")
+            self.dim_increment_edit.setText(register.dim_increment or "0x4")
+            self.dim_index_edit.setText(",".join(register.dim_index) if register.dim_index else "")
+
     def _check_offset_conflict(self):
         """实时检测寄存器偏移冲突"""
         offset = self.offset_edit.text().strip()
@@ -386,21 +443,21 @@ class RegisterEditDialog(BaseEditDialog):
             self._clear_conflict_style(self.offset_edit)
             self._has_offset_conflict = False
             return
-        
+
         conflict = SVDSchemaValidator.check_register_offset_conflict(
             new_name=self.name_edit.text().strip(),
             new_offset=offset,
             existing_registers=self.existing_registers_data,
             exclude_name=self.original_name if self.is_edit else ""
         )
-        
+
         if conflict:
             self._set_conflict_style(self.offset_edit, conflict)
             self._has_offset_conflict = True
         else:
             self._clear_conflict_style(self.offset_edit)
             self._has_offset_conflict = False
-    
+
     def validate_input(self):
         """验证输入"""
         name = self.name_edit.text().strip()
@@ -413,17 +470,52 @@ class RegisterEditDialog(BaseEditDialog):
         Validator.validate_hex(self.offset_edit.text().strip(), t("error.offset_address_validation"))
         Validator.validate_hex(self.reset_edit.text().strip(), t("error.reset_value_validation"))
         Validator.validate_hex(self.size_edit.text().strip(), t("error.size_validation"))
-        
+
+        # dim 数组校验
+        if self.dim_enable_chk.isChecked():
+            dim_str = self.dim_edit.text().strip()
+            if not dim_str or not dim_str.isdigit() or int(dim_str) < 1:
+                raise ValidationError(t("error.dim_count_invalid",
+                    default="dim 数量必须为正整数（如 8）"))
+            dim_inc = self.dim_increment_edit.text().strip()
+            if not dim_inc:
+                raise ValidationError(t("error.dim_increment_empty",
+                    default="启用数组后需填写步长 dimIncrement（如 0x4）"))
+            # 启用数组时建议 name 含 %s
+            if "%s" not in name:
+                raise ValidationError(t("error.dim_name_no_placeholder",
+                    default="启用数组后，寄存器名需含 %s 占位符（如 TXBUF[%s]）"))
+
         # 检查偏移冲突（阻止保存）
         if self._has_offset_conflict:
             raise ValidationError(t("error.reg_offset_conflict"))
-    
+
     def collect_data(self):
         """收集数据"""
         access = self.access_combo.currentText()
         if access == t("value.none"):
             access = None
-        
+
+        # dim 信息（未启用则为 None）
+        dim_val = None
+        dim_increment = "0x0"
+        dim_index = []
+        if self.dim_enable_chk.isChecked():
+            dim_str = self.dim_edit.text().strip()
+            if dim_str and dim_str.isdigit():
+                dim_val = int(dim_str)
+            dim_increment = self.dim_increment_edit.text().strip() or "0x4"
+            idx_text = self.dim_index_edit.text().strip()
+            if idx_text:
+                if "-" in idx_text:
+                    try:
+                        start, end = idx_text.split("-")
+                        dim_index = [str(i) for i in range(int(start), int(end) + 1)]
+                    except ValueError:
+                        dim_index = [s.strip() for s in idx_text.split(",")]
+                else:
+                    dim_index = [s.strip() for s in idx_text.split(",")]
+
         self.result_data = {
             "old_name": self.original_name if self.is_edit else "",
             "name": self.name_edit.text().strip(),
@@ -432,7 +524,10 @@ class RegisterEditDialog(BaseEditDialog):
             "description": self.desc_edit.text().strip(),
             "access": access,
             "reset_value": self.reset_edit.text().strip(),
-            "size": self.size_edit.text().strip()
+            "size": self.size_edit.text().strip(),
+            "dim": dim_val,
+            "dim_increment": dim_increment,
+            "dim_index": dim_index,
         }
 
     def _generate_preview_xml(self) -> str:
@@ -443,6 +538,18 @@ class RegisterEditDialog(BaseEditDialog):
             access = self.access_combo.currentText()
             if access == t("value.none"):
                 access = None
+            # dim 预览
+            dim_val = None
+            dim_increment = "0x0"
+            dim_index = []
+            if self.dim_enable_chk.isChecked():
+                dim_str = self.dim_edit.text().strip()
+                if dim_str and dim_str.isdigit():
+                    dim_val = int(dim_str)
+                dim_increment = self.dim_increment_edit.text().strip() or "0x4"
+                idx_text = self.dim_index_edit.text().strip()
+                if idx_text:
+                    dim_index = [s.strip() for s in idx_text.split(",")]
             r = Register(
                 name=self.name_edit.text().strip() or "unnamed",
                 offset=self.offset_edit.text().strip() or "0x0",
@@ -451,6 +558,9 @@ class RegisterEditDialog(BaseEditDialog):
                 access=access,
                 reset_value=self.reset_edit.text().strip() or "0x00000000",
                 size=self.size_edit.text().strip() or "0x20",
+                dim=dim_val,
+                dim_increment=dim_increment,
+                dim_index=dim_index,
             )
             # 只显示寄存器自身配置，不包含位域
             return SVDGenerator.generate_register_xml(r)

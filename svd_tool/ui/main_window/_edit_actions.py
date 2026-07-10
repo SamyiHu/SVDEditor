@@ -53,7 +53,10 @@ class EditActionsMixin:
                 display_name=result["display_name"],
                 access=result["access"],
                 reset_value=result["reset_value"],
-                size=result["size"]
+                size=result["size"],
+                dim=result.get("dim"),
+                dim_increment=result.get("dim_increment", "0x0"),
+                dim_index=result.get("dim_index", []),
             )
 
             # 使用StateManager添加寄存器
@@ -125,7 +128,10 @@ class EditActionsMixin:
                 access=result["access"],
                 reset_value=result["reset_value"],
                 size=result["size"],
-                fields=old_register.fields.copy() if hasattr(old_register, 'fields') else {}
+                fields=old_register.fields.copy() if hasattr(old_register, 'fields') else {},
+                dim=result.get("dim"),
+                dim_increment=result.get("dim_increment", "0x0"),
+                dim_index=result.get("dim_index", []),
             )
 
             # 使用StateManager更新寄存器
