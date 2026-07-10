@@ -723,7 +723,7 @@ class TRMWordParser:
         return chapter.split()[0] if chapter else "Other"
 
     def _infer_base_from_registers(self, oregs: list[dict]) -> str:
-        """从残余寄存器推断基地址：取最小绝对地址向下取整到 0x10 边界。"""
+        """从残余寄存器推断基地址：取最小绝对地址作为基址。"""
         min_addr = None
         for orr in oregs:
             abs_str = orr.get("abs_addr", "") or orr.get("offset", "")
@@ -733,9 +733,7 @@ class TRMWordParser:
                     min_addr = addr
             except (ValueError, AttributeError):
                 continue
-        if min_addr:
-            return f"0x{(min_addr & ~0xF):08X}"
-        return ""
+        return f"0x{min_addr:08X}" if min_addr else ""
 
     @staticmethod
     def _compute_rel_offset(abs_addr: str, base_str: str) -> str:
