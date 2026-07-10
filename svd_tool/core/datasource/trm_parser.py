@@ -181,6 +181,35 @@ def _extract_html_row_lines(md_text: str) -> list[str]:
 # 主入口
 # ════════════════════════════════════════════════════
 
+def _parse_section_instances(section_title: str):
+    """解析 ## 章节标题的实例号列表。
+    "UART0/1/3/4/5寄存器" → {0,1,3,4,5}; "UART2寄存器" → {2}; "存储" → None
+    """
+    import re
+    m = re.search(r'([A-Z][A-Za-z]*)\s*([\d/\-,～~]+)', section_title)
+    if not m:
+        return None
+    nums_str = m.group(2)
+    insts = set()
+    for part in re.split(r'[/,\-～~]', nums_str):
+        part = part.strip()
+        if part.isdigit():
+            insts.add(int(part))
+        rng = re.match(r'(\d+)\s*[～~\-]\s*(\d+)', part)
+        if rng:
+            insts.update(range(int(rng.group(1)), int(rng.group(2)) + 1))
+    return insts if insts else None
+
+
+def _reg_instance_in_set(reg_name, inst_set):
+    """寄存器名中的实例号是否在集合中。
+    UART0_CON → {0,1,3,4,5} → True; IAP_KEY → True
+    """
+    import re
+    nums = re.findall(r'\d+', reg_name)
+    if not nums:
+        return True
+    return int(nums[0]) in inst_set
 class TRMWordParser:
     """TRM Word 文档解析器。
 
@@ -378,6 +407,7 @@ class TRMWordParser:
 
         # ── 第 2 遍：位域（#### 寄存器标题 + 位域详表）──
         i = 0
+        current_section_insts = None  # ## 章节的实例号集合
         while i < total:
             line = lines[i].strip()
             if line.startswith("#### "):
@@ -618,23 +648,27 @@ class TRMWordParser:
         for matched_reg, bfs in bf_groups.items():
             # 策略1：精确名匹配
             if matched_reg in reg_by_name:
-                for reg in reg_by_name[matched_reg]:
+                candidates = reg_by_name[matched_reg]
+                # 按章节实例号过滤
+                sec = bfs[0].get("section_insts") if bfs else None
+                if sec is not None:
+                    candidates = [r for r in candidates if _reg_instance_in_set(r["name"], sec)]
+                for reg in candidates:
                     reg["bitfields"].extend(bfs)
                 continue
             # 策略2：归一化兜底（标题用了通配符，如 UARTn_CON）
             norm = _normalize_reg(matched_reg)
             candidate_names = norm_to_names.get(norm, [])
+            sec = bfs[0].get("section_insts") if bfs else None
+            if sec is not None:
+                candidate_names = [cn for cn in candidate_names if _reg_instance_in_set(cn, sec)]
             if len(candidate_names) == 1:
-                # 只有一个实例 → 安全挂载
                 for reg in reg_by_name[candidate_names[0]]:
                     reg["bitfields"].extend(bfs)
             elif len(candidate_names) > 1:
-                # 多个实例共享同一通配符模板 → 挂到所有实例
-                # （如 UARTn_CON 的位域表对 UART0~5 都适用）
                 for cname in candidate_names:
                     for reg in reg_by_name[cname]:
                         reg["bitfields"].extend(bfs)
-            # 无匹配的位域丢弃
 
     # ════════════════════════════════════════════════════
     # 残余寄存器收集（无"基地址"行的外设）
