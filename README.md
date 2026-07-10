@@ -50,6 +50,7 @@
 | **Multi-document Tabs** | Open and switch between multiple SVD files |
 | **Real-time Preview** | Live XML preview with syntax highlighting |
 | **Dark/Light Theme** | Built-in theme switching with modern flat UI |
+| **dim Register Arrays** | Full support for register & cluster level `dim`/`dimIncrement`/`dimIndex` (configurable via edit dialog) |
 
 ### AI Assistant
 
@@ -65,6 +66,7 @@ The built-in AI assistant provides natural language interaction for SVD data ope
 | **Batch Operations** | "Rename all GPIO peripherals", "Fix all address conflicts" |
 | **Multi-document** | "Switch to STM32F4.svd", "Diff with the other open file" |
 | **Navigation** | "Jump to UART1", "Show register MODER in GPIOA" |
+| **Datasheet Import** | "Parse this Word manual and import as SVD", "Verify current SVD against the manual to find missing registers" |
 
 **Supported Providers:**
 - OpenAI (GPT-4o, GPT-4o-mini, etc.)
@@ -129,6 +131,115 @@ The JSON format is compatible with `DeviceInfo.to_dict()` output. See `data_mode
 
 ---
 
+## Datasheet Resource Import (Excel/Word/PDF → SVD)
+
+Integrates the [Parser](https://github.com/SamyiHu) multi-source parsing package to auto-generate SVDs from chip datasheets (TRM) and Excel SFR tables, and to verify existing SVDs against manuals.
+
+### Workflow
+
+```
+Datasheet (Excel/Word/PDF) → parse → peripherals/registers/fields → import as SVD / verify
+```
+
+GUI entry: **Tools menu → Import from Datasheet** (`Ctrl+Shift+I`) or the green "Import" toolbar button.
+
+### Three Capabilities
+
+| Capability | Description |
+|------------|-------------|
+| **Resource Import** | Parse Excel/Word/PDF datasheets to auto-generate SVD. Supports single-source quick import and multi-source fusion (confidence-weighted cross-validation) |
+| **SVD Verification** | Compare current SVD against parsed manual results, finding missing registers/fields, offset/reset/access/width mismatches. Supports one-click "accept suggestion" fixes (undoable) |
+| **Package Trim Analysis** | Auto-derive peripheral differences per package (LQFP48/64/80) from the Datasheet pinout table, outputting a trim manifest (see below) |
+
+### Multi-source Fusion
+
+When providing Excel + Word + PDF simultaneously, results are fused with confidence weighting:
+- **Cross-validation**: Properties consistent across sources get boosted confidence
+- **Conflict marking**: Disputed properties are recorded in `FusionReport`, reviewable via "Tools → Multi-source Fusion Review"
+- **Confidence color-coding**: Tree nodes show high/medium/low/missing quality at a glance
+
+### Word TRM Three-Stage Parsing
+
+A specialized parser for domestic MCU TRMs (SC32/STM32-style) register three-stage structure:
+1. **Register map table**: Contains "base address" + `|REG|offset|R/W|desc|reset|`, extracting peripheral and register metadata
+2. **Bitfield detail table**: `|bit#|symbol|desc|` after `####` register headings, extracting fields
+3. **Normalized matching**: `PWM0_DTx` → `PWMn_DTn`, correctly attributing fields to register templates
+
+> Far more accurate than the Parser's native Word parser (which only recognizes a single table type and frequently loses register names as UNKNOWN).
+
+---
+
+## Package Trim Analysis (Datasheet Pinout → Per-Variant SVD)
+
+Different packages of the same chip family (e.g., LQFP48/64/80) trim peripherals differently (e.g., fewer ADC channels, CMP pins not bonded out). This tool can **auto-derive** per-package trim differences from the Datasheet's "Pin Resource List" table.
+
+### Trim Rules
+
+Identifies which peripheral functions each package actually bonds out, generating a trim manifest relative to the master (the package with the most pins):
+
+| Trim Type | Trigger | Action |
+|-----------|---------|--------|
+| **Peripheral-level** | A peripheral has no pins at all in a package (e.g., CMP/OP on 48-pin) | Remove the entire peripheral |
+| **Instance-level** | A peripheral instance (e.g., UART1) has no default or remapped pins | Remove that instance |
+| **ADC bitfield** | AIN channel count varies by package | Narrow the `AINx` bitfield width |
+| **LCD segment** | SEG count varies by package | Trim SEGR registers 1:1 |
+
+> **Parenthesis rule**: Functions in parentheses (e.g., `(RxD2)`) = pin remapping; counted as available, not triggering removal.
+
+### Example (SC32L14T/14G)
+
+Auto-analyzed trim manifest from Datasheet:
+
+```
+Master package: LQFP80
+
+LQFP48 (48-pin):
+  Remove periphs:  CMP, OP
+  Remove instances: UART1, UART2, TIM5
+  ADC narrow:      AINx bit[0:19] → bit[0:13] (AIN0~13)
+  SEGR trim:       55 → 28 registers
+
+LQFP64 (64-pin):
+  Remove instances: UART4
+  ADC narrow:      AINx → bit[0:17]
+  SEGR trim:       55 → 40 registers
+```
+
+### API Usage
+
+```python
+from svd_tool.core.datasource.pinout_parser import DatasheetPinoutParser
+
+parser = DatasheetPinoutParser()
+result = parser.parse_file("SC32L14T_14G_Datasheet.docx")
+
+print(f"Master package: {result.master_package}")
+for spec in result.packages:
+    print(f"\n{spec.package_name} ({spec.pin_count}-pin):")
+    print(f"  Remove periphs: {spec.remove_peripherals}")
+    print(f"  Remove instances: {spec.remove_instances}")
+    print(f"  Trim fields: {spec.trim_fields}")
+    print(f"  Trim reg arrays: {spec.trim_register_arrays}")
+```
+
+> Currently provides trim manifest analysis (`PackageTrimSpec`). The variant generator that auto-generates per-package SVDs from a master SVD is planned.
+
+---
+
+## dim Register Array Support
+
+Full support for the CMSIS-SVD spec `dim`/`dimIncrement`/`dimIndex` trio:
+
+| Level | Support |
+|-------|---------|
+| **Register** | ✅ Data model + parsing + generation + **configurable via edit dialog** |
+| **Cluster** | ✅ Full support |
+| **Field** | Data model supported, UI not exposed (rarely used per spec) |
+
+The register edit dialog's "Register Array (dim)" group lets you toggle it on, configure count/increment/index (supports both `0-7` range and `0,1,2` comma syntax), with live preview of the generated dim tags.
+
+---
+
 ## Installation & Running
 
 ### Requirements
@@ -144,6 +255,21 @@ cd SVDEditor
 pip install PyQt6
 python run.py                # GUI mode
 python run.py info file.svd  # CLI mode
+```
+
+### Datasheet Import Setup (Optional)
+
+The datasheet import feature depends on the external [Parser](../Parser) package and its parsing libraries (missing these does not affect the editor itself; the import wizard will prompt to install):
+
+```bash
+# Parser package (editable install recommended)
+pip install -e ../Parser
+
+# Parser dependencies
+pip install openpyxl python-docx pdfplumber pymupdf pyyaml
+
+# pandoc (recommended for Word TRM three-stage parsing, for docx→markdown conversion)
+# Install from https://pandoc.org, or: winget install pandoc
 ```
 
 ### AI Assistant Setup
@@ -283,7 +409,13 @@ SVDEditor/
 │   │   ├── address_conflict_detector.py  # Conflict detection
 │   │   ├── chain_rules.py          # Chain rules engine
 │   │   ├── document_manager.py     # Multi-document manager
-│   │   └── command_history.py      # Undo/Redo
+│   │   ├── command_history.py      # Undo/Redo
+│   │   └── datasource/             # Datasheet integration core layer
+│   │       ├── parser_bridge.py        # Parser package bridge (threaded)
+│   │       ├── trm_parser.py           # Word TRM three-stage parser
+│   │       ├── chip_to_svd_converter.py # ChipData → DeviceInfo
+│   │       ├── svd_verifier.py         # SVD verification engine
+│   │       └── pinout_parser.py        # Datasheet pinout → package trim manifest
 │   ├── ai_assistant/
 │   │   ├── __init__.py             # Module entry
 │   │   ├── config.py               # AI configuration
@@ -307,12 +439,16 @@ SVDEditor/
 │   │   ├── managers/
 │   │   │   ├── search_manager.py         # Search (quick + advanced)
 │   │   │   ├── batch_operations_manager.py  # Batch operations
+│   │   │   ├── datasource_manager.py     # Datasheet import/verify orchestration
 │   │   │   ├── file_operations.py        # File I/O
 │   │   │   └── register_manager.py       # Register management
 │   │   ├── dialogs/
 │   │   │   ├── chain_rules_dialog.py     # Chain rules editor
 │   │   │   ├── svd_diff_merge_dialog.py  # Diff & merge dialog
-│   │   │   └── new_svd_wizard.py         # New file wizard
+│   │   │   ├── new_svd_wizard.py         # New file wizard
+│   │   │   ├── import_wizard.py          # Datasheet import wizard
+│   │   │   ├── fusion_review_dialog.py   # Multi-source fusion review
+│   │   │   └── svd_verify_dialog.py      # SVD verification panel
 │   │   └── widgets/
 │   │       ├── bit_field_widget.py       # Bitfield visualization
 │   │       ├── address_map_widget.py     # Address map

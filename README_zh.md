@@ -49,6 +49,7 @@
 | **多文档标签** | 打开和切换多个 SVD 文件 |
 | **实时预览** | 实时 XML 预览，支持语法高亮 |
 | **深色/浅色主题** | 内置主题切换，现代化扁平 UI |
+| **dim 寄存器数组** | 支持寄存器级和簇级 `dim`/`dimIncrement`/`dimIndex`（编辑对话框可视化配置）|
 
 ### AI 助手
 
@@ -64,6 +65,7 @@
 | **批量操作** | "重命名所有 GPIO 外设"、"修复所有地址冲突" |
 | **多文档操作** | "切换到 STM32F4.svd"、"与另一个打开的文件进行比较" |
 | **导航跳转** | "跳转到 UART1"、"显示 GPIOA 的 MODER 寄存器" |
+| **数据手册导入** | "解析这份 Word 手册并导入为 SVD"、"用手册核对当前 SVD 找出缺失的寄存器" |
 
 **支持的 AI 提供商：**
 
@@ -130,6 +132,115 @@ JSON 格式与 `DeviceInfo.to_dict()` 输出完全兼容，详见 `data_model.py
 
 ---
 
+## 数据手册资源导入（Excel/Word/PDF → SVD）
+
+集成 [Parser](https://github.com/SamyiHu) 多源解析包，可从芯片数据手册（TRM）和 Excel SFR 表自动生成 SVD，并核对既有 SVD 与手册的一致性。
+
+### 工作流程
+
+```
+数据手册（Excel/Word/PDF）→ 解析 → 外设/寄存器/位域 → 导入为 SVD / 核对
+```
+
+GUI 入口：**工具菜单 → 从数据手册导入**（`Ctrl+Shift+I`）或工具栏绿色「导入」按钮。
+
+### 三大能力
+
+| 能力 | 说明 |
+|------|------|
+| **资源导入** | 解析 Excel/Word/PDF 数据手册，自动生成 SVD。支持单源快速导入和多源融合（置信度加权交叉验证）|
+| **SVD 核对** | 用手册解析结果对照当前 SVD，逐项找出缺失寄存器/位域、偏移/复位值/访问权限/位宽不符，支持「接受建议」一键修复（可撤销）|
+| **封装裁剪分析** | 从 Datasheet 引脚分布表自动推导各封装（LQFP48/64/80）的外设差异，输出裁剪清单（见下文）|
+
+### 多源融合
+
+同时提供 Excel + Word + PDF 三种来源时，按置信度加权融合：
+- **交叉验证**：多源一致的属性提升置信度
+- **冲突标记**：各源分歧的属性记入 `FusionReport`，可在「工具 → 多源融合审阅」人工裁定
+- **置信度色标**：外设树节点标注 high/medium/low/missing，质量一目了然
+
+### Word TRM 三段式解析
+
+针对国产 MCU TRM（SC32/STM32 风格）的寄存器三段式结构做了专门解析器：
+1. **寄存器映射表**：含「基地址」+ `|REG|offset|读写|说明|复位值|`，提取外设和寄存器元信息
+2. **位域详表**：`####` 寄存器标题后的 `|位编号|位符号|说明|`，提取位域
+3. **归一化匹配**：`PWM0_DTx` → `PWMn_DTn`，让位域正确归属寄存器模板
+
+> 比 Parser 原生 Word 解析器准确得多（原生只认单种表，寄存器名常丢失为 UNKNOWN）。
+
+---
+
+## 封装裁剪分析（Datasheet 引脚表 → 各型号 SVD）
+
+同一系列芯片的不同封装（如 LQFP48/64/80）会对外设做阉割（如 ADC 通道数减少、CMP 引脚未引出）。本工具能从 Datasheet 的「管脚资源列表」**自动推导**各封装的裁剪差异。
+
+### 裁剪规则
+
+从引脚表识别每个封装实际引出的外设功能，相对母体（引脚最全的封装）生成裁剪清单：
+
+| 裁剪类型 | 触发条件 | 处理 |
+|----------|----------|------|
+| **外设级** | 某外设在某封装完全无引脚引出（如 48 脚的 CMP/OP）| 删除整个外设 |
+| **实例级** | 外设实例（如 UART1）默认+重映射均无引出 | 删除该实例 |
+| **ADC 位域** | AIN 通道数随封装变 | 收窄 `AINx` 位域位宽 |
+| **LCD 段码** | SEG 数量随封装变 | 按 1:1 裁剪 SEGR 寄存器 |
+
+> **括号规则**：引脚表里带括号的功能（如 `(RxD2)`）= 引脚重映射，也算可用，不触发删除。
+
+### 示例（SC32L14T/14G）
+
+从 Datasheet 自动分析出的裁剪清单：
+
+```
+母体封装: LQFP80
+
+LQFP48 (48脚):
+  删外设:     CMP, OP
+  删实例:     UART1, UART2, TIM5
+  ADC 收窄:   AINx bit[0:19] → bit[0:13]（AIN0~13）
+  SEGR 裁剪:  55 → 28 个寄存器
+
+LQFP64 (64脚):
+  删实例:     UART4
+  ADC 收窄:   AINx → bit[0:17]
+  SEGR 裁剪:  55 → 40 个寄存器
+```
+
+### API 用法
+
+```python
+from svd_tool.core.datasource.pinout_parser import DatasheetPinoutParser
+
+parser = DatasheetPinoutParser()
+result = parser.parse_file("SC32L14T_14G_Datasheet.docx")
+
+print(f"母体封装: {result.master_package}")
+for spec in result.packages:
+    print(f"\n{spec.package_name} ({spec.pin_count}脚):")
+    print(f"  删外设: {spec.remove_peripherals}")
+    print(f"  删实例: {spec.remove_instances}")
+    print(f"  收窄位域: {spec.trim_fields}")
+    print(f"  裁寄存器数组: {spec.trim_register_arrays}")
+```
+
+> 当前提供裁剪清单分析（`PackageTrimSpec`）。基于母体 SVD 自动生成各封装 SVD 的变体生成器尚在规划中。
+
+---
+
+## dim 寄存器数组支持
+
+完整支持 CMSIS-SVD 规范的 `dim`/`dimIncrement`/`dimIndex` 三件套：
+
+| 层级 | 支持 |
+|------|------|
+| **Register（寄存器）** | ✅ 数据模型 + 解析 + 生成 + **编辑对话框可视化配置** |
+| **Cluster（寄存器簇）** | ✅ 完整支持 |
+| **Field（位域）** | 数据模型支持，UI 暂不暴露（规范极少用）|
+
+寄存器编辑对话框的「寄存器数组 (dim)」分组可勾选启用，配置数量/步长/索引（支持 `0-7` 范围和 `0,1,2` 逗号两种写法），实时预览生成的 dim 标签。
+
+---
+
 ## 安装与运行
 
 ### 环境要求
@@ -145,6 +256,21 @@ cd SVDEditor
 pip install PyQt6
 python run.py                # GUI 模式
 python run.py info file.svd  # CLI 模式
+```
+
+### 数据手册导入配置（可选）
+
+数据手册导入功能依赖外部 [Parser](../Parser) 包及其解析库（缺失时不影响编辑器主体，导入向导会提示安装）：
+
+```bash
+# Parser 包（推荐 editable 安装）
+pip install -e ../Parser
+
+# Parser 的解析依赖
+pip install openpyxl python-docx pdfplumber pymupdf pyyaml
+
+# pandoc（Word TRM 三段式解析推荐安装，用于 docx→markdown 转换）
+# 从 https://pandoc.org 安装，或 winget install pandoc
 ```
 
 ### AI 助手配置
@@ -284,7 +410,13 @@ SVDEditor/
 │   │   ├── address_conflict_detector.py  # 冲突检测
 │   │   ├── chain_rules.py          # 连锁规则引擎
 │   │   ├── document_manager.py     # 多文档管理
-│   │   └── command_history.py      # 撤销/重做
+│   │   ├── command_history.py      # 撤销/重做
+│   │   └── datasource/             # 数据手册集成核心层
+│   │       ├── parser_bridge.py        # Parser 包桥接（线程封装）
+│   │       ├── trm_parser.py           # Word TRM 三段式解析器
+│   │       ├── chip_to_svd_converter.py # ChipData → DeviceInfo
+│   │       ├── svd_verifier.py         # SVD 核对引擎
+│   │       └── pinout_parser.py        # Datasheet 引脚表 → 封装裁剪清单
 │   ├── ai_assistant/
 │   │   ├── __init__.py             # 模块入口
 │   │   ├── config.py               # AI 配置管理
@@ -307,11 +439,15 @@ SVDEditor/
 │   │   ├── managers/                     # 管理器目录
 │   │   │   ├── search_manager.py         # 搜索（快速+高级）
 │   │   │   ├── batch_operations_manager.py  # 批量操作
+│   │   │   ├── datasource_manager.py     # 数据手册导入/核对调度
 │   │   │   └── file_operations.py        # 文件 I/O
 │   │   ├── dialogs/                      # 对话框目录
 │   │   │   ├── chain_rules_dialog.py     # 连锁规则编辑器
 │   │   │   ├── svd_diff_merge_dialog.py  # 差异比较与合并
-│   │   │   └── new_svd_wizard.py         # 新建文件向导
+│   │   │   ├── new_svd_wizard.py         # 新建文件向导
+│   │   │   ├── import_wizard.py          # 数据手册导入向导
+│   │   │   ├── fusion_review_dialog.py   # 多源融合审阅
+│   │   │   └── svd_verify_dialog.py      # SVD 核对面板
 │   │   └── widgets/                      # 控件目录
 │   │       ├── bit_field_widget.py       # 位域可视化
 │   │       ├── address_map_widget.py     # 地址映射
