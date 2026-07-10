@@ -165,6 +165,31 @@ class ChipToSvdConverter:
 
         return device, report
 
+    def prune_by_features(self, device: DeviceInfo, features: dict):
+        """根据功能矩阵裁剪不存在的功能位域。
+
+        features 来自 FeatureDetector.detect()。
+        如 UART3~5 无 DMA → 删除含 'DMA' 的位域名（TXDMAEN, RXDMAEN）。
+        """
+        from .feature_detector import FeatureDetector
+        fd = FeatureDetector()
+        for pname, p in device.peripherals.items():
+            # 提取外设前缀和实例号
+            m = re.match(r'^([A-Za-z]+?)(\d+)$', pname)
+            if not m:
+                continue
+            prefix, inst_str = m.group(1), int(m.group(2))
+            missing = fd.missing_features(features, prefix, inst_str)
+            if not missing:
+                continue
+            for feat in missing:
+                # 特征关键词 → 应删除的位域
+                kw = feat.upper()  # DMA, LIN
+                for reg in p.registers.values():
+                    to_remove = [fn for fn in reg.fields if kw in fn.upper()]
+                    for fn in to_remove:
+                        del reg.fields[fn]
+
     # ---------- 设备级 ----------
 
     def _build_new_device(self, chip_data: Any) -> DeviceInfo:
