@@ -546,18 +546,60 @@ class TRMWordParser:
     # ════════════════════════════════════════════════════
 
     def _match_bitfields(self, registers: list[dict], bitfields: list[dict]):
-        """用归一化寄存器名把位域挂到寄存器上。
+        """把位域挂到正确的寄存器上。
+
+        匹配策略（修复归一化误并 APB0_CFG/APB1_CFG 的 bug）：
+        1. 精确名匹配优先：位域标题里提取的寄存器名 == 寄存器映射表里的实例名
+           （如 "APB0_CFG" 位域表 → APB0_CFG 寄存器，绝不混入 APB1_CFG）
+        2. 归一化兜底：仅当精确名无匹配时（标题用了通配符 UARTn_CON），
+           才按归一化匹配。但若归一化桶里有多个不同实例，把位域挂到
+           「标题能确定的那个实例」或全部实例（通配符场景）。
 
         registers[i]['bitfields'] = [匹配到的位域]
         """
-        # 按归一化寄存器名建索引
-        bf_by_norm: dict[str, list[dict]] = {}
-        for bf in bitfields:
-            norm = _normalize_reg(bf["matched_reg"])
-            bf_by_norm.setdefault(norm, []).append(bf)
+        # 寄存器名索引
+        reg_by_name: dict[str, list[dict]] = {}
         for reg in registers:
-            norm = _normalize_reg(reg["name"])
-            reg["bitfields"] = list(bf_by_norm.get(norm, []))
+            reg_by_name.setdefault(reg["name"], []).append(reg)
+        # 归一化索引：norm → [reg_name, ...]（记录不同的实例名）
+        norm_to_names: dict[str, list[str]] = {}
+        for rname in reg_by_name:
+            norm_to_names.setdefault(_normalize_reg(rname), [])
+            if rname not in norm_to_names[_normalize_reg(rname)]:
+                norm_to_names[_normalize_reg(rname)].append(rname)
+
+        # 初始化每个寄存器的位域列表
+        for reg in registers:
+            reg["bitfields"] = []
+
+        # 位域按精确 matched_reg 分组（同一条位域表的位域归一组）
+        # bf["matched_reg"] 是位域表标题里提取的寄存器名
+        # 关键：同一位域表的多个位域必须挂到同一个寄存器，不能拆散
+        bf_groups: dict[str, list[dict]] = {}  # matched_reg → [位域]
+        for bf in bitfields:
+            key = bf["matched_reg"]
+            bf_groups.setdefault(key, []).append(bf)
+
+        for matched_reg, bfs in bf_groups.items():
+            # 策略1：精确名匹配
+            if matched_reg in reg_by_name:
+                for reg in reg_by_name[matched_reg]:
+                    reg["bitfields"].extend(bfs)
+                continue
+            # 策略2：归一化兜底（标题用了通配符，如 UARTn_CON）
+            norm = _normalize_reg(matched_reg)
+            candidate_names = norm_to_names.get(norm, [])
+            if len(candidate_names) == 1:
+                # 只有一个实例 → 安全挂载
+                for reg in reg_by_name[candidate_names[0]]:
+                    reg["bitfields"].extend(bfs)
+            elif len(candidate_names) > 1:
+                # 多个实例共享同一通配符模板 → 挂到所有实例
+                # （如 UARTn_CON 的位域表对 UART0~5 都适用）
+                for cname in candidate_names:
+                    for reg in reg_by_name[cname]:
+                        reg["bitfields"].extend(bfs)
+            # 无匹配的位域丢弃
 
     # ════════════════════════════════════════════════════
     # 组装成模型对象

@@ -207,12 +207,82 @@ class ChipToSvdConverter:
             "usage": "registers",
         }
 
-        # 寄存器
-        for r in getattr(pblk, "registers", []) or []:
-            reg = self._convert_register(r, base_addr, report, pblk.name)
+        # 寄存器（同偏移地址的合并：模式寻址寄存器如 PDTA/RCAP@0x10 → PDTA_RCAP）
+        src_regs = getattr(pblk, "registers", []) or []
+        merged_groups = self._group_by_offset(src_regs)
+        for group in merged_groups:
+            if len(group) == 1:
+                reg = self._convert_register(group[0], base_addr, report, pblk.name)
+            else:
+                reg = self._merge_mode_registers(group, base_addr, report, pblk.name)
             peripheral.registers[reg.name] = reg
 
         return peripheral
+
+    def _group_by_offset(self, registers: list) -> list[list]:
+        """把同偏移地址的寄存器分到一组（模式寻址寄存器）。
+
+        保留原始顺序。不同偏移的各自成组。
+        """
+        groups: list[list] = []
+        seen: dict[str, int] = {}  # offset_norm → group index
+        for r in registers:
+            off = self._norm_hex(getattr(r, "address_offset", "") or "")
+            if off in seen:
+                groups[seen[off]].append(r)
+            else:
+                seen[off] = len(groups)
+                groups.append([r])
+        return groups
+
+    def _merge_mode_registers(self, group: list, periph_base: str,
+                              report: ConversionReport, periph_name: str) -> Register:
+        """合并同地址的模式寻址寄存器（如 PDTA@0x10 + RCAP@0x10 → PDTA_RCAP@0x10）。
+
+        规则（对齐参考 SVD 风格）：
+        - 名字：各寄存器名去掉公共前缀后用 _ 连接，如 TIM0_PDTA + TIM0_RCAP → TIM0_PDTA_RCAP
+        - 描述：合并各描述，标注模式条件
+        - 位域：全部保留
+        - reset_value/size/access：取第一个
+        """
+        converted = [self._convert_register(r, periph_base, report, periph_name) for r in group]
+        # 提取公共前缀（如 TIM0_）
+        prefix = ""
+        m0 = re.match(r'^([A-Z]+\d*_)', converted[0].name)
+        if m0:
+            cand = m0.group(1)
+            if all(re.match(rf'^{re.escape(cand)}', r.name) for r in converted):
+                prefix = cand
+        # 短名连接
+        short_names = []
+        for r in converted:
+            if prefix and r.name.startswith(prefix):
+                short_names.append(r.name[len(prefix):])
+            else:
+                short_names.append(r.name)
+        merged_name = prefix + "_".join(short_names)
+
+        descs = [r.description for r in converted if r.description]
+        merged_desc = " / ".join(descs) if descs else merged_name
+
+        merged_fields = {}
+        for r in converted:
+            for fn, f in r.fields.items():
+                if fn not in merged_fields:
+                    merged_fields[fn] = f
+
+        first = converted[0]
+        return Register(
+            name=merged_name,
+            offset=first.offset,
+            description=merged_desc,
+            display_name=merged_name,
+            size=first.size,
+            access=first.access,
+            reset_value=first.reset_value,
+            reset_mask=first.reset_mask,
+            fields=merged_fields,
+        )
 
     # ---------- 寄存器级 ----------
 
