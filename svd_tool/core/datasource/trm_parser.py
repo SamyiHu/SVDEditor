@@ -65,8 +65,8 @@ def _normalize_reg(name: str) -> str:
     if not name:
         return ""
     r = name.upper().strip()
-    r = re.sub(r'\d+', 'n', r)                          # 数字 → n
-    r = re.sub(r'(?<=[A-Z])X(?![A-Z0-9])', 'n', r)      # 大写X变量 → n
+    r = re.sub(r'\d+', 'N', r)                          # 数字 → N
+    r = re.sub(r'(?<=[A-Z])X(?![A-Z0-9])', 'N', r)      # 大写X变量 → N
     r = re.sub(r'(?<=P)[XABCDE](?=[A-Z_]|$)', 'n', r)   # 端口字母 PX→Pn
     return r
 

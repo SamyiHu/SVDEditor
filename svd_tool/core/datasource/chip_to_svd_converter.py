@@ -411,28 +411,11 @@ class ChipToSvdConverter:
             return None
 
     def _reg_size_hex(self, reg: Any) -> str:
-        """寄存器位宽 → SVD size（十六进制字节数）。"""
-        max_bit = 0
-        for f in getattr(reg, "fields", []) or []:
-            end = int(getattr(f, "bit_pos", 0) or 0) + max(int(getattr(f, "bit_width", 1) or 1), 1)
-            if end > max_bit:
-                max_bit = end
-        bits = max_bit if max_bit > 0 else 32
-        # 向上取整到字节边界
-        bytes_n = ((bits + 7) // 8)
-        # 常见寄存器宽度：8/16/32 位 → 1/2/4 字节
-        if bytes_n <= 1:
-            bytes_n = 1
-        elif bytes_n <= 2:
-            bytes_n = 2
-        else:
-            bytes_n = 4
-        return f"0x{bytes_n * 8:X}"   # SVD size 字段用位数表示（如 0x20=32）
+        """寄存器位宽 → SVD size。ARM Cortex-M 寄存器统一 32 位（0x20）。"""
+        return "0x20"
 
     def _reg_size_bytes(self, reg: Any) -> int:
-        size_hex = self._reg_size_hex(reg)
-        n = self._parse_hex_int(size_hex)
-        return (n // 8) if n else 4
+        return 4  # ARM 32-bit registers
 
     @staticmethod
     def _convert_enum(enum_values: Any) -> list[dict[str, str]]:
