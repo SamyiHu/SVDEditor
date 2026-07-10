@@ -139,7 +139,8 @@ class ChipToSvdConverter:
         # 外设
         existing_periphs = set(device.peripherals.keys())
         for pblk in getattr(chip_data, "peripherals", []) or []:
-            pname = (pblk.name or "").strip()
+            raw_name = (pblk.name or "").strip()
+            pname = self._normalize_periph_name(raw_name, getattr(pblk, "registers", []))
             if not pname:
                 report.issues.append(ConversionIssue(
                     peripheral="(unnamed)", kind="skipped_peripheral",
@@ -153,8 +154,8 @@ class ChipToSvdConverter:
                 report.peripherals_skipped += 1
                 continue
             peripheral = self._convert_peripheral(pblk, report)
-            device.peripherals[pname] = peripheral
-            existing_periphs.add(pname)
+            device.peripherals[peripheral.name] = peripheral
+            existing_periphs.add(peripheral.name)
             report.peripherals_added += 1
             report.registers_added += len(peripheral.registers)
             report.fields_added += sum(len(r.fields) for r in peripheral.registers.values())
@@ -185,8 +186,10 @@ class ChipToSvdConverter:
 
     def _convert_peripheral(self, pblk: Any, report: ConversionReport) -> Peripheral:
         base_addr = self._norm_hex(getattr(pblk, "base_address", "") or "0x40000000")
+        # 命名归一化：中文名 → 寄存器前缀推导的标准名（如"温度传感器"→"TS"）
+        pname = self._normalize_periph_name(pblk.name, getattr(pblk, "registers", []))
         peripheral = Peripheral(
-            name=pblk.name,
+            name=pname,
             base_address=base_addr,
             description=getattr(pblk, "description", "") or "",
             group_name=(getattr(pblk, "bus", "") or ""),
@@ -413,6 +416,56 @@ class ChipToSvdConverter:
     def _reg_size_hex(self, reg: Any) -> str:
         """寄存器位宽 → SVD size。ARM Cortex-M 寄存器统一 32 位（0x20）。"""
         return "0x20"
+
+    @staticmethod
+    def _normalize_periph_name(raw_name: str, registers: list) -> str:
+        """外设命名归一化：中文名从寄存器前缀推导标准名。
+
+        TRM 里有些外设以中文命名（如"温度传感器"），但寄存器全是 TS_ 前缀。
+        根据寄存器名前缀的公共部分推断标准外设名。
+        同时去掉中文括号/注释（如 PWM0_DTx（x = 0~7）→ PWM0_DTx）。
+        """
+        name = raw_name.strip()
+        # 去中文括号及内容
+        name = re.sub(r'[（(][^）)]*[\u4e00-\u9fff][^）)]*[）)]', '', name)
+        name = re.sub(r'[（(][^）)]*[）)]', '', name)
+        name = ''.join(c for c in name if c.isascii()).strip()
+        # 如果清理后仍为空或不全是ASCII，从寄存器前缀推导
+        if not name:
+            name = ChipToSvdConverter._infer_name_from_registers(registers)
+        # 清理后为空或过短，也从寄存器推
+        if not name or (len(name) < 2 and registers):
+            inferred = ChipToSvdConverter._infer_name_from_registers(registers)
+            if inferred:
+                name = inferred
+        return name or raw_name
+
+    @staticmethod
+    def _infer_name_from_registers(registers: list) -> str:
+        """从寄存器名称的公共前缀推断外设名。
+        如 [TS_CFG, TS_STS] → TS；[DMA0_SADR, DMA0_DADR] → DMA0。
+        """
+        if not registers:
+            return ""
+        names = [getattr(r, 'name', '') or '' for r in registers]
+        names = [n for n in names if n and '_' in n]
+        if not names:
+            return ""
+        # 找最长公共前缀（到第一个 _ 之前或之后？）
+        # 策略：如果有多个寄存器且前缀相同，取第一个寄存器 _ 之前的部分
+        first = names[0]
+        prefix = first.split('_')[0] if '_' in first else first
+        # 验证所有寄存器都以此开头
+        if all(n.startswith(prefix + '_') for n in names):
+            return prefix
+        # 否则尝试找公共前缀（逐字符）
+        common = names[0]
+        for n in names[1:]:
+            while not n.startswith(common) and common:
+                common = common[:-1]
+        # 去掉末尾的 _ 残留
+        common = common.rstrip('_')
+        return common if len(common) >= 2 else ""
 
     def _reg_size_bytes(self, reg: Any) -> int:
         return 4  # ARM 32-bit registers
