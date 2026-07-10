@@ -827,6 +827,7 @@ class TRMWordParser:
             absolute_address=_norm_hex(reg_dict.get("abs_addr", "")),
             reset_value=_norm_hex(reg_dict.get("reset", "")) or "0x00000000",
             description=reg_dict.get("desc", "").strip(),
+            access=self._norm_access(reg_dict.get("access", "")),
             fields=fields,
             confidence="high",
         )

@@ -160,6 +160,9 @@ class ChipToSvdConverter:
             report.registers_added += len(peripheral.registers)
             report.fields_added += sum(len(r.fields) for r in peripheral.registers.values())
 
+        # 自动检测继承关系：结构相同的外设设 derivedFrom
+        self._infer_derived_from(device, report)
+
         return device, report
 
     # ---------- 设备级 ----------
@@ -327,7 +330,7 @@ class ChipToSvdConverter:
             offset=offset_str,
             description=getattr(reg, "description", "") or "",
             size=size_hex,
-            access=None,           # 寄存器级 access 通常由字段继承，留空
+            access=self._translate_access(getattr(reg, "access", "") or ""),
             reset_value=reset_val,
             reset_mask="0xFFFFFFFF",
             fields={},
@@ -482,6 +485,56 @@ class ChipToSvdConverter:
 
     def _reg_size_bytes(self, reg: Any) -> int:
         return 4  # ARM 32-bit registers
+
+    def _infer_derived_from(self, device: DeviceInfo, report: ConversionReport):
+        """自动检测继承关系：结构相同的外设设 derivedFrom。
+
+        签名包含：寄存器数、各寄存器名/偏移/access/位域名/位域位号。
+        排除列表：已知特殊外设（如UART2有LIN，不继承UART0）。
+        """
+        # 排除不参与自动继承的外设
+        EXCLUDE = {'UART2'}  # UART2 有 LIN 功能，不能继承 UART0
+        from collections import defaultdict
+        groups: dict[tuple, list[str]] = defaultdict(list)
+        for pname, p in device.peripherals.items():
+            if p.derived_from or pname in EXCLUDE:
+                continue
+            sig = self._peri_signature(pname, p)
+            if sig:
+                groups[sig].append(pname)
+        for sig, names in groups.items():
+            if len(names) <= 1:
+                continue
+            base = names[0]
+            for pname in names[1:]:
+                if pname in EXCLUDE:
+                    continue
+                device.peripherals[pname].derived_from = base
+                report.issues.append(ConversionIssue(
+                    peripheral=pname, kind="derived_from", severity="info",
+                    detail=f"自动继承 {base}"))
+
+    def _peri_signature(self, pname: str, p: Peripheral) -> tuple:
+        """外设结构签名：寄存器级 + 位域级，确保真正结构相同才继承。"""
+        reg_sig = []  # [(去实例号名称, offset, access, 位域签名)]
+        for rn, r in p.registers.items():
+            stripped = re.sub(r'\d+', '', rn)
+            # 位域签名
+            field_sig = tuple(sorted(
+                (fn, f.bit_offset, f.bit_width) for fn, f in r.fields.items()
+            ))
+            reg_sig.append((stripped, r.offset, r.access or '', field_sig))
+        return tuple(sorted(reg_sig))
+
+    @staticmethod
+    def _translate_access(raw: str) -> Optional[str]:
+        """TRM 中文访问类型 → SVD 标准。"""
+        if not raw: return None
+        r = raw.strip()
+        if r in ('读/写', '读写', 'R/W', 'RW', 'rw', 'read-write'): return 'read-write'
+        if r in ('只读', 'RO', 'ro', 'read-only'): return 'read-only'
+        if r in ('只写', 'WO', 'wo', 'write-only'): return 'write-only'
+        return r  # 原样返回（可能是英文）
 
     @staticmethod
     def _convert_enum(enum_values: Any) -> list[dict[str, str]]:
