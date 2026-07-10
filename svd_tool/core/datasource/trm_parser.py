@@ -341,6 +341,41 @@ class TRMWordParser:
                 seen.add(key)
                 unique_regs.append(r)
 
+        # ── 残余扫描：无归属外设的寄存器（无"基地址"行的章节，如 OPT）──
+        # 先收集已有寄存器名用于去重
+        captured_names = {r["name"] for r in unique_regs}
+        orphan_regs = self._collect_orphan_registers(lines, captured_names)
+        if orphan_regs:
+            # 按章节分组
+            chapters: dict[str, list] = {}
+            for orr in orphan_regs:
+                ch = orr.get("chapter", "Other") or "Other"
+                if ch not in chapters:
+                    chapters[ch] = []
+                chapters[ch].append(orr)
+            for ch, oregs in chapters.items():
+                if not oregs:
+                    continue
+                pname = self._chapter_to_periph_name(ch, oregs)
+                # 基址：全部绝对地址的最小值向下取整到 0x10 边界
+                base = self._infer_base_from_registers(oregs)
+                for orr in oregs:
+                    abs_addr = orr.get("abs_addr", "") or orr.get("offset", "")
+                    # 计算相对偏移 = 绝对地址 - 基址
+                    rel_offset = self._compute_rel_offset(abs_addr, base)
+                    key = (pname, base, orr["name"], rel_offset)
+                    if key not in seen:
+                        seen.add(key)
+                        if pname not in [p["name"] for p in peripherals]:
+                            peripherals.append({"name": pname, "base_addr": base, "chapter": ch})
+                        unique_regs.append({
+                            "peripheral": pname, "base_addr": base,
+                            "name": orr["name"], "offset": rel_offset,
+                            "abs_addr": abs_addr,
+                            "access": orr.get("access", ""), "desc": orr.get("desc", ""),
+                            "reset": orr.get("reset", ""), "chapter": ch,
+                        })
+
         # ── 第 2 遍：位域（#### 寄存器标题 + 位域详表）──
         i = 0
         while i < total:
@@ -600,6 +635,117 @@ class TRMWordParser:
                     for reg in reg_by_name[cname]:
                         reg["bitfields"].extend(bfs)
             # 无匹配的位域丢弃
+
+    # ════════════════════════════════════════════════════
+    # 残余寄存器收集（无"基地址"行的外设）
+    # ════════════════════════════════════════════════════
+
+    def _collect_orphan_registers(self, lines: list[str], already_captured: set) -> list[dict]:
+        """收集不在任何"基地址"块内的寄存器表行，且此前未被捕获。
+        如 OPT（选项字节区域）的 OPINX/OPREG 直接写绝对地址。
+        跳过间接寻址（含@的）和已捕获的重复项。
+        """
+        orphans: list[dict] = []
+        chapter = ""
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            if line.startswith("# ") and "目录" not in line:
+                chapter = _TAG_RE.sub('', line[2:]).strip()
+            elif line.startswith("## ") and "目录" not in line:
+                # 二级标题也跟踪（如 "## 选项字节区域（Customer Option）"）
+                new_ch = _TAG_RE.sub('', line[3:]).strip()
+                if new_ch:
+                    chapter = new_ch
+            # 跳过已有"基地址"的块
+            if _BASE_ADDR_RE.search(line):
+                j = i + 1
+                while j < len(lines):
+                    jl = lines[j].strip()
+                    if _BASE_ADDR_RE.search(jl) or jl.startswith("#"):
+                        break
+                    j += 1
+                i = j - 1
+            elif _is_table_row(line) and "0x" in line:
+                cells, _ = _extract_cells(line)
+                if len(cells) < 2:
+                    i += 1; continue
+                reg_name = cells[0].strip()
+                reg_name = re.sub(r'@\s*0x[0-9A-Fa-f]+', '', reg_name).strip()
+                if reg_name in ("寄存器", "register", "") or not re.match(r'^[A-Za-z][A-Za-z0-9_]*', reg_name):
+                    i += 1; continue
+                if reg_name in already_captured:
+                    i += 1; continue
+                # 只收集有 0x4xxxxxxx 范围绝对地址的行
+                addr = ""
+                all_text = " ".join(cells)
+                if '@' in all_text:
+                    i += 1; continue  # 跳过间接寻址
+                for c in cells[1:]:
+                    m = re.match(r'^(0x[0-9A-Fa-f_]+)$', c.strip())
+                    if m:
+                        try:
+                            val = int(m.group(1).replace('_', ''), 16)
+                            if val >= 0x40000000:
+                                addr = m.group(1); break
+                        except ValueError: pass
+                if not addr:
+                    i += 1; continue
+                orphans.append({
+                    "name": reg_name, "offset": addr, "abs_addr": addr,
+                    "chapter": chapter, "desc": "", "access": "", "reset": "",
+                })
+                already_captured.add(reg_name)
+            i += 1
+        return orphans
+
+    def _chapter_to_periph_name(self, chapter: str, oregs: list[dict]) -> str:
+        """从章节标题和寄存器名推外设名。"""
+        # 特殊：章节含 Option → OPT（选项字节）
+        if re.search(r'option', chapter, re.IGNORECASE):
+            return "OPT"
+        # 优先用寄存器名前缀（如 OPINX/OPREG → OP，但注意和已有外设不冲突）
+        names = [r["name"] for r in oregs if r.get("name")]
+        if names:
+            common = names[0]
+            for n in names[1:]:
+                while not n.startswith(common) and common:
+                    common = common[:-1]
+            common = common.rstrip('_')
+            if len(common) >= 2:
+                # 若推断结果和已有外设同名但基址不同，用章节名
+                return common
+        m = re.search(r'[（(]([^）)]*)[）)]', chapter)
+        if m:
+            eng = m.group(1)
+            abbr = ''.join(w[0].upper() for w in eng.split() if w)
+            if abbr: return abbr
+        return chapter.split()[0] if chapter else "Other"
+
+    def _infer_base_from_registers(self, oregs: list[dict]) -> str:
+        """从残余寄存器推断基地址：取最小绝对地址向下取整到 0x10 边界。"""
+        min_addr = None
+        for orr in oregs:
+            abs_str = orr.get("abs_addr", "") or orr.get("offset", "")
+            try:
+                addr = int(abs_str.replace('_', ''), 16)
+                if min_addr is None or addr < min_addr:
+                    min_addr = addr
+            except (ValueError, AttributeError):
+                continue
+        if min_addr:
+            return f"0x{(min_addr & ~0xF):08X}"
+        return ""
+
+    @staticmethod
+    def _compute_rel_offset(abs_addr: str, base_str: str) -> str:
+        """绝对地址 → 相对偏移 = abs - base。"""
+        try:
+            a = int(abs_addr.replace('_', '').replace('0x', ''), 16)
+            b = int(base_str.replace('_', '').replace('0x', ''), 16)
+            return f"0x{a - b:X}"
+        except (ValueError, AttributeError):
+            return abs_addr
 
     # ════════════════════════════════════════════════════
     # 组装成模型对象
