@@ -517,12 +517,11 @@ class ChipToSvdConverter:
         签名包含：寄存器数、各寄存器名/偏移/access/位域名/位域位号。
         排除列表：已知特殊外设（如UART2有LIN，不继承UART0）。
         """
-        # 排除不参与自动继承的外设
-        EXCLUDE = {'UART2'}  # UART2 有 LIN 功能，不能继承 UART0
+        # 结构一致就继承，功能差异由 Datasheet 检测在裁剪阶段处理
         from collections import defaultdict
         groups: dict[tuple, list[str]] = defaultdict(list)
         for pname, p in device.peripherals.items():
-            if p.derived_from or pname in EXCLUDE:
+            if p.derived_from:
                 continue
             sig = self._peri_signature(pname, p)
             if sig:
@@ -532,8 +531,6 @@ class ChipToSvdConverter:
                 continue
             base = names[0]
             for pname in names[1:]:
-                if pname in EXCLUDE:
-                    continue
                 device.peripherals[pname].derived_from = base
                 report.issues.append(ConversionIssue(
                     peripheral=pname, kind="derived_from", severity="info",
