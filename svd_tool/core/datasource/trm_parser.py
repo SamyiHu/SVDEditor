@@ -814,7 +814,7 @@ class TRMWordParser:
 
     def _assemble(self, peripherals: list[dict], registers: list[dict]) -> list:
         """把中间 dict 组装成 PeripheralBlock 列表（延迟 import 模型）。"""
-        from parser.models import PeripheralBlock, Register, BitField
+        from reg_core.models import PeripheralBlock, Register, BitField
 
         # 按外设分组寄存器
         peri_groups: dict[str, list[dict]] = {}
@@ -862,7 +862,7 @@ class TRMWordParser:
 
     def _to_register(self, reg_dict: dict) -> Any:
         """中间 dict → Register + BitField。"""
-        from parser.models import Register, BitField
+        from reg_core.models import Register, BitField
         fields: list[BitField] = []
         for bf in reg_dict.get("bitfields", []):
             lo, hi = bf.get("lo"), bf.get("hi")

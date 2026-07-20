@@ -98,30 +98,29 @@ def _candidate_parser_roots() -> list[str]:
 
 
 def is_parser_available() -> bool:
-    """探测 Parser 包是否可导入（不触发其重依赖）。"""
+    """探测 reg_core 包是否可导入（不触发其重依赖）。"""
     try:
         _ensure_parser_importable()
-        import parser  # noqa: F401
+        import reg_core  # noqa: F401
         return True
     except Exception:
         return False
 
 
 def _ensure_parser_importable() -> None:
-    """确保 `import parser` 能找到外部 Parser 包。
+    """确保 `import reg_core` 能找到外部 Parser 包。
 
+    Parser 包已从 `parser` 改名为 `reg_core`。
     若已 pip install -e，则直接可用；否则把候选根目录加入 sys.path。
-    Python 3.13+ 已移除 stdlib parser 模块，包名不冲突。
     """
-    # 已在 sys.modules 或已可导入则跳过
-    if "parser" in sys.modules:
+    if "reg_core" in sys.modules:
         return
     import importlib.util
-    if importlib.util.find_spec("parser") is not None:
+    if importlib.util.find_spec("reg_core") is not None:
         return
     # 兜底：把候选根加入 sys.path
     for root in _candidate_parser_roots():
-        if os.path.isdir(os.path.join(root, "parser")):
+        if os.path.isdir(os.path.join(root, "reg_core")):
             if root not in sys.path:
                 sys.path.insert(0, root)
             return
@@ -165,15 +164,15 @@ class ParserBridge:
                     return periphs
             except Exception as e:
                 logger.warning(f"TRM 解析失败，回退到原生 word 解析: {e}")
-            # 回退：Parser 包原生 WordParser
+            # 回退：reg_core 原生 WordParser
             periphs = registry.get_for_source(src).parse(path)
-            from parser.quality_report import stamp_confidence
+            from reg_core.quality_report import stamp_confidence
             stamp_confidence(periphs, "word")
             return periphs
 
         # Excel / PDF：原生解析器 + 置信度打标
         periphs = registry.get_for_source(src).parse(path)
-        from parser.quality_report import stamp_confidence
+        from reg_core.quality_report import stamp_confidence
         stamp_confidence(periphs, src)
         return periphs
 
@@ -200,9 +199,9 @@ class ParserBridge:
         # 2. 懒加载 Parser 包（捕获重依赖缺失）
         try:
             _ensure_parser_importable()
-            from parser import default_registry, SourceFusion, FusionStrategy
-            from parser.models import ChipData
-            from parser.quality_report import stamp_confidence
+            from reg_core import default_registry, SourceFusion, FusionStrategy
+            from reg_core.models import ChipData
+            from reg_core.quality_report import stamp_confidence
         except ParserUnavailableError:
             raise
         except Exception as e:

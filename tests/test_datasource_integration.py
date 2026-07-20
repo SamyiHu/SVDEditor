@@ -17,7 +17,7 @@ from svd_tool.core.datasource.svd_verifier import VerifyKind
 
 def _make_real_chip_data():
     """用真实 Parser 模型类构造 ChipData。"""
-    from parser.models import (
+    from reg_core.models import (
         ChipData, PeripheralBlock, Register, BitField, InterruptDefinition,
     )
     return ChipData(
@@ -188,9 +188,9 @@ def _apply_one_simple(device, item):
 
 def test_real_fusion_report():
     """真实 SourceFusion 多源融合 + 质量报告。"""
-    from parser.models import PeripheralBlock, Register, BitField
-    from parser.source_fusion import SourceFusion, FusionStrategy
-    from parser.quality_report import stamp_confidence
+    from reg_core.models import PeripheralBlock, Register, BitField
+    from reg_core.source_fusion import SourceFusion, FusionStrategy
+    from reg_core.quality_report import stamp_confidence
 
     # 两源，base_address 一致 → 提升置信度；reset_value 冲突 → 记冲突
     excel = [PeripheralBlock(name="SPI0", base_address="0x40013000",
