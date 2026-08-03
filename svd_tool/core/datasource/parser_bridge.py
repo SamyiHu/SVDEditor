@@ -145,16 +145,27 @@ class ParserBridge:
     def _parse_source(self, registry, src: str, path: str) -> list:
         """解析单个来源。
 
-        Word 来源优先用 TRMWordParser（针对 SC32/STM32 风格 TRM 三段式结构，
-        含寄存器映射表 + 位域详表 + 归一化匹配，比 Parser 包原生 WordParser 准确得多）。
-        若 TRM 解析拿到结果则用它；否则回退到 Parser 包原生 word 解析。
-        Excel/PDF 走 Parser 包原生解析器。
+        Word 来源优先用 reg_core 的 TrmWordParser（直接读 docx 表格，
+        四类表格分类 REGMAP/REGSUM/FIELDDETAIL/BITMAP，准确率最高）。
+        失败回退到我们的 trm_parser（pandoc→md 路径）。
+        Excel/PDF 走 reg_core 原生解析器。
         """
-        from .trm_parser import TRMWordParser
-
         if src == "word":
-            # 先试 TRM 解析器（pandoc→md 或 python-docx 回退）
+            # 优先：reg_core TrmWordParser（python-docx 直接读，支持 th 标签）
             try:
+                from reg_core.parsers.trm_word_parser import TrmWordParser
+                from pathlib import Path
+                trm = TrmWordParser()
+                periphs = trm.parse(Path(path))
+                if periphs:
+                    from reg_core.quality_report import stamp_confidence
+                    stamp_confidence(periphs, "word")
+                    return periphs
+            except Exception as e:
+                logger.warning(f"reg_core TrmWordParser 失败，回退到我们的 trm_parser: {e}")
+            # 回退：我们的 pandoc 路径
+            try:
+                from .trm_parser import TRMWordParser
                 trm = TRMWordParser()
                 if os.path.isdir(path):
                     periphs = trm.parse_dir(path)
@@ -163,8 +174,8 @@ class ParserBridge:
                 if periphs:
                     return periphs
             except Exception as e:
-                logger.warning(f"TRM 解析失败，回退到原生 word 解析: {e}")
-            # 回退：reg_core 原生 WordParser
+                logger.warning(f"trm_parser 也失败，回退到原生 WordParser: {e}")
+            # 最终回退：reg_core 原生 WordParser
             periphs = registry.get_for_source(src).parse(path)
             from reg_core.quality_report import stamp_confidence
             stamp_confidence(periphs, "word")
