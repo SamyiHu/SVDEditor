@@ -122,7 +122,7 @@ def _extract_cells(line: str) -> tuple[list[str], bool]:
         非表格行返回 ([], False)。
     """
     # HTML 格式优先（pandoc 对含合并单元格的表回退到 HTML）
-    if "<t[dh]" in line.lower():
+    if "<td" in line.lower() or "<th" in line.lower():
         tds = _TD_RE.findall(line)
         cells = []
         for td in tds:
@@ -142,7 +142,8 @@ def _is_table_row(line: str) -> bool:
     s = line.strip()
     if not s:
         return False
-    if "<t[dh]" in s.lower():
+    sl = s.lower()
+    if "<td" in sl or "<th" in sl:
         return True
     return s.startswith("|")
 
@@ -449,7 +450,7 @@ class TRMWordParser:
                 continue
 
             # 位域表头：含「位编号」+「位符号」
-            line_text = _TAG_RE.sub('', line) if "<t[dh]" in line.lower() else line
+            line_text = _TAG_RE.sub('', line) if "<td" in line.lower() or "<th" in line.lower() else line
             is_bf_header = "位编号" in line_text and "位符号" in line_text
             if is_bf_header:
                 j = i + 1
@@ -458,7 +459,7 @@ class TRMWordParser:
                     if _SEP_LINE_RE.match(jline) or not jline.strip():
                         j += 1
                         continue
-                    jline_text = _TAG_RE.sub('', jline) if "<t[dh]" in jline.lower() else jline
+                    jline_text = _TAG_RE.sub('', jline) if "<td" in jline.lower() or "<th" in jline.lower() else jline
                     if "位编号" in jline_text and "位符号" in jline_text:
                         break
                     if jline_text.strip().startswith("#"):
