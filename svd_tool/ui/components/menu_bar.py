@@ -252,17 +252,6 @@ class MenuBarBuilder:
         )
         view_menu.addAction(self.main_window.toggle_auto_save_action)
 
-        # AI 助手面板切换
-        if hasattr(self.main_window, 'ai_assistant') and self.main_window.ai_assistant:
-            view_menu.addSeparator()
-            self.main_window.toggle_ai_assistant_action = QAction(
-                t("menu.view.ai_assistant", default="AI 助手"), self.parent)
-            self.main_window.toggle_ai_assistant_action.setCheckable(True)
-            self.main_window.toggle_ai_assistant_action.setChecked(False)
-            self.main_window.toggle_ai_assistant_action.setShortcut(QKeySequence("Ctrl+Shift+A"))
-            self.main_window.toggle_ai_assistant_action.triggered.connect(self.main_window.toggle_ai_assistant)
-            view_menu.addAction(self.main_window.toggle_ai_assistant_action)
-    
     def _create_tools_menu(self):
         """创建工具菜单"""
         tools_menu = self.menubar.addMenu(t("menu.tools"))
@@ -366,14 +355,6 @@ class MenuBarBuilder:
         chain_edit_action.triggered.connect(self.main_window.show_chain_rules_dialog)
         tools_menu.addAction(chain_edit_action)
 
-        # AI 助手设置
-        if hasattr(self.main_window, 'ai_assistant') and self.main_window.ai_assistant:
-            tools_menu.addSeparator()
-            ai_settings_action = QAction(
-                t("menu.tools.ai_settings", default="AI 助手设置..."), self.parent)
-            ai_settings_action.triggered.connect(self.main_window.show_ai_assistant_settings)
-            tools_menu.addAction(ai_settings_action)
-    
     def _close_current_document(self):
         """关闭当前文档"""
         if hasattr(self.main_window, 'document_manager') and self.main_window.document_manager:

@@ -25,9 +25,6 @@
 ![Bitfield Editor](docs/screenshots/bitfield_editor.png)
 *Bitfield visualization and register details*
 
-![AI Assistant](docs/screenshots/ai_assistant.png)
-*Natural language interaction with SVD data*
-
 ---
 
 ## Features
@@ -52,32 +49,37 @@
 | **Dark/Light Theme** | Built-in theme switching with modern flat UI |
 | **dim Register Arrays** | Full support for register & cluster level `dim`/`dimIncrement`/`dimIndex` (configurable via edit dialog) |
 
-### AI Assistant
+### AI Integration (MCP)
 
-The built-in AI assistant provides natural language interaction for SVD data operations. Simply describe what you want to do in plain language, and the AI will execute the corresponding operations.
+The built-in AI panel has been removed in favor of a standard **MCP Server**: connect your own AI client (ZCode / Claude Desktop / Cursor / Cherry Studio / Cline, etc.) and edit SVD files in natural language. Model, API keys, and chat UI are all managed by your client — this tool just exposes 30 standard MCP tools.
 
-**Key Capabilities:**
+**Capabilities:**
 
-| Capability | Example |
-|------------|---------|
-| **Query & Search** | "Show me all peripherals", "Find registers with offset 0x10" |
-| **CRUD Operations** | "Add a new peripheral named TIMER0", "Delete register MODER" |
-| **Validation** | "Validate this SVD file", "Check for address conflicts" |
-| **Batch Operations** | "Rename all GPIO peripherals", "Fix all address conflicts" |
-| **Multi-document** | "Switch to STM32F4.svd", "Diff with the other open file" |
-| **Navigation** | "Jump to UART1", "Show register MODER in GPIOA" |
-| **Datasheet Import** | "Parse this Word manual and import as SVD", "Verify current SVD against the manual to find missing registers" |
+| Capability | Description |
+|------------|-------------|
+| **Query & Search** | Device summary, layered peripheral/register/field getters, unified search with pagination |
+| **CRUD** | Full add/update/remove for peripherals, registers, bitfields, and interrupts (incl. rename, derivedFrom) |
+| **Validation** | CMSIS-SVD schema validation, address conflict detection |
+| **Multi-document** | Open / switch / diff multiple SVD files |
+| **Export** | CSV / Markdown / HTML docs, C header generation (plain & CMSIS style) |
 
-**Supported Providers:**
-- OpenAI (GPT-4o, GPT-4o-mini, etc.)
-- Anthropic (Claude 3.5 Sonnet, Claude 3 Haiku, etc.)
-- Any OpenAI-compatible API (Ollama, vLLM, etc.)
+**Conventions:** edits stay in memory; `svd_save_document` writes to disk (auto `.bak` backup before overwriting). Addresses/offsets use hex strings.
 
-**Configuration:**
-- API key and endpoint configuration via Settings dialog
-- Streaming response support
-- Custom system prompt extensions
-- Conversation history management
+**Client config** (works across clients):
+
+```json
+{
+  "mcpServers": {
+    "svd-editor": {
+      "command": "python",
+      "args": ["C:/path/to/SVDEditor/run.py", "--mcp"],
+      "env": { "PYTHONUTF8": "1" }
+    }
+  }
+}
+```
+
+See [docs/MCP_DESIGN.md](docs/MCP_DESIGN.md) for the full tool list, the planned GUI live-bridge mode, and branch strategy.
 
 ### CLI Commands (CI/CD Ready)
 
@@ -92,7 +94,7 @@ The built-in AI assistant provides natural language interaction for SVD data ope
 | `header` | Generate C header files from SVD |
 | `conflicts` | Detect address overlaps, register offset duplicates, bitfield conflicts |
 | `extract` | Extract specific peripherals into a new SVD file |
-| `create` | **Create new SVD from JSON data** (e.g. from AIfull_link) |
+| `create` | **Create new SVD from JSON data** (`DeviceInfo.to_dict()` format) |
 | `add-peripheral` | Add peripherals from JSON to existing SVD |
 | `update-peripheral` | Update peripheral properties (base address, description, etc.) |
 | `remove-peripheral` | Remove peripherals from SVD by name |
@@ -109,25 +111,6 @@ The built-in AI assistant provides natural language interaction for SVD data ope
 - **Documentation Export**: CSV, Markdown, HTML register documentation
 - **C Header Generation**: `#define` macros for register addresses and bitfield masks
 - **Diff Reports**: Text or JSON difference reports
-
----
-
-## AIfull_link Integration
-
-Create SVD files directly from [AIfull_link](https://github.com/SamyiHu/AIfull_link) parsed register data:
-
-```bash
-# 1. In AIfull_link, export register data as JSON
-#    (use export_svd tool in Agent Shell)
-
-# 2. Create SVD from the exported JSON
-python run.py create --data scf10t_svd_data.json -o SCF10T.svd --validate
-
-# 3. Open in GUI for visual editing
-python run.py --gui --file SCF10T.svd
-```
-
-The JSON format is compatible with `DeviceInfo.to_dict()` output. See `data_model.py` for schema details.
 
 ---
 
@@ -272,15 +255,18 @@ pip install openpyxl python-docx pdfplumber pymupdf pyyaml
 # Install from https://pandoc.org, or: winget install pandoc
 ```
 
-### AI Assistant Setup
+### MCP Server Setup (AI Client Access)
 
 ```bash
-# Install optional AI dependencies
-pip install openai anthropic
+# Install optional MCP dependency
+pip install mcp            # or: pip install -r requirements-mcp.txt
 
-# Configure API key (via GUI Settings or environment variable)
-export OPENAI_API_KEY="your-api-key"
+# Start (either way)
+python run.py --mcp
+python -m svd_tool.mcp_server
 ```
+
+See the "AI Integration (MCP)" section above for client configuration. Set `PYTHONUTF8=1` on Windows.
 
 ---
 
@@ -325,7 +311,7 @@ python run.py extract chip.svd --peripherals GPIOA,GPIOB,GPIOC -o gpio.svd
 <summary><b>Advanced Commands</b></summary>
 
 ```bash
-# Create SVD from JSON (e.g. exported from AIfull_link)
+# Create SVD from JSON (DeviceInfo.to_dict() format)
 python run.py create --data device_data.json -o chip.svd [--validate] [--open]
 
 # Add peripherals from JSON
@@ -416,18 +402,9 @@ SVDEditor/
 │   │       ├── chip_to_svd_converter.py # ChipData → DeviceInfo
 │   │       ├── svd_verifier.py         # SVD verification engine
 │   │       └── pinout_parser.py        # Datasheet pinout → package trim manifest
-│   ├── ai_assistant/
-│   │   ├── __init__.py             # Module entry
-│   │   ├── config.py               # AI configuration
-│   │   ├── backend.py              # API backend (OpenAI/Anthropic)
-│   │   ├── controller.py           # AI controller
-│   │   ├── prompt_builder.py       # System prompt builder
-│   │   ├── command_executor.py     # Operation executor
-│   │   ├── chat_history.py         # Chat history management
-│   │   └── widgets/
-│   │       ├── chat_panel.py       # Chat panel UI
-│   │       ├── chat_bubble.py      # Chat bubble widget
-│   │       └── settings_dialog.py  # AI settings dialog
+│   ├── mcp_server/                 # MCP Server (AI client access, no PyQt dependency)
+│   │   ├── server.py                   # 30 MCP tool definitions + stdio entry
+│   │   └── headless_workspace.py       # Headless multi-doc workspace (edit → explicit save)
 │   ├── ui/
 │   │   ├── main_window_refactored.py     # Main window
 │   │   ├── components/
@@ -440,6 +417,7 @@ SVDEditor/
 │   │   │   ├── search_manager.py         # Search (quick + advanced)
 │   │   │   ├── batch_operations_manager.py  # Batch operations
 │   │   │   ├── datasource_manager.py     # Datasheet import/verify orchestration
+│   │   │   ├── command_executor.py       # Structured operation executor (op layer for the MCP GUI bridge)
 │   │   │   ├── file_operations.py        # File I/O
 │   │   │   └── register_manager.py       # Register management
 │   │   ├── dialogs/

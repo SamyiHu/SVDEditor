@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 SVD工具启动脚本
-支持 GUI 模式和 CLI 模式:
+支持 GUI 模式、CLI 模式和 MCP Server 模式:
   - 无参数或 --gui: 启动 GUI 界面
+  - --mcp: 启动 MCP Server（stdio，供外部 AI 客户端接入）
   - 带子命令 (validate/export/generate/diff/info): 启动 CLI 模式
 """
 import sys
@@ -31,7 +32,14 @@ def is_cli_mode():
 
 
 if __name__ == "__main__":
-    if is_cli_mode():
+    if "--mcp" in sys.argv[1:]:
+        try:
+            from svd_tool.mcp_server import main as mcp_main
+        except ImportError as e:
+            print(f"[错误] {e}", file=sys.stderr)
+            sys.exit(1)
+        mcp_main()
+    elif is_cli_mode():
         from svd_tool.cli import main as cli_main
         cli_main()
     else:

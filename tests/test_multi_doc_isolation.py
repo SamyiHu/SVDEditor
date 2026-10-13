@@ -17,7 +17,7 @@ from PyQt6.QtCore import QTimer
 from svd_tool.core.data_model import DeviceInfo, Peripheral, Register
 from svd_tool.core.document_manager import DocumentManager
 from svd_tool.ui.components.state_manager import StateManager
-from svd_tool.ai_assistant.command_executor import CommandExecutor
+from svd_tool.ui.managers.command_executor import CommandExecutor
 
 
 def make_device(name: str, periph: str) -> DeviceInfo:
@@ -38,7 +38,7 @@ def make_executor(sm: StateManager, dm: DocumentManager, mw) -> CommandExecutor:
     ex = CommandExecutor.__new__(CommandExecutor)
     ex.coordinator = _Coord(sm)
     ex.main_window = mw
-    from svd_tool.ai_assistant.command_executor import _GuiBridge
+    from svd_tool.ui.managers.command_executor import _GuiBridge
     ex._gui = _GuiBridge()
     ex._operation_map = {
         "add_peripheral": ex._op_add_peripheral,

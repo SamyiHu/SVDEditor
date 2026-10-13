@@ -41,9 +41,14 @@ setup(
     install_requires=[
         "PyQt6>=6.5.0",
     ],
+    extras_require={
+        # MCP Server：让外部 AI 客户端（ZCode/Claude Desktop/Cursor 等）接入编辑 SVD
+        "mcp": ["mcp>=1.0.0"],
+    },
     entry_points={
         "console_scripts": [
             "svd-editor=svd_tool.cli:main",
+            "svd-editor-mcp=svd_tool.mcp_server:main",
         ],
         "gui_scripts": [
             "svd-editor-gui=svd_tool.main:main",

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AI 竞态修复集成测试
+命令执行器竞态修复集成测试（原 AI 竞态修复测试）
 
 验证核心修复路径在真实对象上工作（非 mock）：
 1. 工作线程调用写操作 → 通过 _GuiBridge 派发到主线程执行（线程隔离）
@@ -22,7 +22,7 @@ from PyQt6.QtCore import QTimer
 
 from svd_tool.core.data_model import DeviceInfo, Peripheral, Register, Field, Interrupt
 from svd_tool.ui.components.state_manager import StateManager
-from svd_tool.ai_assistant.command_executor import CommandExecutor
+from svd_tool.ui.managers.command_executor import CommandExecutor
 
 
 def build_device() -> DeviceInfo:
@@ -58,7 +58,7 @@ def make_executor(sm: StateManager) -> CommandExecutor:
     ex = CommandExecutor.__new__(CommandExecutor)
     ex.coordinator = _Coord(sm)
     ex.main_window = None
-    from svd_tool.ai_assistant.command_executor import _GuiBridge
+    from svd_tool.ui.managers.command_executor import _GuiBridge
     ex._gui = _GuiBridge()
     ex._operation_map = {
         # 只读

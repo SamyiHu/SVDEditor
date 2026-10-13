@@ -70,11 +70,6 @@ class SettingsActionsMixin:
             if welcome_page and hasattr(welcome_page, 'refresh_ui'):
                 welcome_page.refresh_ui()
 
-            # 刷新 AI 助手面板文本
-            if hasattr(self, 'ai_assistant') and self.ai_assistant and self.ai_assistant.panel:
-                if hasattr(self.ai_assistant.panel, 'refresh_ui'):
-                    self.ai_assistant.panel.refresh_ui()
-
     def _recreate_toolbar(self):
         """重新创建工具栏以更新语言"""
         # 删除所有现有工具栏
@@ -444,16 +439,6 @@ class SettingsActionsMixin:
 
         except Exception as e:
             self.logger.error(f"切换日志面板时出错: {str(e)}")
-
-    def toggle_ai_assistant(self, checked: bool):
-        """切换 AI 助手面板显示/隐藏"""
-        if self.ai_assistant:
-            self.ai_assistant.toggle_panel()
-
-    def show_ai_assistant_settings(self):
-        """显示 AI 助手设置"""
-        if self.ai_assistant:
-            self.ai_assistant.show_settings()
 
     def show_chain_rules_dialog(self):
         """显示连锁规则编辑对话框"""

@@ -2,7 +2,8 @@
 描述风格修正器 — 让 TRM 生成的 SVD 符合参考 SVD 的风格规范。
 
 参考 SVD（SC32L14T_M8_M7.svd）的风格规则（已对比提炼）：
-1. **语言**：全英文（TRM 是中文，需 AI 翻译）
+1. **语言**：全英文（TRM 是中文，用术语词典规则转换；AI 批量翻译已随内嵌
+   AI 助手移除，如需 AI 翻译可在 ai-panel 分支或外部 agent 流程完成）
 2. **外设描述**：英文短句，如 "Analog to Digital Converter"
 3. **寄存器描述**："<首字母小写> register"，如 "ADC control register"、"Control register"
 4. **位域描述**：英文精简短语，如 "ADC enable"、"End Of Conversion / ADC Interrupt Flag"
@@ -10,15 +11,12 @@
 6. **resetValue**：8 位完整格式 0x00000000（不裁短成 0x0）
 7. **groupName**：实例外设共享 groupName（GPIOA/B/C→GPIO、UART0~5→UART）
 
-翻译策略：批量调用 AI（一次翻译多条描述，降低 API 成本）。
-AI 不可用时回退到术语词典规则转换。
+翻译策略：术语词典规则转换 + 格式对齐。
 """
 from __future__ import annotations
 
-import json
 import logging
 import re
-from typing import Any, Optional
 
 logger = logging.getLogger("svd_tool.datasource.DescriptionStyler")
 
@@ -84,40 +82,28 @@ class DescriptionStyler:
         # device_info 的描述已被改为英文 + 格式对齐
     """
 
-    # 每批翻译的描述数量（控制单次 AI 请求大小）
+    # 每批转换的描述数量（保留分批接口，便于展示进度）
     BATCH_SIZE = 40
 
-    def style(self, device, ai_config=None, progress_cb=None) -> dict:
+    def style(self, device, progress_cb=None) -> dict:
         """执行风格修正（就地修改 device）。
 
         Args:
             device: DeviceInfo（描述会被修改）
-            ai_config: AIConfig，提供则用 AI 翻译；None 则用词典回退
             progress_cb: 可选回调 fn(done, total, msg)
 
         Returns:
             {"translated": n, "fallback": bool, "errors": [...]}
         """
-        # 1. 收集所有待翻译的中文描述
+        # 1. 收集所有待转换的中文描述
         items = self._collect_descriptions(device)
         total = len(items)
         if total == 0:
             return {"translated": 0, "fallback": False, "errors": []}
 
-        # 2. 翻译（AI 或词典回退）
-        translations: dict[int, str] = {}  # id(item) → 英文
-        used_fallback = False
-        if ai_config is not None:
-            translations, errors = self._translate_with_ai(items, ai_config, progress_cb)
-            if not translations:
-                logger.warning("AI 翻译无结果，回退到词典转换")
-                used_fallback = True
-                translations = self._translate_with_dict(items)
-                errors = []
-        else:
-            used_fallback = True
-            translations = self._translate_with_dict(items)
-            errors = []
+        # 2. 术语词典规则转换
+        translations = self._translate_with_dict(items)
+        errors: list[str] = []
 
         # 3. 应用翻译结果到原对象（通过 id 映射）
         applied = 0
@@ -135,7 +121,7 @@ class DescriptionStyler:
         if progress_cb:
             progress_cb(total, total, "风格修正完成")
 
-        return {"translated": applied, "fallback": used_fallback,
+        return {"translated": applied, "fallback": True,
                 "errors": errors, "total": total}
 
     # ---------- 收集描述 ----------
@@ -168,84 +154,7 @@ class DescriptionStyler:
             return False
         return any('\u4e00' <= c <= '\u9fff' for c in text)
 
-    # ---------- AI 批量翻译 ----------
-
-    def _translate_with_ai(self, items: list, ai_config, progress_cb=None) -> tuple[dict, list]:
-        """用 AI 批量翻译描述。返回 ({id(item): 英文}, errors)。"""
-        from ...ai_assistant.backend import create_backend
-        try:
-            backend = create_backend(ai_config.api_type)
-        except Exception as e:
-            logger.warning(f"AI backend 创建失败: {e}")
-            return {}, [str(e)]
-
-        translations: dict[int, str] = {}
-        errors: list[str] = []
-        # 分批
-        batches = [items[i:i + self.BATCH_SIZE] for i in range(0, len(items), self.BATCH_SIZE)]
-        for bi, batch in enumerate(batches):
-            if progress_cb:
-                done = bi * self.BATCH_SIZE
-                progress_cb(done, len(items), f"AI 翻译批次 {bi+1}/{len(batches)}")
-            try:
-                result = self._translate_batch(backend, batch, ai_config)
-                translations.update(result)
-            except Exception as e:
-                msg = f"批次 {bi+1} 翻译失败: {e}"
-                logger.warning(msg)
-                errors.append(msg)
-        return translations, errors
-
-    def _translate_batch(self, backend, batch: list, ai_config) -> dict[int, str]:
-        """翻译一批描述。用 JSON 数组让 AI 返回结构化结果。"""
-        # 构造输入：编号→中文
-        input_map = {}
-        for i, item in enumerate(batch):
-            input_map[str(i)] = item[2][:500]  # 限制长度，超长的截断
-        prompt = (
-            "You are translating embedded MCU register descriptions from Chinese to English.\n"
-            "Style rules (match CMSIS-SVD convention, be VERY concise):\n"
-            "- Field description: a SHORT noun phrase only. 3-6 words typically.\n"
-            "  Examples: 'ADC enable', 'VREFS select', 'Receive interrupt flag', 'DMA enable', 'Port mode bits'.\n"
-            "- Register description: '<function> register'. Examples: 'ADC control register', 'Status register'.\n"
-            "- Peripheral description: short English name. Examples: 'Analog to Digital Converter', 'Watchdog'.\n"
-            "- CRITICAL: Drop ALL enumerated values and detailed explanations.\n"
-            "  '参考电压选择控制位 00：选择VDD 01：...' -> 'Reference voltage selection' (NOT '00: VDD').\n"
-            "  '使能位 0：关闭 1：开启' -> 'Enable'.\n"
-            "  Keep only the core functional meaning; no value tables, no bit-by-bit explanations.\n"
-            "- Keep register/field NAMES and hex values (0x...) unchanged.\n"
-            "- Average description length: under 30 characters. Never exceed 60.\n"
-            "Return ONLY a JSON object mapping input number to English translation. No markdown.\n\n"
-            f"Input:\n{json.dumps(input_map, ensure_ascii=False)}"
-        )
-        messages = [{"role": "user", "content": prompt}]
-        resp = backend.chat(messages, ai_config)
-        content = resp.get("content", "").strip()
-        # 去除可能的 markdown 代码块标记
-        if content.startswith("```"):
-            content = re.sub(r'^```(?:json)?\s*', '', content)
-            content = re.sub(r'\s*```$', '', content)
-        try:
-            result_map = json.loads(content)
-        except json.JSONDecodeError:
-            # 尝试提取 JSON 对象
-            m = re.search(r'\{[\s\S]*\}', content)
-            if m:
-                try:
-                    result_map = json.loads(m.group(0))
-                except json.JSONDecodeError:
-                    return {}
-            else:
-                return {}
-        # 映射回 id(item)
-        out: dict[int, str] = {}
-        for i, item in enumerate(batch):
-            eng = result_map.get(str(i)) or result_map.get(i)
-            if eng and isinstance(eng, str):
-                out[id(item)] = eng.strip()
-        return out
-
-    # ---------- 词典回退翻译 ----------
+    # ---------- 词典规则翻译 ----------
 
     def _translate_with_dict(self, items: list) -> dict[int, str]:
         """用术语词典做规则转换（AI 不可用的回退）。

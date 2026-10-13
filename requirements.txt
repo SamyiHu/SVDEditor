@@ -1,10 +1,10 @@
 PyQt6>=6.5.0
-# 可选：如果需要更好的XML处理
+# 如果需要更好的XML处理
 # lxml>=4.9.0
 
-# AI 助手（可选依赖，未安装不影响其他功能）
-# openai>=1.0.0
-# anthropic>=0.30.0
+# MCP Server（可选依赖，未安装不影响其他功能；供外部 AI 客户端接入）
+# 见 requirements-mcp.txt 或 pip install -e .[mcp]
+# mcp>=1.0.0
 
 # 数据手册导入（可选依赖，未安装不影响其他功能；缺失时导入向导会提示安装）
 # Parser 包需先 pip install -e ../Parser （或设环境变量 SVDEDITOR_PARSER_PATH）

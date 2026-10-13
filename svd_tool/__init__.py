@@ -15,7 +15,13 @@ from .core.data_model import (
 from .core.svd_parser import SVDParser, SVDFastParser
 from .core.svd_generator import SVDGenerator
 from .core.validators import Validator, ValidationError
-from .ui.main_window_refactored import MainWindowRefactored as MainWindow
+
+# MainWindow 惰性导入：CLI / MCP Server 等非 GUI 场景不应强制依赖 PyQt6
+def __getattr__(name):
+    if name == "MainWindow":
+        from .ui.main_window_refactored import MainWindowRefactored as MainWindow
+        return MainWindow
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 # 导出主要类
 __all__ = [

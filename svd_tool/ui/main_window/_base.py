@@ -156,27 +156,8 @@ class MainWindowRefactored(
         self.datasource_manager = DatasourceManager(self.coordinator, self)
         self.coordinator.register_component("datasource_manager", self.datasource_manager)
 
-        # 初始化 AI 助手（可选依赖，未安装时不影响其他功能）
-        self.ai_assistant = None
-        try:
-            from ...ai_assistant import create_ai_assistant
-            self.ai_assistant = create_ai_assistant(self.coordinator, self)
-            # 延迟初始化 UI（在 init_ui 之后）
-        except ImportError:
-            pass
-        except Exception as e:
-            self.logger.warning(f"AI 助手初始化失败（非致命）: {e}")
-
         self.init_ui()
         self.logger.debug(f"init_ui完成，窗口大小: {self.size()}")
-
-        # 初始化 AI 助手 UI（必须在 init_ui 之后，因为需要主窗口已创建）
-        if self.ai_assistant is not None:
-            try:
-                self.ai_assistant.initialize()
-            except Exception as e:
-                self.logger.warning(f"AI 助手 UI 初始化失败（非致命）: {e}")
-                self.ai_assistant = None
 
         self.init_data()
         self.setup_signals()

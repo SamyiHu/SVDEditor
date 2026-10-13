@@ -17,9 +17,12 @@ from typing import Optional
 
 
 # === 默认日志文件路径 ===
-# 与 ai_assistant/config.py 的 ~/.svd_tool/ 约定保持一致
+# 统一约定：应用数据目录 ~/.svd_tool/
 _LOG_DIR = Path.home() / ".svd_tool" / "logs"
 _LOG_FILE = _LOG_DIR / "svd_tool.log"
+_FALLBACK_LOG_DIR = Path.cwd() / "logs"
+_ACTIVE_LOG_DIR = _LOG_DIR
+_ACTIVE_LOG_FILE = _LOG_FILE
 
 # 滚动策略：单个文件上限 / 保留历史文件数（含当前共 maxBytes*(backupCount+1)）
 _LOG_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
@@ -27,13 +30,32 @@ _LOG_BACKUP_COUNT = 3
 
 
 def get_log_dir() -> Path:
-    """返回日志目录路径（不保证已创建）。"""
-    return _LOG_DIR
+    """返回实际尝试使用的日志目录路径。"""
+    return _ACTIVE_LOG_DIR
 
 
 def get_log_file_path() -> Path:
-    """返回当前日志文件路径（不保证已创建）。"""
-    return _LOG_FILE
+    """返回实际尝试使用的日志文件路径。"""
+    return _ACTIVE_LOG_FILE
+
+
+def _resolve_log_target(log_file: Optional[str]) -> tuple[Path, bool]:
+    """选择可写日志目标；默认目录不可写时降级到工作区 logs/。"""
+    global _ACTIVE_LOG_DIR, _ACTIVE_LOG_FILE
+    candidates = [Path(log_file)] if log_file else [_LOG_FILE, _FALLBACK_LOG_DIR / "svd_tool.log"]
+    for target in candidates:
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with target.open("a", encoding="utf-8"):
+                pass
+            _ACTIVE_LOG_DIR = target.parent
+            _ACTIVE_LOG_FILE = target
+            return target, True
+        except Exception:
+            continue
+    _ACTIVE_LOG_DIR = _LOG_DIR
+    _ACTIVE_LOG_FILE = _LOG_FILE
+    return _LOG_FILE, False
 
 
 def _file_logging_disabled() -> bool:
@@ -91,16 +113,7 @@ class Logger:
         self.file_handler = None
         if enable_file and not _file_logging_disabled():
             # 显式传了路径就用它；否则用默认路径
-            target = Path(log_file) if log_file else _LOG_FILE
-            # target 是自定义路径时，用其父目录；默认路径用专用 _ensure_log_dir
-            if log_file:
-                try:
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    ok = True
-                except Exception:
-                    ok = False
-            else:
-                ok = _ensure_log_dir()
+            target, ok = _resolve_log_target(log_file)
 
             if ok:
                 try:

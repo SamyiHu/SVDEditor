@@ -24,9 +24,6 @@
 ![位域编辑器](docs/screenshots/bitfield_editor.png)
 *位域可视化编辑与寄存器详情*
 
-![AI 助手](docs/screenshots/ai_assistant.png)
-*自然语言操作 SVD 数据*
-
 ---
 
 ## 功能特性
@@ -51,34 +48,37 @@
 | **深色/浅色主题** | 内置主题切换，现代化扁平 UI |
 | **dim 寄存器数组** | 支持寄存器级和簇级 `dim`/`dimIncrement`/`dimIndex`（编辑对话框可视化配置）|
 
-### AI 助手
+### AI 集成（MCP）
 
-内置 AI 助手提供自然语言交互，用于 SVD 数据操作。只需用自然语言描述你想做的事情，AI 就会执行相应的操作。
+内置 AI 面板已移除，改为标准 **MCP Server**：用你自己惯用的 AI 客户端（ZCode / Claude Desktop / Cursor / Cherry Studio / Cline 等）接入，即可用自然语言查询和编辑 SVD。模型、密钥、对话界面都由你的 AI 客户端管理，本工具只提供 30 个标准工具。
 
-**核心能力：**
+**能力覆盖：**
 
 | 能力 | 示例 |
 |------|------|
-| **查询与搜索** | "显示所有外设"、"查找偏移为 0x10 的寄存器" |
-| **增删改查** | "添加一个名为 TIMER0 的外设"、"删除 MODER 寄存器" |
-| **验证检查** | "验证这个 SVD 文件"、"检查地址冲突" |
-| **批量操作** | "重命名所有 GPIO 外设"、"修复所有地址冲突" |
-| **多文档操作** | "切换到 STM32F4.svd"、"与另一个打开的文件进行比较" |
-| **导航跳转** | "跳转到 UART1"、"显示 GPIOA 的 MODER 寄存器" |
-| **数据手册导入** | "解析这份 Word 手册并导入为 SVD"、"用手册核对当前 SVD 找出缺失的寄存器" |
+| **查询与搜索** | 设备摘要、外设/寄存器/位域分层获取、统一搜索（分页） |
+| **增删改查** | 外设/寄存器/位域/中断的完整 CRUD（支持改名、derivedFrom） |
+| **验证检查** | CMSIS-SVD 规范校验、地址冲突检测 |
+| **多文档** | 打开/切换/对比多个 SVD 文件 |
+| **输出导出** | CSV/Markdown/HTML 文档、C 头文件（普通/CMSIS 风格） |
 
-**支持的 AI 提供商：**
+**工作约定：** 编辑只进内存，`svd_save_document` 才落盘（覆盖前自动 `.bak` 备份）；地址/偏移统一用十六进制字符串。
 
-- OpenAI（GPT-4o、GPT-4o-mini 等）
-- Anthropic（Claude 3.5 Sonnet、Claude 3 Haiku 等）
-- 任何 OpenAI 兼容 API（Ollama、vLLM 等）
+**接入配置**（三行，各客户端通用）：
 
-**配置说明：**
+```json
+{
+  "mcpServers": {
+    "svd-editor": {
+      "command": "python",
+      "args": ["C:/path/to/SVDEditor/run.py", "--mcp"],
+      "env": { "PYTHONUTF8": "1" }
+    }
+  }
+}
+```
 
-- 通过设置对话框配置 API 密钥和端点
-- 支持流式响应
-- 可自定义系统提示词
-- 对话历史管理
+详见 [docs/MCP_DESIGN.md](docs/MCP_DESIGN.md)（含工具清单、GUI 实时联动桥规划与分支策略）。
 
 ### CLI 命令（可集成 CI/CD）
 
@@ -93,7 +93,7 @@
 | `header` | 从 SVD 生成 C 语言头文件 |
 | `conflicts` | 检测地址重叠、寄存器偏移重复、位域冲突 |
 | `extract` | 从 SVD 中提取指定外设到新文件 |
-| `create` | **从 JSON 数据创建新的 SVD 文件**（如 AIfull_link 导出的寄存器数据） |
+| `create` | **从 JSON 数据创建新的 SVD 文件**（`DeviceInfo.to_dict()` 格式） |
 | `add-peripheral` | 从 JSON 向已有 SVD 添加外设 |
 | `update-peripheral` | 更新外设属性（基地址、描述等） |
 | `remove-peripheral` | 按名称从 SVD 中移除外设 |
@@ -110,25 +110,6 @@
 - **文档导出**：CSV、Markdown、HTML 寄存器文档
 - **C 头文件生成**：寄存器地址宏和位域掩码 `#define`
 - **差异报告**：文本或 JSON 格式的差异对比报告
-
----
-
-## AIfull_link 联动
-
-支持直接从 [AIfull_link](https://github.com/SamyiHu/AIfull_link) 解析的寄存器数据创建 SVD 文件：
-
-```bash
-# 1. 在 AIfull_link 中导出寄存器数据为 JSON
-#    （使用 Agent Shell 的 export_svd 工具）
-
-# 2. 用 create 命令生成 SVD
-python run.py create --data scf10t_svd_data.json -o SCF10T.svd --validate
-
-# 3. 在 GUI 中可视化编辑
-python run.py --gui --file SCF10T.svd
-```
-
-JSON 格式与 `DeviceInfo.to_dict()` 输出完全兼容，详见 `data_model.py`。
 
 ---
 
@@ -273,15 +254,18 @@ pip install openpyxl python-docx pdfplumber pymupdf pyyaml
 # 从 https://pandoc.org 安装，或 winget install pandoc
 ```
 
-### AI 助手配置
+### MCP Server 配置（AI 客户端接入）
 
 ```bash
-# 安装可选的 AI 依赖
-pip install openai anthropic
+# 安装可选的 MCP 依赖
+pip install mcp            # 或 pip install -r requirements-mcp.txt
 
-# 配置 API 密钥（通过 GUI 设置或环境变量）
-export OPENAI_API_KEY="your-api-key"
+# 启动方式（二选一）
+python run.py --mcp        # 源码直接运行
+python -m svd_tool.mcp_server
 ```
+
+客户端接入配置见上文「AI 集成（MCP）」章节。Windows 下建议设置 `PYTHONUTF8=1`。
 
 ---
 
@@ -326,7 +310,7 @@ python run.py extract chip.svd --peripherals GPIOA,GPIOB,GPIOC -o gpio.svd
 <summary><b>高级命令</b></summary>
 
 ```bash
-# 从 JSON 创建 SVD（如 AIfull_link 导出的寄存器数据）
+# 从 JSON 创建 SVD（DeviceInfo.to_dict() 格式）
 python run.py create --data device_data.json -o chip.svd [--validate] [--open]
 
 # 从 JSON 添加外设
@@ -417,18 +401,9 @@ SVDEditor/
 │   │       ├── chip_to_svd_converter.py # ChipData → DeviceInfo
 │   │       ├── svd_verifier.py         # SVD 核对引擎
 │   │       └── pinout_parser.py        # Datasheet 引脚表 → 封装裁剪清单
-│   ├── ai_assistant/
-│   │   ├── __init__.py             # 模块入口
-│   │   ├── config.py               # AI 配置管理
-│   │   ├── backend.py              # API 后端（OpenAI/Anthropic）
-│   │   ├── controller.py           # AI 控制器
-│   │   ├── prompt_builder.py       # 系统提示词构建器
-│   │   ├── command_executor.py     # 操作执行器
-│   │   ├── chat_history.py         # 对话历史管理
-│   │   └── widgets/
-│   │       ├── chat_panel.py       # 聊天面板 UI
-│   │       ├── chat_bubble.py      # 聊天气泡组件
-│   │       └── settings_dialog.py  # AI 设置对话框
+│   ├── mcp_server/                 # MCP Server（AI 客户端接入，无 PyQt 依赖）
+│   │   ├── server.py                   # 30 个 MCP 工具定义 + stdio 入口
+│   │   └── headless_workspace.py       # headless 多文档工作区（编辑→显式保存）
 │   ├── ui/
 │   │   ├── main_window_refactored.py     # 主窗口
 │   │   ├── components/                   # 组件目录
@@ -440,6 +415,7 @@ SVDEditor/
 │   │   │   ├── search_manager.py         # 搜索（快速+高级）
 │   │   │   ├── batch_operations_manager.py  # 批量操作
 │   │   │   ├── datasource_manager.py     # 数据手册导入/核对调度
+│   │   │   ├── command_executor.py       # 结构化操作执行器（MCP GUI 桥的操作层）
 │   │   │   └── file_operations.py        # 文件 I/O
 │   │   ├── dialogs/                      # 对话框目录
 │   │   │   ├── chain_rules_dialog.py     # 连锁规则编辑器
