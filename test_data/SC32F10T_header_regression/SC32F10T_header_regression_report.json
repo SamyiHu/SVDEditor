@@ -1,0 +1,723 @@
+{
+  "inputs": {
+    "header": "E:\\Desktop_Projects\\调教确认\\output\\W1251\\M0+ BACKDOOR-iNSTRUCTION\\User\\SC32F10XX.h",
+    "trm": "E:\\Desktop_Projects\\小程序\\CDB整合\\外发资料\\外发资料\\31.ARM+C51合并上官网\\SVD文件\\SC32F10T_10G_Technical_Reference_Manual v0.2cn.docx",
+    "svd": "E:\\Desktop_Projects\\小程序\\CDB整合\\外发资料\\外发资料\\31.ARM+C51合并上官网\\SVD文件\\SC32F10XSX44.svd"
+  },
+  "fusion_mode": "header_master_trm_supplement",
+  "header_stats": {
+    "peripherals": 44,
+    "registers": 200,
+    "fields": 712,
+    "interrupts": 32,
+    "unresolved": 28,
+    "unresolved_kinds": {
+      "bitfield_missing_pair": 19,
+      "bitfield_msk_value": 3,
+      "bitfield_no_register": 6
+    }
+  },
+  "fused_chip": {
+    "peripherals": 44,
+    "registers": 200,
+    "fields": 712,
+    "interrupts": 32
+  },
+  "trm_fusion_coverage": {
+    "mode": "header_master_trm_supplement",
+    "header_peripherals": 44,
+    "trm_peripherals": 38,
+    "trm_peripherals_matched": 28,
+    "header_registers": 200,
+    "header_registers_with_trm_metadata": 134,
+    "trm_registers_total": 249,
+    "trm_supplement_percent": 67.0,
+    "unresolved_header_items": 28,
+    "trm_only_items": [
+      {
+        "peripheral": "INTF",
+        "base_address": "0x40011300",
+        "registers": [
+          {
+            "name": "INTF_IE",
+            "offset": "0x0"
+          },
+          {
+            "name": "INTR_IE",
+            "offset": "0x20"
+          },
+          {
+            "name": "INT_SEL0",
+            "offset": "0x40"
+          },
+          {
+            "name": "INT_SEL1",
+            "offset": "0x60"
+          },
+          {
+            "name": "INTF_CON",
+            "offset": "0x80"
+          },
+          {
+            "name": "INTR_CON",
+            "offset": "0xA0"
+          },
+          {
+            "name": "INTF_STS",
+            "offset": "0xC0"
+          },
+          {
+            "name": "INTR_STS",
+            "offset": "0xE0"
+          }
+        ],
+        "source_ref": {
+          "source_file": "E:\\Desktop_Projects\\小程序\\CDB整合\\外发资料\\外发资料\\31.ARM+C51合并上官网\\SVD文件\\SC32F10T_10G_Technical_Reference_Manual v0.2cn.docx",
+          "section": "中断",
+          "subsection": "中断向量表",
+          "heading": "",
+          "table_index": 98,
+          "table_kind": "REGMAP",
+          "raw_text": "外部中断基地址：0x4001_1300"
+        }
+      },
+      {
+        "peripheral": "PA",
+        "base_address": "0x40011000",
+        "registers": [
+          {
+            "name": "PA",
+            "offset": "0x0"
+          },
+          {
+            "name": "PACON",
+            "offset": "0x20"
+          },
+          {
+            "name": "PAPH",
+            "offset": "0x40"
+          },
+          {
+            "name": "PALEV",
+            "offset": "0x60"
+          }
+        ],
+        "source_ref": {
+          "source_file": "E:\\Desktop_Projects\\小程序\\CDB整合\\外发资料\\外发资料\\31.ARM+C51合并上官网\\SVD文件\\SC32F10T_10G_Technical_Reference_Manual v0.2cn.docx",
+          "section": "GPIO",
+          "subsection": "GPIO寄存器",
+          "heading": "",
+          "table_index": 117,
+          "table_kind": "REGMAP",
+          "raw_text": "PA基地址：0x4001_1000"
+        }
+      },
+      {
+        "peripheral": "PB",
+        "base_address": "0x40011100",
+        "registers": [
+          {
+            "name": "PB",
+            "offset": "0x0"
+          },
+          {
+            "name": "PBCON",
+            "offset": "0x20"
+          },
+          {
+            "name": "PBPH",
+            "offset": "0x40"
+          },
+          {
+            "name": "PBLEV",
+            "offset": "0x60"
+          }
+        ],
+        "source_ref": {
+          "source_file": "E:\\Desktop_Projects\\小程序\\CDB整合\\外发资料\\外发资料\\31.ARM+C51合并上官网\\SVD文件\\SC32F10T_10G_Technical_Reference_Manual v0.2cn.docx",
+          "section": "GPIO",
+          "subsection": "GPIO寄存器",
+          "heading": "",
+          "table_index": 118,
+          "table_kind": "REGMAP",
+          "raw_text": "PB基地址： 0x4001_1100"
+        }
+      },
+      {
+        "peripheral": "PC",
+        "base_address": "0x40011200",
+        "registers": [
+          {
+            "name": "PC",
+            "offset": "0x0"
+          },
+          {
+            "name": "PCCON",
+            "offset": "0x20"
+          },
+          {
+            "name": "PCPH",
+            "offset": "0x40"
+          },
+          {
+            "name": "PCLEV",
+            "offset": "0x60"
+          }
+        ],
+        "source_ref": {
+          "source_file": "E:\\Desktop_Projects\\小程序\\CDB整合\\外发资料\\外发资料\\31.ARM+C51合并上官网\\SVD文件\\SC32F10T_10G_Technical_Reference_Manual v0.2cn.docx",
+          "section": "GPIO",
+          "subsection": "GPIO寄存器",
+          "heading": "",
+          "table_index": 119,
+          "table_kind": "REGMAP",
+          "raw_text": "PC基地址：0x4001_1200"
+        }
+      },
+      {
+        "peripheral": "PWM0_DTX",
+        "base_address": "0x40020230",
+        "registers": [
+          {
+            "name": "PWM0_DT0",
+            "offset": "0x0"
+          },
+          {
+            "name": "PWM0_DT1",
+            "offset": "0x4"
+          },
+          {
+            "name": "PWM0_DT2",
+            "offset": "0x8"
+          },
+          {
+            "name": "PWM0_DT3",
+            "offset": "0xC"
+          },
+          {
+            "name": "PWM0_DT4",
+            "offset": "0x10"
+          },
+          {
+            "name": "PWM0_DT5",
+            "offset": "0x14"
+          },
+          {
+            "name": "PWM0_DT6",
+            "offset": "0x18"
+          },
+          {
+            "name": "PWM0_DT7",
+            "offset": "0x1C"
+          }
+        ],
+        "source_ref": {
+          "source_file": "E:\\Desktop_Projects\\小程序\\CDB整合\\外发资料\\外发资料\\31.ARM+C51合并上官网\\SVD文件\\SC32F10T_10G_Technical_Reference_Manual v0.2cn.docx",
+          "section": "PWM0：8路16位多功能PWM",
+          "subsection": "PWM0寄存器",
+          "heading": "",
+          "table_index": 263,
+          "table_kind": "REGMAP",
+          "raw_text": "PWM0_DTx（x = 0~7）基地址：0x4002_0230"
+        }
+      },
+      {
+        "peripheral": "LEDPWM",
+        "base_address": "0x40022300",
+        "registers": [
+          {
+            "name": "LEDPWM_CON",
+            "offset": "0x0"
+          },
+          {
+            "name": "LEDPWM_CHN",
+            "offset": "0x4"
+          },
+          {
+            "name": "LEDPWM_STS",
+            "offset": "0x8"
+          },
+          {
+            "name": "LEDPWM_INV",
+            "offset": "0xC"
+          },
+          {
+            "name": "LEDPWM_CYCLE",
+            "offset": "0x18"
+          }
+        ],
+        "source_ref": {
+          "source_file": "E:\\Desktop_Projects\\小程序\\CDB整合\\外发资料\\外发资料\\31.ARM+C51合并上官网\\SVD文件\\SC32F10T_10G_Technical_Reference_Manual v0.2cn.docx",
+          "section": "LEDPWM：32路8位LEDPWM",
+          "subsection": "LEDPWM寄存器",
+          "heading": "",
+          "table_index": 283,
+          "table_kind": "REGMAP",
+          "raw_text": "LEDPWM基地址：0x4002_2300"
+        }
+      },
+      {
+        "peripheral": "LEDPWM",
+        "base_address": "0x40022330",
+        "registers": [
+          {
+            "name": "LEDPWM_DT0",
+            "offset": "0x0"
+          },
+          {
+            "name": "LEDPWM_DT1",
+            "offset": "0x4"
+          },
+          {
+            "name": "LEDPWM_DT2",
+            "offset": "0x8"
+          },
+          {
+            "name": "LEDPWM_DT3",
+            "offset": "0xC"
+          },
+          {
+            "name": "LEDPWM_DT4",
+            "offset": "0x10"
+          },
+          {
+            "name": "LEDPWM_DT5",
+            "offset": "0x14"
+          },
+          {
+            "name": "LEDPWM_DT6",
+            "offset": "0x18"
+          },
+          {
+            "name": "LEDPWM_DT7",
+            "offset": "0x1C"
+          },
+          {
+            "name": "LEDPWM_DT8",
+            "offset": "0x20"
+          },
+          {
+            "name": "LEDPWM_DT9",
+            "offset": "0x24"
+          },
+          {
+            "name": "LEDPWM_DT10",
+            "offset": "0x28"
+          },
+          {
+            "name": "LEDPWM_DT11",
+            "offset": "0x2C"
+          },
+          {
+            "name": "LEDPWM_DT12",
+            "offset": "0x30"
+          },
+          {
+            "name": "LEDPWM_DT13",
+            "offset": "0x34"
+          },
+          {
+            "name": "LEDPWM_DT14",
+            "offset": "0x38"
+          },
+          {
+            "name": "LEDPWM_DT15",
+            "offset": "0x3C"
+          },
+          {
+            "name": "LEDPWM_DT16",
+            "offset": "0x40"
+          },
+          {
+            "name": "LEDPWM_DT17",
+            "offset": "0x44"
+          },
+          {
+            "name": "LEDPWM_DT18",
+            "offset": "0x48"
+          },
+          {
+            "name": "LEDPWM_DT19",
+            "offset": "0x4C"
+          },
+          {
+            "name": "LEDPWM_DT20",
+            "offset": "0x50"
+          },
+          {
+            "name": "LEDPWM_DT21",
+            "offset": "0x54"
+          },
+          {
+            "name": "LEDPWM_DT22",
+            "offset": "0x58"
+          },
+          {
+            "name": "LEDPWM_DT23",
+            "offset": "0x5C"
+          },
+          {
+            "name": "LEDPWM_DT24",
+            "offset": "0x60"
+          },
+          {
+            "name": "LEDPWM_DT25",
+            "offset": "0x64"
+          },
+          {
+            "name": "LEDPWM_DT26",
+            "offset": "0x68"
+          },
+          {
+            "name": "LEDPWM_DT27",
+            "offset": "0x6C"
+          },
+          {
+            "name": "LEDPWM_DT28",
+            "offset": "0x70"
+          },
+          {
+            "name": "LEDPWM_DT29",
+            "offset": "0x74"
+          },
+          {
+            "name": "LEDPWM_DT30",
+            "offset": "0x78"
+          },
+          {
+            "name": "LEDPWM_DT31",
+            "offset": "0x7C"
+          }
+        ],
+        "source_ref": {
+          "source_file": "E:\\Desktop_Projects\\小程序\\CDB整合\\外发资料\\外发资料\\31.ARM+C51合并上官网\\SVD文件\\SC32F10T_10G_Technical_Reference_Manual v0.2cn.docx",
+          "section": "LEDPWM：32路8位LEDPWM",
+          "subsection": "LEDPWM寄存器",
+          "heading": "",
+          "table_index": 284,
+          "table_kind": "REGMAP",
+          "raw_text": "LEDPWM _DTn（n = 0~31）基地址：0x4002_2330"
+        }
+      },
+      {
+        "peripheral": "LCD",
+        "base_address": "0x40022280",
+        "registers": [
+          {
+            "name": "DDR_CON",
+            "offset": "0x0"
+          },
+          {
+            "name": "DDR_CFG",
+            "offset": "0x4"
+          },
+          {
+            "name": "SEG_EN",
+            "offset": "0x8"
+          },
+          {
+            "name": "COM_EN",
+            "offset": "0xC"
+          }
+        ],
+        "source_ref": {
+          "source_file": "E:\\Desktop_Projects\\小程序\\CDB整合\\外发资料\\外发资料\\31.ARM+C51合并上官网\\SVD文件\\SC32F10T_10G_Technical_Reference_Manual v0.2cn.docx",
+          "section": "LCD/LED驱动器",
+          "subsection": "LCD/LED寄存器",
+          "heading": "",
+          "table_index": 300,
+          "table_kind": "REGMAP",
+          "raw_text": "LCD/LED基地址：0x4002_2280"
+        }
+      },
+      {
+        "peripheral": "SEGR",
+        "base_address": "0x40022330",
+        "registers": [
+          {
+            "name": "SEGR0",
+            "offset": "0x0"
+          },
+          {
+            "name": "SEGR1",
+            "offset": "0x4"
+          },
+          {
+            "name": "SEGR2",
+            "offset": "0x8"
+          },
+          {
+            "name": "SEGR3",
+            "offset": "0xC"
+          },
+          {
+            "name": "SEGR4",
+            "offset": "0x10"
+          },
+          {
+            "name": "SEGR5",
+            "offset": "0x14"
+          },
+          {
+            "name": "SEGR6",
+            "offset": "0x18"
+          },
+          {
+            "name": "SEGR7",
+            "offset": "0x1C"
+          },
+          {
+            "name": "SEGR8",
+            "offset": "0x20"
+          },
+          {
+            "name": "SEGR9",
+            "offset": "0x24"
+          },
+          {
+            "name": "SEGR10",
+            "offset": "0x28"
+          },
+          {
+            "name": "SEGR11",
+            "offset": "0x2C"
+          },
+          {
+            "name": "SEGR12",
+            "offset": "0x30"
+          },
+          {
+            "name": "SEGR13",
+            "offset": "0x34"
+          },
+          {
+            "name": "SEGR14",
+            "offset": "0x38"
+          },
+          {
+            "name": "SEGR15",
+            "offset": "0x3C"
+          },
+          {
+            "name": "SEGR16",
+            "offset": "0x40"
+          },
+          {
+            "name": "SEGR17",
+            "offset": "0x44"
+          },
+          {
+            "name": "SEGR18",
+            "offset": "0x48"
+          },
+          {
+            "name": "SEGR19",
+            "offset": "0x4C"
+          },
+          {
+            "name": "SEGR20",
+            "offset": "0x50"
+          },
+          {
+            "name": "SEGR21",
+            "offset": "0x54"
+          },
+          {
+            "name": "SEGR22",
+            "offset": "0x58"
+          },
+          {
+            "name": "SEGR23",
+            "offset": "0x5C"
+          },
+          {
+            "name": "SEGR24",
+            "offset": "0x60"
+          },
+          {
+            "name": "SEGR25",
+            "offset": "0x64"
+          },
+          {
+            "name": "SEGR26",
+            "offset": "0x68"
+          },
+          {
+            "name": "SEGR27",
+            "offset": "0x6C"
+          }
+        ],
+        "source_ref": {
+          "source_file": "E:\\Desktop_Projects\\小程序\\CDB整合\\外发资料\\外发资料\\31.ARM+C51合并上官网\\SVD文件\\SC32F10T_10G_Technical_Reference_Manual v0.2cn.docx",
+          "section": "LCD/LED驱动器",
+          "subsection": "LCD/LED寄存器",
+          "heading": "",
+          "table_index": 300,
+          "table_kind": "REGMAP",
+          "raw_text": "SEGR基地址：0x4002_2330"
+        }
+      }
+    ]
+  },
+  "svd_stats": {
+    "peripherals": 37,
+    "registers": 219
+  },
+  "coverage": {
+    "peripherals_in_header": 44,
+    "peripherals_in_svd": 37,
+    "matched_peripherals": [
+      "RCCAHB",
+      "RCCAPB0",
+      "RCCAPB1",
+      "RCCAPB2",
+      "UART0",
+      "UART1",
+      "UART2",
+      "UART3",
+      "SPI0",
+      "SPI1",
+      "TWI0",
+      "TWI1",
+      "TIM0",
+      "TIM1",
+      "TIM2",
+      "TIM3",
+      "TIM4",
+      "TIM5",
+      "TIM6",
+      "TIM7",
+      "PWM0",
+      "PWM1",
+      "BTM",
+      "ADC",
+      "CMP",
+      "LCD_LED",
+      "WDT",
+      "IAP",
+      "CRC",
+      "DMA0",
+      "DMA1",
+      "DMA2",
+      "DMA3",
+      "GPIOA",
+      "GPIOB",
+      "GPIOC"
+    ],
+    "unmatched_header_peripherals": [
+      {
+        "peripheral": "RCC",
+        "base_address": "0x4000300C",
+        "registers": 7
+      },
+      {
+        "peripheral": "FPGA",
+        "base_address": "0x40022140",
+        "registers": 1
+      },
+      {
+        "peripheral": "TK",
+        "base_address": "0x40022200",
+        "registers": 5
+      },
+      {
+        "peripheral": "EXTI",
+        "base_address": "0x40011300",
+        "registers": 8
+      },
+      {
+        "peripheral": "GPIOA_BIT",
+        "base_address": "0x40011000",
+        "registers": 2
+      },
+      {
+        "peripheral": "GPIOB_BIT",
+        "base_address": "0x40011000",
+        "registers": 2
+      },
+      {
+        "peripheral": "GPIOC_BIT",
+        "base_address": "0x40011000",
+        "registers": 2
+      },
+      {
+        "peripheral": "OPT",
+        "base_address": "0x400003F8",
+        "registers": 2
+      }
+    ],
+    "unmatched_svd_peripherals": [
+      {
+        "peripheral": "INT",
+        "registers": 8
+      },
+      {
+        "peripheral": "LEDPWM",
+        "registers": 34
+      }
+    ],
+    "registers_matched": 155,
+    "registers_in_header": 200,
+    "fields_matched": 540,
+    "fields_in_header": 712,
+    "header_coverage_percent": 77.5,
+    "trm_supplement_percent": 67.0
+  },
+  "diff_counts": {
+    "peripheral_missing_in_svd": 8,
+    "peripheral_name_diff": 5,
+    "field_name_diff": 69,
+    "register_missing_in_header": 37,
+    "field_missing_in_svd": 25,
+    "register_name_diff": 145,
+    "field_missing_in_header": 48,
+    "register_missing_in_svd": 16,
+    "peripheral_missing_in_header": 2,
+    "base_address_mismatch": 3
+  },
+  "match_stats": {
+    "exact_name": 28,
+    "register/exact_name": 19,
+    "field/exact_name": 76,
+    "field/bit_position": 388,
+    "register/peripheral_prefix": 115,
+    "peripheral_root": 1,
+    "interrupt/exact_name": 3,
+    "interrupt/irq_number": 28
+  },
+  "warnings": [
+    "TRM 中 9 个外设未在 H 中找到归属，已进入 header_coverage.trm_only_items 待人工处置: INTF, PA, PB, PC, PWM0_DTX, LEDPWM, LEDPWM, LCD, SEGR"
+  ],
+  "correction_summary": {
+    "total": 5044,
+    "machine_extracted": 5044,
+    "human_confirmed": 0,
+    "human_rejected": 0,
+    "ignored": 0,
+    "source_authority": [
+      "authoritative_trm"
+    ],
+    "parse_completeness": [
+      "complete",
+      "partial"
+    ],
+    "multi_source_agreement": [
+      "single_source"
+    ],
+    "manual_confirmation": {
+      "pending": 5044,
+      "confirmed": 0,
+      "rejected": 0,
+      "ignored": 0
+    },
+    "event_count": 1,
+    "snapshot_count": 1
+  },
+  "outputs": {
+    "coverage_json": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_header_regression\\header_coverage.json",
+    "coverage_md": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_header_regression\\header_coverage.md",
+    "final_svd": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_header_regression\\SC32F10T_header_final.svd",
+    "manifest": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_header_regression\\SC32F10T_header_manifest.json",
+    "sidecar": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_header_regression\\SC32F10T_header.corrections.json"
+  }
+}

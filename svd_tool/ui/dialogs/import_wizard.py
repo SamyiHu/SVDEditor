@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
     QLabel, QLineEdit, QComboBox, QGroupBox, QTextEdit, QPlainTextEdit,
     QPushButton, QRadioButton, QButtonGroup, QFileDialog, QMessageBox,
     QTreeWidget, QTreeWidgetItem, QProgressBar, QHeaderView, QSizePolicy,
-    QCheckBox,
+    QCheckBox, QTabWidget, QFrame,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
@@ -26,6 +26,7 @@ from PyQt6.QtGui import QColor
 from ...i18n.i18n import t
 from ...config.styles import get_style_scheme
 from ..managers.datasource_manager import DatasourceManager
+from ..components.correction_review_widget import CorrectionReviewWidget
 from ...core.datasource.parser_bridge import ParseRequest, is_parser_available
 
 # 置信度 → 显示色（与核对面板一致）
@@ -51,7 +52,9 @@ class ImportWizard(QWizard):
         self._result_holder = {}   # 页面间共享状态（非 field）
 
         self.setWindowTitle(t("datasource.wizard_title", default="从数据手册导入"))
-        self.setMinimumSize(720, 560)
+        self.setMinimumSize(1024, 720)
+        self.resize(1240, 820)
+        self.setSizeGripEnabled(True)
         self.setWizardStyle(QWizard.WizardStyle.ModernStyle)
         self.setOption(QWizard.WizardOption.HaveHelpButton, False)
         self.setOption(QWizard.WizardOption.IndependentPages, False)
@@ -96,6 +99,10 @@ class ImportWizard(QWizard):
     @property
     def chip_name(self) -> str:
         return self.import_page.chip_name_edit.text().strip()
+
+    @property
+    def header_path(self) -> str:
+        return self.source_page.header_path()
 
     @property
     def import_mode(self) -> str:
@@ -240,6 +247,19 @@ class SourceSelectPage(QWizardPage):
                          t("datasource.source_pdf", default="PDF 手册"),
                          "PDF 文件 (*.pdf)")
 
+        # 可选：CMSIS H 文件（H 主控 + TRM 补充模式）
+        header_box = QGroupBox(t("datasource.header_group", default="H 文件锚点（可选）"))
+        hb_layout = QHBoxLayout(header_box)
+        hb_layout.addWidget(QLabel(t("datasource.header_path", default="头文件：")))
+        self.header_edit = QLineEdit()
+        self.header_edit.setPlaceholderText(t("datasource.header_hint",
+            default="选择 CMSIS 头文件后启用「H 主控 + TRM 补充」：H 定外设/寄存器/位域骨架，TRM 补描述与复位值"))
+        hb_layout.addWidget(self.header_edit, 1)
+        header_btn = QPushButton(t("datasource.btn_choose_header", default="选文件…"))
+        header_btn.clicked.connect(self._choose_header)
+        hb_layout.addWidget(header_btn)
+        layout.addWidget(header_box)
+
         # 主源选择（多源融合时用）
         primary_box = QGroupBox(t("datasource.primary_source_group", default="融合策略"))
         pb_layout = QFormLayout(primary_box)
@@ -284,6 +304,16 @@ class SourceSelectPage(QWizardPage):
             self, t("datasource.btn_choose_files", default="选择文件（可多选）"), "", file_filter)
         if paths:
             edit.setText(";".join(paths))
+
+    def _choose_header(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, t("datasource.btn_choose_header", default="选择 CMSIS 头文件"),
+            "", "C Header (*.h *.hpp);;All Files (*)")
+        if path:
+            self.header_edit.setText(path)
+
+    def header_path(self) -> str:
+        return self.header_edit.text().strip()
 
     def collect_sources(self, mode: str) -> dict:
         """根据模式收集非空来源。
@@ -383,6 +413,7 @@ class ParseProgressPage(QWizardPage):
             strategy=wizard.strategy,
             primary_source=wizard.primary_source,
             chip_name=wizard.chip_name,
+            header_path=wizard.header_path,
         )
         if not mgr.run_parse(request):
             self._on_failed(t("datasource.parse_busy", default="已有解析任务进行中"))
@@ -423,56 +454,135 @@ class ParseProgressPage(QWizardPage):
 class PreviewPage(QWizardPage):
     def __init__(self, wizard: ImportWizard):
         super().__init__(wizard)
+        self.setMinimumSize(980, 640)
         self.setTitle(t("datasource.step4_title", default="预览解析结果"))
         self.setSubTitle(t("datasource.step4_subtitle",
-                           default="查看外设结构与置信度分布。绿色=高、蓝色=中、橙色=低、红色=缺失"))
+                           default="可编辑解析值并保存人工纠错；机器置信度仅用于排序，不代表准确率"))
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(8)
 
-        # 统计面板
-        stats_box = QGroupBox(t("datasource.stats_group", default="统计"))
-        stats_layout = QGridLayout(stats_box)
+        # 轻量指标行：不做大卡，顶部只保留必要数字
+        stats_box = QFrame()
+        stats_box.setObjectName("StatsStrip")
+        stats_layout = QHBoxLayout(stats_box)
+        stats_layout.setContentsMargins(0, 0, 0, 0)
+        stats_layout.setSpacing(10)
         self.stat_labels = {}
-        for i, key in enumerate(["peripherals", "registers", "fields"]):
-            stats_layout.addWidget(QLabel(t(f"datasource.stat_{key}",
-                default={"peripherals": "外设", "registers": "寄存器", "fields": "位域"}[key])),
-                0, i)
+        for key in ("peripherals", "registers", "fields"):
+            cell = QHBoxLayout()
+            cell.setSpacing(5)
             lbl = QLabel("0")
-            lbl.setStyleSheet("font-size: 16pt; font-weight: bold;")
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            stats_layout.addWidget(lbl, 1, i)
+            lbl.setObjectName("StatValue")
+            lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            cap = QLabel(t(f"datasource.stat_{key}",
+                default={"peripherals": "外设", "registers": "寄存器", "fields": "位域"}[key]))
+            cap.setObjectName("StatLabel")
+            cap.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            cell.addWidget(lbl)
+            cell.addWidget(cap)
+            stats_layout.addLayout(cell)
             self.stat_labels[key] = lbl
-        # 置信度分布
+
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.VLine)
+        separator.setStyleSheet("color:#E8E8E8;")
+        stats_layout.addWidget(separator)
+
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.VLine)
+        separator.setStyleSheet("color:#E8E8E8;")
+        separator.setFixedWidth(1)
+        separator.setFixedHeight(18)
+        stats_layout.addWidget(separator)
+        confidence_title = QLabel("置信度")
+        confidence_title.setObjectName("StatLabel")
+        stats_layout.addWidget(confidence_title)
         conf_row = QHBoxLayout()
+        conf_row.setSpacing(12)
         self.conf_labels = {}
         for conf in ("high", "medium", "low", "missing", "unknown"):
-            box = QVBoxLayout()
+            box = QHBoxLayout()
+            box.setSpacing(5)
             dot = QLabel("●")
-            dot.setStyleSheet(f"color: {_CONF_COLORS[conf].name()}; font-size: 14pt;")
-            dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            dot.setStyleSheet(f"color:{_CONF_COLORS[conf].name()};font-size:9pt;border:none;")
             val = QLabel("0")
-            val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            val.setStyleSheet(f"color: {_CONF_COLORS[conf].name()}; font-weight: bold;")
+            val.setObjectName("ConfValue")
+            val.setStyleSheet(f"color:{_CONF_COLORS[conf].name()};font-size:9pt;font-weight:700;border:none;")
             cap = QLabel(_CONF_LABELS[conf])
-            cap.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            cap.setStyleSheet("color: gray;")
+            cap.setObjectName("StatLabel")
             box.addWidget(dot)
             box.addWidget(val)
             box.addWidget(cap)
+            box.addStretch(1)
             conf_row.addLayout(box)
             self.conf_labels[conf] = val
-        stats_layout.addLayout(conf_row, 2, 0, 1, 3)
+        stats_layout.addLayout(conf_row, 1)
         layout.addWidget(stats_box)
 
-        # 外设树
+        # 可编辑纠错页 + 原结构树页
+        self.tabs = QTabWidget()
+        self.review_widget = CorrectionReviewWidget(wizard.mgr)
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels([t("datasource.tree_name", default="名称"),
                                    t("datasource.tree_detail", default="详情"),
-                                   t("datasource.tree_conf", default="置信度")])
+                                   t("datasource.tree_conf", default="机器置信度")])
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        layout.addWidget(self.tree, 1)
+        self.tabs.addTab(self.review_widget,
+                         t("datasource.editable_review", default="可编辑纠错"))
+        self.tabs.addTab(self.tree,
+                         t("datasource.structure_tree", default="结构树"))
+        layout.addWidget(self.tabs, 1)
+
+        try:
+            colors = get_style_scheme().colors
+            accent = colors.accent
+            surface = colors.surface
+            border_light = colors.border_light
+            text_secondary = colors.text_secondary
+            light_gray = colors.light_gray
+        except Exception:
+            accent, surface, border_light = "#4A90D9", "#FFFFFF", "#E8E8E8"
+            text_secondary, light_gray = "#8C8C8C", "#F7F8FA"
+        self.setStyleSheet(f"""
+            QFrame#StatsStrip {{
+                background: {surface};
+                border: 1px solid {border_light};
+                border-radius: 8px;
+            }}
+            QLabel#StatLabel {{
+                color: {text_secondary};
+                font-size: 9pt;
+                border: none;
+            }}
+            QLabel#StatValue {{
+                font-size: 11pt;
+                font-weight: 700;
+                color: #1A1A1A;
+                border: none;
+            }}
+            QTabWidget::pane {{
+                border: 1px solid {border_light};
+                border-radius: 8px;
+                background: {surface};
+            }}
+            QTabBar::tab {{
+                background: {light_gray};
+                color: {text_secondary};
+                padding: 8px 18px;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                margin-right: 3px;
+            }}
+            QTabBar::tab:selected {{
+                background: {surface};
+                color: {accent};
+                font-weight: 600;
+            }}
+        """)
 
         # 融合信息（仅多源时显示）
         self.fusion_label = QLabel("")
@@ -485,6 +595,7 @@ class PreviewPage(QWizardPage):
         result = getattr(wizard.mgr, "last_result", None)
         if result is None or result.chip_data is None:
             self.tree.clear()
+            self.review_widget.refresh()
             return
         cd = result.chip_data
         q = result.quality or {}
@@ -494,6 +605,9 @@ class PreviewPage(QWizardPage):
         fc = q.get("field_confidence", {})
         for conf, lbl in self.conf_labels.items():
             lbl.setText(str(fc.get(conf, 0)))
+
+        self.review_widget.set_import_mode(wizard.mode)
+        self.review_widget.refresh()
 
         # 外设树
         self.tree.clear()

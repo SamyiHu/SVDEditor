@@ -21,6 +21,15 @@ from .chip_to_svd_converter import (
     ConversionIssue,
     ConversionReport,
 )
+from .header_parser import HeaderParser, HeaderModel
+from .header_trm_fusion import HeaderTrmFusion, HeaderTrmFusionResult
+from .header_coverage import (
+    HeaderSvdCoverage, build_header_svd_coverage, coverage_to_markdown,
+)
+from .review_workflow import (
+    ReviewEvent, resolve_review_model, write_extracted_snapshot, write_manifest,
+    build_header_manifest_extra,
+)
 from .svd_verifier import (
     SVDVerifier,
     VerifyItem,
@@ -36,4 +45,11 @@ __all__ = [
     "ChipToSvdConverter", "ConversionIssue", "ConversionReport",
     # verifier
     "SVDVerifier", "VerifyItem", "VerifySeverity", "VerifyKind",
+    # review workflow
+    "ReviewEvent", "resolve_review_model", "write_extracted_snapshot", "write_manifest",
+    "build_header_manifest_extra",
+    # header 链路
+    "HeaderParser", "HeaderModel",
+    "HeaderTrmFusion", "HeaderTrmFusionResult",
+    "HeaderSvdCoverage", "build_header_svd_coverage", "coverage_to_markdown",
 ]

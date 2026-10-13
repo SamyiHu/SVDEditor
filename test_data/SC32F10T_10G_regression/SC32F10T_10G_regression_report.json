@@ -1,0 +1,268 @@
+{
+  "trm": {
+    "path": "E:\\Desktop_Projects\\小程序\\CDB整合\\外发资料\\外发资料\\31.ARM+C51合并上官网\\SVD文件\\SC32F10T_10G_Technical_Reference_Manual v0.2cn.docx",
+    "sha256": "2e25e99d094f15c65cb3bc7fd96d947fcf226182cd8e33a8462057a1db4c7cd6",
+    "bytes": 3147342
+  },
+  "svd": {
+    "path": "E:\\Desktop_Projects\\小程序\\CDB整合\\外发资料\\外发资料\\31.ARM+C51合并上官网\\SVD文件\\SC32F10XSX44.svd",
+    "sha256": "d2812ce664b16d4afbb395c368b4d01d6fb94f5391fcbbf4f0f9c03fdde800aa",
+    "bytes": 242604
+  },
+  "source_stats": {
+    "peripherals": 38,
+    "registers": 249,
+    "fields": 678,
+    "interrupts": 33
+  },
+  "svd_stats": {
+    "peripherals": 37,
+    "registers": 219,
+    "fields": 1079,
+    "interrupts": 26
+  },
+  "parse_quality": {
+    "peripherals": 38,
+    "registers": 249,
+    "fields": 678,
+    "field_confidence": {
+      "high": 678,
+      "medium": 0,
+      "low": 0,
+      "missing": 0,
+      "unknown": 0
+    },
+    "register_confidence": {
+      "high": 249,
+      "medium": 0,
+      "low": 0,
+      "missing": 0,
+      "unknown": 0
+    },
+    "manual_corrections_reapplied": 0,
+    "source_authority": {
+      "machine_extracted": 998
+    },
+    "parse_completeness": {
+      "complete": 998,
+      "partial": 0,
+      "incomplete": 0,
+      "unknown": 0
+    },
+    "manual_confirmation": {
+      "pending": 5106,
+      "confirmed": 0,
+      "rejected": 0,
+      "ignored": 0
+    }
+  },
+  "diagnostics_count": 0,
+  "diagnostics": [],
+  "provenance_count": 998,
+  "provenance_with_table_row_raw": 960,
+  "correction_records": 5106,
+  "correction_summary": {
+    "total": 5106,
+    "machine_extracted": 5106,
+    "human_confirmed": 0,
+    "human_rejected": 0,
+    "ignored": 0,
+    "source_authority": [
+      "authoritative_trm"
+    ],
+    "parse_completeness": [
+      "complete"
+    ],
+    "multi_source_agreement": [
+      "single_source"
+    ],
+    "manual_confirmation": {
+      "pending": 5106,
+      "confirmed": 0,
+      "rejected": 0,
+      "ignored": 0
+    },
+    "event_count": 3,
+    "snapshot_count": 3
+  },
+  "review_workflow": {
+    "event_count": 3,
+    "snapshot_count": 3,
+    "extracted_snapshot": {
+      "path": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G.corrections.snapshot-ca5f486c2c601d6d.json",
+      "sha256": "ca5f486c2c601d6df643b2f2cd22edb799aa652d3ee77364dd8cb930dd93997e",
+      "immutable": true,
+      "created": false
+    },
+    "resolved_model_path": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G.corrections.resolved-model.json",
+    "match_reasons": {
+      "peripheral_prefix": 97,
+      "unmatched": 66,
+      "exact_name": 1
+    },
+    "match_scores": [
+      0.0,
+      0.8,
+      1.0
+    ],
+    "multi_source_agreement": {
+      "single_source": 164
+    },
+    "interrupts_extracted": 33,
+    "interrupts_written": 27
+  },
+  "verify_kind_counts": {
+    "field_missing_in_svd": 6,
+    "field_missing_in_source": 48,
+    "reset": 4,
+    "base_address": 2,
+    "access": 9,
+    "missing_in_source": 9,
+    "missing_in_svd": 8,
+    "offset": 29,
+    "reg_missing_in_svd": 18,
+    "reg_missing_in_source": 29,
+    "width": 2
+  },
+  "prefix_normalization_false_positive_count": 0,
+  "prefix_normalization_false_positive_samples": [],
+  "conversion": {
+    "peripherals_added": 36,
+    "peripherals_skipped": 2,
+    "registers_added": 211,
+    "fields_added": 604,
+    "interrupts_added": 27,
+    "issues": [
+      {
+        "peripheral": "RCC",
+        "register": "",
+        "field": "",
+        "kind": "skipped_peripheral",
+        "detail": "并入模式下外设已存在，跳以免覆盖",
+        "severity": "warning"
+      },
+      {
+        "peripheral": "LEDPWM",
+        "register": "",
+        "field": "",
+        "kind": "skipped_peripheral",
+        "detail": "并入模式下外设已存在，跳以免覆盖",
+        "severity": "warning"
+      },
+      {
+        "peripheral": "UART1",
+        "register": "",
+        "field": "",
+        "kind": "derived_from",
+        "detail": "自动继承 UART0",
+        "severity": "info"
+      },
+      {
+        "peripheral": "UART2",
+        "register": "",
+        "field": "",
+        "kind": "derived_from",
+        "detail": "自动继承 UART0",
+        "severity": "info"
+      },
+      {
+        "peripheral": "UART3",
+        "register": "",
+        "field": "",
+        "kind": "derived_from",
+        "detail": "自动继承 UART0",
+        "severity": "info"
+      },
+      {
+        "peripheral": "TWI1",
+        "register": "",
+        "field": "",
+        "kind": "derived_from",
+        "detail": "自动继承 TWI0",
+        "severity": "info"
+      },
+      {
+        "peripheral": "TIM2",
+        "register": "",
+        "field": "",
+        "kind": "derived_from",
+        "detail": "自动继承 TIM1",
+        "severity": "info"
+      },
+      {
+        "peripheral": "TIM3",
+        "register": "",
+        "field": "",
+        "kind": "derived_from",
+        "detail": "自动继承 TIM1",
+        "severity": "info"
+      },
+      {
+        "peripheral": "TIM4",
+        "register": "",
+        "field": "",
+        "kind": "derived_from",
+        "detail": "自动继承 TIM1",
+        "severity": "info"
+      },
+      {
+        "peripheral": "TIM5",
+        "register": "",
+        "field": "",
+        "kind": "derived_from",
+        "detail": "自动继承 TIM1",
+        "severity": "info"
+      },
+      {
+        "peripheral": "TIM6",
+        "register": "",
+        "field": "",
+        "kind": "derived_from",
+        "detail": "自动继承 TIM1",
+        "severity": "info"
+      },
+      {
+        "peripheral": "TIM7",
+        "register": "",
+        "field": "",
+        "kind": "derived_from",
+        "detail": "自动继承 TIM1",
+        "severity": "info"
+      },
+      {
+        "peripheral": "DMA1",
+        "register": "",
+        "field": "",
+        "kind": "derived_from",
+        "detail": "自动继承 DMA0",
+        "severity": "info"
+      },
+      {
+        "peripheral": "DMA2",
+        "register": "",
+        "field": "",
+        "kind": "derived_from",
+        "detail": "自动继承 DMA0",
+        "severity": "info"
+      },
+      {
+        "peripheral": "DMA3",
+        "register": "",
+        "field": "",
+        "kind": "derived_from",
+        "detail": "自动继承 DMA0",
+        "severity": "info"
+      }
+    ]
+  },
+  "outputs": {
+    "sidecar": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G.corrections.json",
+    "final_svd": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G_final_reviewed.svd",
+    "correction_report_md": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G_correction_report.md",
+    "correction_report_json": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G_correction_report.json",
+    "event_log": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G.corrections.json.events.jsonl",
+    "extracted_snapshot": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G.corrections.snapshot-ca5f486c2c601d6d.json",
+    "resolved_model": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G.corrections.resolved-model.json",
+    "manifest": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G_manifest.json"
+  }
+}

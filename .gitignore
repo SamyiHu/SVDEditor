@@ -121,3 +121,11 @@ _logo_preview.png
 
 # 本地私人开发笔记
 问题记录.txt
+# TRM 审核回归的大型派生物（本地保留，提交 Manifest/报告/最终 SVD）
+test_data/SC32F10T_10G_regression/*.corrections.json
+test_data/SC32F10T_10G_regression/*.corrections.json.*
+test_data/SC32F10T_10G_regression/*.resolved-model.json
+test_data/SC32F10T_10G_regression/*.snapshot-*.json
+test_data/SC32F10T_10G_regression/*_correction_report.*
+test_data/debug_*
+test_data/import_preview_offscreen.png
