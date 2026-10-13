@@ -20,6 +20,8 @@ from dataclasses import dataclass, field as dc_field
 from enum import Enum
 from typing import Any, Optional
 
+from .correction_store import parse_completeness, source_authority_label
+
 logger = logging.getLogger("svd_tool.datasource.SVDVerifier")
 
 
@@ -59,6 +61,20 @@ class VerifyItem:
     svd_value: str = ""
     source_value: str = ""
     suggested: dict = dc_field(default_factory=dict)
+    source_authority: str = ""
+    parse_completeness: str = "unknown"
+    manual_confirmation: str = "pending"
+    source_ref: dict = dc_field(default_factory=dict)
+    manual_value: str = ""
+    multi_source_agreement: str = "single_source"
+    match_reason: str = "unmatched"
+    match_score: float = 0.0
+    object_id: str = ""
+    semantic_path: str = ""
+    aliases: list[str] = dc_field(default_factory=list)
+
+    def to_dict_key(self) -> tuple:
+        return (self.level, self.peripheral, self.register, self.field, self.kind)
 
     def to_dict(self) -> dict:
         return {
@@ -68,6 +84,17 @@ class VerifyItem:
             "severity": self.severity, "confidence": self.confidence,
             "svd_value": self.svd_value, "source_value": self.source_value,
             "suggested": self.suggested,
+            "source_authority": self.source_authority,
+            "parse_completeness": self.parse_completeness,
+            "manual_confirmation": self.manual_confirmation,
+            "source_ref": self.source_ref,
+            "manual_value": self.manual_value,
+            "multi_source_agreement": self.multi_source_agreement,
+            "match_reason": self.match_reason,
+            "match_score": self.match_score,
+            "object_id": self.object_id,
+            "semantic_path": self.semantic_path,
+            "aliases": self.aliases,
         }
 
 
@@ -138,6 +165,7 @@ class SVDVerifier:
 
             self._verify_peripheral(svd_periph, src_periph, items)
 
+        self._enrich_review_semantics(items, svd_device, chip_data)
         return items
 
     # ---------- 外设级核对 ----------
@@ -176,19 +204,38 @@ class SVDVerifier:
         for rname, reg in svd_regs.items():
             svd_norm_map.setdefault(_normalize_name(rname), []).append((rname, reg))
 
+        svd_canon_map = {}
+        for rname, reg in svd_regs.items():
+            svd_canon_map.setdefault(
+                canonical_register_name(rname, pname), []).append((rname, reg))
+
         src_matched = set()
         for src_reg in src_regs:
             src_name = getattr(src_reg, "name", "") or ""
             matched_svd_name = None
+            match_reason = "unmatched"
+            match_score = 0.0
 
             # 精确匹配
             if src_name in svd_exact:
                 matched_svd_name = src_name
+                match_reason = "exact_name"
+                match_score = 1.0
             else:
-                # 归一化兜底
+                # 模板归一化兜底（UARTn_CON ↔ UARTN_CON）
                 cand = svd_norm_map.get(_normalize_name(src_name), [])
                 if cand:
                     matched_svd_name = cand[0][0]
+                    match_reason = "template_name"
+                    match_score = 0.9
+            if matched_svd_name is None:
+                # 同外设前缀归一化（ADC/ADC_STS ↔ STS，CRC/CRC_CON ↔ CON）
+                cand = svd_canon_map.get(canonical_register_name(src_name, pname), [])
+                cand = [item for item in cand if item[0] not in src_matched]
+                if cand:
+                    matched_svd_name = cand[0][0]
+                    match_reason = "peripheral_prefix"
+                    match_score = 0.8
 
             if matched_svd_name is None:
                 # 源有、SVD 无
@@ -206,7 +253,11 @@ class SVDVerifier:
 
             src_matched.add(matched_svd_name)
             svd_reg = svd_regs[matched_svd_name]
+            before = len(items)
             self._verify_one_register(pname, src_reg, matched_svd_name, svd_reg, items)
+            for item in items[before:]:
+                item.match_reason = match_reason
+                item.match_score = match_score
 
         # SVD 有、源无
         for rname in svd_exact - src_matched:
@@ -287,12 +338,18 @@ class SVDVerifier:
             conf = getattr(src_f, "confidence", "unknown") or "unknown"
 
             matched = None
+            match_reason = "unmatched"
+            match_score = 0.0
             if src_fname and src_fname in svd_exact:
                 matched = src_fname
+                match_reason = "exact_name"
+                match_score = 1.0
             else:
                 cand = svd_by_pos.get((src_pos, src_w), [])
                 if cand:
                     matched = cand[0]
+                    match_reason = "bit_position"
+                    match_score = 0.75
 
             if matched is None:
                 items.append(VerifyItem(
@@ -308,7 +365,11 @@ class SVDVerifier:
 
             matched_svd.add(matched)
             svd_f = svd_fields[matched]
+            before = len(items)
             self._verify_one_field(pname, reg_name, matched, svd_f, src_f, items)
+            for item in items[before:]:
+                item.match_reason = match_reason
+                item.match_score = match_score
 
         for fname in svd_exact - matched_svd:
             items.append(VerifyItem(
@@ -316,6 +377,57 @@ class SVDVerifier:
                 kind=VerifyKind.FIELD_MISSING_IN_SOURCE.value,
                 detail=f"数据手册中未见位域 {fname}",
                 severity=VerifySeverity.INFO.value, confidence="unknown"))
+
+    @staticmethod
+    def _enrich_review_semantics(
+        items: list[VerifyItem], svd_device: Any, chip_data: Any,
+    ) -> None:
+        """补齐三类独立语义；不把 confidence/source weight 解释为准确率。"""
+        source_entities = {}
+        for pblk in getattr(chip_data, "peripherals", []) or []:
+            pname = getattr(pblk, "name", "")
+            source_entities[("peripheral", pname, "", "")] = pblk
+            for reg in getattr(pblk, "registers", []) or []:
+                rname = getattr(reg, "name", "")
+                source_entities[("register", pname, rname, "")] = reg
+                for fld in getattr(reg, "fields", []) or []:
+                    source_entities[("field", pname, rname, getattr(fld, "name", ""))] = fld
+
+        for item in items:
+            key = (item.level, item.peripheral, item.register, item.field)
+            entity = source_entities.get(key)
+            if entity is None and item.level == "register":
+                for (level, pname, rname, fname), candidate in source_entities.items():
+                    if (level == "register" and pname == item.peripheral
+                            and canonical_register_name(rname, pname)
+                            == canonical_register_name(item.register, pname)):
+                        entity = candidate
+                        break
+            if entity is None:
+                item.source_authority = "svd_only" if item.kind == "missing_in_source" else "unmatched"
+                item.parse_completeness = "unknown"
+                item.manual_confirmation = "not_applicable"
+                continue
+            ref = dict(getattr(entity, "source_ref", {}) or {})
+            source_file = ref.get("source_file", "")
+            item.source_ref = ref
+            item.source_authority = (
+                getattr(entity, "source_authority", "")
+                or source_authority_label(source_file)
+            )
+            item.parse_completeness = (
+                getattr(entity, "parse_completeness", "")
+                or parse_completeness(entity, item.level)
+            )
+            item.manual_confirmation = (
+                getattr(entity, "manual_status", "") or "pending"
+            ).replace("machine_extracted", "pending")
+            item.multi_source_agreement = (
+                getattr(entity, "multi_source_agreement", "") or "single_source"
+            )
+            item.object_id = getattr(entity, "object_id", "") or ""
+            item.semantic_path = getattr(entity, "semantic_path", "") or ""
+            item.aliases = list(getattr(entity, "aliases", []) or [])
 
     def _verify_one_field(
         self, pname: str, reg_name: str, svd_fname: str, svd_f: Any, src_f: Any, items: list[VerifyItem],
@@ -385,6 +497,40 @@ _ACCESS_NORM = {
     "RW": "read-write", "RO": "read-only", "WO": "write-only",
     "RW1": "read-write", "RO1": "read-only", "WO1": "write-only",
 }
+
+
+def canonical_register_name(name: str, peripheral: str = "") -> str:
+    """同外设内寄存器名归一化。
+
+    只移除与外设名同源的前缀，避免 ADC_STS 与 CRC_STS 之类的跨模块误配：
+    - ADC + ADC_STS -> STS
+    - CRC + CRC_CON -> CON
+    - ADC0 + ADC_STS -> STS
+    - UART0 + UART0_CON -> CON
+    - BTM + BTM_CON / BTMCON -> CON
+    """
+    raw = (name or "").upper().strip()
+    raw = raw.split("@", 1)[0]
+    raw = re.sub(r"[^A-Z0-9_]+", "", raw)
+    if not raw:
+        return ""
+    p = re.sub(r"[^A-Z0-9]+", "", (peripheral or "").upper())
+    p_base = re.sub(r"\d+$", "", p)
+    suffix = raw
+    if p_base and len(raw) > len(p_base):
+        # 处理 ADC_STS、ADC0_STS、BTMCON 三种前缀写法。
+        prefix_re = re.compile(r"^" + re.escape(p_base) + r"(?:\d+)?(?:_?)(.+)$")
+        match = prefix_re.match(raw)
+        if match and match.group(1):
+            suffix = match.group(1)
+    suffix = suffix.strip("_")
+    suffix = re.sub(r"\d+", "N", suffix)
+    return suffix or re.sub(r"\d+", "N", raw)
+
+
+def normalize_register_name(name: str, peripheral: str = "") -> str:
+    """公开测试入口：返回寄存器匹配键。"""
+    return canonical_register_name(name, peripheral)
 
 
 def _normalize_name(name: str) -> str:

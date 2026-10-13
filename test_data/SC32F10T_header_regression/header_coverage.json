@@ -1,0 +1,2913 @@
+{
+  "mode": "header_vs_svd",
+  "peripherals_in_header": 44,
+  "peripherals_in_svd": 37,
+  "matched_peripherals": [
+    "RCCAHB",
+    "RCCAPB0",
+    "RCCAPB1",
+    "RCCAPB2",
+    "UART0",
+    "UART1",
+    "UART2",
+    "UART3",
+    "SPI0",
+    "SPI1",
+    "TWI0",
+    "TWI1",
+    "TIM0",
+    "TIM1",
+    "TIM2",
+    "TIM3",
+    "TIM4",
+    "TIM5",
+    "TIM6",
+    "TIM7",
+    "PWM0",
+    "PWM1",
+    "BTM",
+    "ADC",
+    "CMP",
+    "LCD_LED",
+    "WDT",
+    "IAP",
+    "CRC",
+    "DMA0",
+    "DMA1",
+    "DMA2",
+    "DMA3",
+    "GPIOA",
+    "GPIOB",
+    "GPIOC"
+  ],
+  "unmatched_header_peripherals": [
+    {
+      "peripheral": "RCC",
+      "base_address": "0x4000300C",
+      "registers": 7
+    },
+    {
+      "peripheral": "FPGA",
+      "base_address": "0x40022140",
+      "registers": 1
+    },
+    {
+      "peripheral": "TK",
+      "base_address": "0x40022200",
+      "registers": 5
+    },
+    {
+      "peripheral": "EXTI",
+      "base_address": "0x40011300",
+      "registers": 8
+    },
+    {
+      "peripheral": "GPIOA_BIT",
+      "base_address": "0x40011000",
+      "registers": 2
+    },
+    {
+      "peripheral": "GPIOB_BIT",
+      "base_address": "0x40011000",
+      "registers": 2
+    },
+    {
+      "peripheral": "GPIOC_BIT",
+      "base_address": "0x40011000",
+      "registers": 2
+    },
+    {
+      "peripheral": "OPT",
+      "base_address": "0x400003F8",
+      "registers": 2
+    }
+  ],
+  "unmatched_svd_peripherals": [
+    {
+      "peripheral": "INT",
+      "registers": 8
+    },
+    {
+      "peripheral": "LEDPWM",
+      "registers": 34
+    }
+  ],
+  "registers_in_header": 200,
+  "registers_matched": 155,
+  "fields_in_header": 712,
+  "fields_matched": 540,
+  "header_coverage_percent": 77.5,
+  "peripheral_coverage_percent": 81.82,
+  "field_coverage_percent": 75.84,
+  "trm_supplement_percent": 67.0,
+  "unresolved_header_items": 28,
+  "diffs": [
+    {
+      "kind": "peripheral_missing_in_svd",
+      "peripheral": "RCC",
+      "detail": "SVD 缺少外设 RCC（H 基地址 0x4000300C）",
+      "header_line": 612
+    },
+    {
+      "kind": "peripheral_name_diff",
+      "peripheral": "RCCAHB",
+      "svd_peripheral": "RCC_AHB",
+      "detail": "外设名不同：H=RCCAHB SVD=RCC_AHB"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAHB",
+      "register": "AHB_CFG",
+      "field": "IFBCFG",
+      "svd_field": "IFBEN",
+      "detail": "位域名不同：H=IFBCFG SVD=IFBEN（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "RCC_AHB",
+      "register": "RCC_KEY",
+      "detail": "H 文件未见寄存器 RCC_AHB/RCC_KEY（仅 SVD 存在，offset=0x0C）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "RCC_AHB",
+      "register": "RCC_CFG0",
+      "detail": "H 文件未见寄存器 RCC_AHB/RCC_CFG0（仅 SVD 存在，offset=0x14）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "RCC_AHB",
+      "register": "RCC_CFG1",
+      "detail": "H 文件未见寄存器 RCC_AHB/RCC_CFG1（仅 SVD 存在，offset=0x18）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "RCC_AHB",
+      "register": "PLL_CFG",
+      "detail": "H 文件未见寄存器 RCC_AHB/PLL_CFG（仅 SVD 存在，offset=0x1C）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "RCC_AHB",
+      "register": "RCC_STS",
+      "detail": "H 文件未见寄存器 RCC_AHB/RCC_STS（仅 SVD 存在，offset=0x20）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "RCC_AHB",
+      "register": "SYST_CALIB",
+      "detail": "H 文件未见寄存器 RCC_AHB/SYST_CALIB（仅 SVD 存在，offset=0x28）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "RCC_AHB",
+      "register": "NMI_CFG",
+      "detail": "H 文件未见寄存器 RCC_AHB/NMI_CFG（仅 SVD 存在，offset=0x2C）"
+    },
+    {
+      "kind": "peripheral_name_diff",
+      "peripheral": "RCCAPB0",
+      "svd_peripheral": "RCC_APB0",
+      "detail": "外设名不同：H=RCCAPB0 SVD=RCC_APB0"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "RCCAPB0",
+      "register": "APB0_CFG",
+      "field": "RDMODE",
+      "detail": "SVD 缺少位域 RCCAPB0/APB0_CFG/RDMODE（H bit[31:31]）",
+      "header_line": 979,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "peripheral_name_diff",
+      "peripheral": "RCCAPB1",
+      "svd_peripheral": "RCC_APB0",
+      "detail": "外设名不同：H=RCCAPB1 SVD=RCC_APB0"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "RCCAPB1",
+      "register": "APB1_CFG",
+      "svd_register": "APB0_CFG",
+      "detail": "寄存器名不同：H=APB1_CFG SVD=APB0_CFG",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB1",
+      "register": "APB1_CFG",
+      "field": "TIM4EN",
+      "svd_field": "TIM0EN",
+      "detail": "位域名不同：H=TIM4EN SVD=TIM0EN（bit 0）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB1",
+      "register": "APB1_CFG",
+      "field": "TIM5EN",
+      "svd_field": "TIM1EN",
+      "detail": "位域名不同：H=TIM5EN SVD=TIM1EN（bit 1）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB1",
+      "register": "APB1_CFG",
+      "field": "TIM6EN",
+      "svd_field": "TIM2EN",
+      "detail": "位域名不同：H=TIM6EN SVD=TIM2EN（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB1",
+      "register": "APB1_CFG",
+      "field": "TIM7EN",
+      "svd_field": "TIM3EN",
+      "detail": "位域名不同：H=TIM7EN SVD=TIM3EN（bit 3）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB1",
+      "register": "APB1_CFG",
+      "field": "TWI1EN",
+      "svd_field": "TWI0EN",
+      "detail": "位域名不同：H=TWI1EN SVD=TWI0EN（bit 4）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB1",
+      "register": "APB1_CFG",
+      "field": "UART2EN",
+      "svd_field": "UART1EN",
+      "detail": "位域名不同：H=UART2EN SVD=UART1EN（bit 7）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "RCCAPB1",
+      "register": "APB1_CFG",
+      "field": "RDMODE",
+      "detail": "SVD 缺少位域 RCCAPB1/APB1_CFG/RDMODE（H bit[31:31]）",
+      "header_line": 983,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_CFG",
+      "field": "SPI0EN",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_CFG/SPI0EN（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_CFG",
+      "field": "UART0EN",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_CFG/UART0EN（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_CFG",
+      "field": "PWM0EN",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_CFG/PWM0EN（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "RCCAPB1",
+      "register": "APB1_RST",
+      "svd_register": "APB0_RST",
+      "detail": "寄存器名不同：H=APB1_RST SVD=APB0_RST",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB1",
+      "register": "APB1_RST",
+      "field": "TIM4EN",
+      "svd_field": "TIM0RST",
+      "detail": "位域名不同：H=TIM4EN SVD=TIM0RST（bit 0）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB1",
+      "register": "APB1_RST",
+      "field": "TIM5EN",
+      "svd_field": "TIM1RST",
+      "detail": "位域名不同：H=TIM5EN SVD=TIM1RST（bit 1）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB1",
+      "register": "APB1_RST",
+      "field": "TIM6EN",
+      "svd_field": "TIM2RST",
+      "detail": "位域名不同：H=TIM6EN SVD=TIM2RST（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB1",
+      "register": "APB1_RST",
+      "field": "TIM7EN",
+      "svd_field": "TIM3RST",
+      "detail": "位域名不同：H=TIM7EN SVD=TIM3RST（bit 3）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB1",
+      "register": "APB1_RST",
+      "field": "TWI1EN",
+      "svd_field": "TWI0RST",
+      "detail": "位域名不同：H=TWI1EN SVD=TWI0RST（bit 4）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB1",
+      "register": "APB1_RST",
+      "field": "UART2EN",
+      "svd_field": "UART1RST",
+      "detail": "位域名不同：H=UART2EN SVD=UART1RST（bit 7）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_RST",
+      "field": "SPI0RST",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_RST/SPI0RST（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_RST",
+      "field": "UART0RST",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_RST/UART0RST（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_RST",
+      "field": "PWM0RST",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_RST/PWM0RST（仅 SVD 存在）"
+    },
+    {
+      "kind": "peripheral_name_diff",
+      "peripheral": "RCCAPB2",
+      "svd_peripheral": "RCC_APB0",
+      "detail": "外设名不同：H=RCCAPB2 SVD=RCC_APB0"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "RCCAPB2",
+      "register": "APB2_CFG",
+      "svd_register": "APB0_CFG",
+      "detail": "寄存器名不同：H=APB2_CFG SVD=APB0_CFG",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB2",
+      "register": "APB2_CFG",
+      "field": "PWM1EN",
+      "svd_field": "TIM0EN",
+      "detail": "位域名不同：H=PWM1EN SVD=TIM0EN（bit 0）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB2",
+      "register": "APB2_CFG",
+      "field": "LCDEN",
+      "svd_field": "TIM1EN",
+      "detail": "位域名不同：H=LCDEN SVD=TIM1EN（bit 1）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB2",
+      "register": "APB2_CFG",
+      "field": "UART3EN",
+      "svd_field": "TIM2EN",
+      "detail": "位域名不同：H=UART3EN SVD=TIM2EN（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "RCCAPB2",
+      "register": "APB2_CFG",
+      "field": "RDMODE",
+      "detail": "SVD 缺少位域 RCCAPB2/APB2_CFG/RDMODE（H bit[31:31]）",
+      "header_line": 987,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_CFG",
+      "field": "TIM3EN",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_CFG/TIM3EN（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_CFG",
+      "field": "TWI0EN",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_CFG/TWI0EN（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_CFG",
+      "field": "SPI0EN",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_CFG/SPI0EN（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_CFG",
+      "field": "UART0EN",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_CFG/UART0EN（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_CFG",
+      "field": "UART1EN",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_CFG/UART1EN（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_CFG",
+      "field": "PWM0EN",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_CFG/PWM0EN（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "RCCAPB2",
+      "register": "APB2_RST",
+      "svd_register": "APB0_RST",
+      "detail": "寄存器名不同：H=APB2_RST SVD=APB0_RST",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB2",
+      "register": "APB2_RST",
+      "field": "PWM1RST",
+      "svd_field": "TIM0RST",
+      "detail": "位域名不同：H=PWM1RST SVD=TIM0RST（bit 0）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB2",
+      "register": "APB2_RST",
+      "field": "LCDRST",
+      "svd_field": "TIM1RST",
+      "detail": "位域名不同：H=LCDRST SVD=TIM1RST（bit 1）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "RCCAPB2",
+      "register": "APB2_RST",
+      "field": "UART3RST",
+      "svd_field": "TIM2RST",
+      "detail": "位域名不同：H=UART3RST SVD=TIM2RST（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_RST",
+      "field": "TIM3RST",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_RST/TIM3RST（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_RST",
+      "field": "TWI0RST",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_RST/TWI0RST（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_RST",
+      "field": "SPI0RST",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_RST/SPI0RST（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_RST",
+      "field": "UART0RST",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_RST/UART0RST（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_RST",
+      "field": "UART1RST",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_RST/UART1RST（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "RCC_APB0",
+      "register": "APB0_RST",
+      "field": "PWM0RST",
+      "detail": "H 文件未见位域 RCC_APB0/APB0_RST/PWM0RST（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART0",
+      "register": "UART_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=UART_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART0",
+      "register": "UART_CON",
+      "field": "SM01",
+      "detail": "SVD 缺少位域 UART0/UART_CON/SM01（H bit[0:1]）",
+      "header_line": 2380,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART0",
+      "register": "UART_CON",
+      "field": "BTKR",
+      "detail": "SVD 缺少位域 UART0/UART_CON/BTKR（H bit[3:3]）",
+      "header_line": 2388,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "UART0",
+      "register": "UART_CON",
+      "field": "PERSCALER",
+      "svd_field": "PRESCALER",
+      "detail": "位域名不同：H=PERSCALER SVD=PRESCALER（bit 4）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART0",
+      "register": "UART_CON",
+      "field": "LBDL",
+      "detail": "SVD 缺少位域 UART0/UART_CON/LBDL（H bit[11:11]）",
+      "header_line": 2405,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "UART0",
+      "register": "CON",
+      "field": "SM1",
+      "detail": "H 文件未见位域 UART0/CON/SM1（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "UART0",
+      "register": "CON",
+      "field": "SM0",
+      "detail": "H 文件未见位域 UART0/CON/SM0（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART0",
+      "register": "UART_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=UART_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART0",
+      "register": "UART_STS",
+      "field": "BKIE",
+      "detail": "SVD 缺少位域 UART0/UART_STS/BKIE（H bit[3:3]）",
+      "header_line": 2422,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART0",
+      "register": "UART_BAUD",
+      "svd_register": "BAUD",
+      "detail": "寄存器名不同：H=UART_BAUD SVD=BAUD",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART0",
+      "register": "UART_DATA",
+      "svd_register": "DATA",
+      "detail": "寄存器名不同：H=UART_DATA SVD=DATA",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART0",
+      "register": "UART_IDE",
+      "svd_register": "IDE",
+      "detail": "寄存器名不同：H=UART_IDE SVD=IDE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART0",
+      "register": "UART_IDE",
+      "field": "BKIE",
+      "detail": "SVD 缺少位域 UART0/UART_IDE/BKIE（H bit[3:3]）",
+      "header_line": 2442,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "UART0",
+      "register": "IDE",
+      "field": "RXIE",
+      "detail": "H 文件未见位域 UART0/IDE/RXIE（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART1",
+      "register": "UART_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=UART_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART1",
+      "register": "UART_CON",
+      "field": "SM01",
+      "detail": "SVD 缺少位域 UART1/UART_CON/SM01（H bit[0:1]）",
+      "header_line": 2380,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART1",
+      "register": "UART_CON",
+      "field": "BTKR",
+      "detail": "SVD 缺少位域 UART1/UART_CON/BTKR（H bit[3:3]）",
+      "header_line": 2388,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "UART1",
+      "register": "UART_CON",
+      "field": "PERSCALER",
+      "svd_field": "PRESCALER",
+      "detail": "位域名不同：H=PERSCALER SVD=PRESCALER（bit 4）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART1",
+      "register": "UART_CON",
+      "field": "LBDL",
+      "detail": "SVD 缺少位域 UART1/UART_CON/LBDL（H bit[11:11]）",
+      "header_line": 2405,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "UART1",
+      "register": "CON",
+      "field": "SM1",
+      "detail": "H 文件未见位域 UART1/CON/SM1（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "UART1",
+      "register": "CON",
+      "field": "SM0",
+      "detail": "H 文件未见位域 UART1/CON/SM0（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART1",
+      "register": "UART_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=UART_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART1",
+      "register": "UART_STS",
+      "field": "BKIE",
+      "detail": "SVD 缺少位域 UART1/UART_STS/BKIE（H bit[3:3]）",
+      "header_line": 2422,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART1",
+      "register": "UART_BAUD",
+      "svd_register": "BAUD",
+      "detail": "寄存器名不同：H=UART_BAUD SVD=BAUD",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART1",
+      "register": "UART_DATA",
+      "svd_register": "DATA",
+      "detail": "寄存器名不同：H=UART_DATA SVD=DATA",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART1",
+      "register": "UART_IDE",
+      "svd_register": "IDE",
+      "detail": "寄存器名不同：H=UART_IDE SVD=IDE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART1",
+      "register": "UART_IDE",
+      "field": "BKIE",
+      "detail": "SVD 缺少位域 UART1/UART_IDE/BKIE（H bit[3:3]）",
+      "header_line": 2442,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "UART1",
+      "register": "IDE",
+      "field": "RXIE",
+      "detail": "H 文件未见位域 UART1/IDE/RXIE（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART2",
+      "register": "UART_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=UART_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART2",
+      "register": "UART_CON",
+      "field": "SM01",
+      "detail": "SVD 缺少位域 UART2/UART_CON/SM01（H bit[0:1]）",
+      "header_line": 2380,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART2",
+      "register": "UART_CON",
+      "field": "BTKR",
+      "detail": "SVD 缺少位域 UART2/UART_CON/BTKR（H bit[3:3]）",
+      "header_line": 2388,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "UART2",
+      "register": "UART_CON",
+      "field": "PERSCALER",
+      "svd_field": "PRESCALER",
+      "detail": "位域名不同：H=PERSCALER SVD=PRESCALER（bit 4）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART2",
+      "register": "UART_CON",
+      "field": "LBDL",
+      "detail": "SVD 缺少位域 UART2/UART_CON/LBDL（H bit[11:11]）",
+      "header_line": 2405,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "UART2",
+      "register": "CON",
+      "field": "SM1",
+      "detail": "H 文件未见位域 UART2/CON/SM1（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "UART2",
+      "register": "CON",
+      "field": "SM0",
+      "detail": "H 文件未见位域 UART2/CON/SM0（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART2",
+      "register": "UART_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=UART_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART2",
+      "register": "UART_STS",
+      "field": "BKIE",
+      "detail": "SVD 缺少位域 UART2/UART_STS/BKIE（H bit[3:3]）",
+      "header_line": 2422,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART2",
+      "register": "UART_BAUD",
+      "svd_register": "BAUD",
+      "detail": "寄存器名不同：H=UART_BAUD SVD=BAUD",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART2",
+      "register": "UART_DATA",
+      "svd_register": "DATA",
+      "detail": "寄存器名不同：H=UART_DATA SVD=DATA",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART2",
+      "register": "UART_IDE",
+      "svd_register": "IDE",
+      "detail": "寄存器名不同：H=UART_IDE SVD=IDE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART2",
+      "register": "UART_IDE",
+      "field": "BKIE",
+      "detail": "SVD 缺少位域 UART2/UART_IDE/BKIE（H bit[3:3]）",
+      "header_line": 2442,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "UART2",
+      "register": "IDE",
+      "field": "RXIE",
+      "detail": "H 文件未见位域 UART2/IDE/RXIE（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART3",
+      "register": "UART_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=UART_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART3",
+      "register": "UART_CON",
+      "field": "SM01",
+      "detail": "SVD 缺少位域 UART3/UART_CON/SM01（H bit[0:1]）",
+      "header_line": 2380,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART3",
+      "register": "UART_CON",
+      "field": "BTKR",
+      "detail": "SVD 缺少位域 UART3/UART_CON/BTKR（H bit[3:3]）",
+      "header_line": 2388,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "UART3",
+      "register": "UART_CON",
+      "field": "PERSCALER",
+      "svd_field": "PRESCALER",
+      "detail": "位域名不同：H=PERSCALER SVD=PRESCALER（bit 4）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART3",
+      "register": "UART_CON",
+      "field": "LBDL",
+      "detail": "SVD 缺少位域 UART3/UART_CON/LBDL（H bit[11:11]）",
+      "header_line": 2405,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "UART3",
+      "register": "CON",
+      "field": "SM1",
+      "detail": "H 文件未见位域 UART3/CON/SM1（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "UART3",
+      "register": "CON",
+      "field": "SM0",
+      "detail": "H 文件未见位域 UART3/CON/SM0（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART3",
+      "register": "UART_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=UART_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART3",
+      "register": "UART_STS",
+      "field": "BKIE",
+      "detail": "SVD 缺少位域 UART3/UART_STS/BKIE（H bit[3:3]）",
+      "header_line": 2422,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART3",
+      "register": "UART_BAUD",
+      "svd_register": "BAUD",
+      "detail": "寄存器名不同：H=UART_BAUD SVD=BAUD",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART3",
+      "register": "UART_DATA",
+      "svd_register": "DATA",
+      "detail": "寄存器名不同：H=UART_DATA SVD=DATA",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "UART3",
+      "register": "UART_IDE",
+      "svd_register": "IDE",
+      "detail": "寄存器名不同：H=UART_IDE SVD=IDE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "UART3",
+      "register": "UART_IDE",
+      "field": "BKIE",
+      "detail": "SVD 缺少位域 UART3/UART_IDE/BKIE（H bit[3:3]）",
+      "header_line": 2442,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "UART3",
+      "register": "IDE",
+      "field": "RXIE",
+      "detail": "H 文件未见位域 UART3/IDE/RXIE（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "SPI0",
+      "register": "SPI_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=SPI_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "SPI0",
+      "register": "SPI_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=SPI_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "SPI0",
+      "register": "SPI_STS",
+      "field": "RINEIF",
+      "svd_field": "RXNEIF",
+      "detail": "位域名不同：H=RINEIF SVD=RXNEIF（bit 1）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "SPI0",
+      "register": "STS",
+      "field": "TXHIF",
+      "detail": "H 文件未见位域 SPI0/STS/TXHIF（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "SPI0",
+      "register": "SPI_DATA",
+      "svd_register": "DATA",
+      "detail": "寄存器名不同：H=SPI_DATA SVD=DATA",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "SPI0",
+      "register": "SPI_IDE",
+      "svd_register": "IDE",
+      "detail": "寄存器名不同：H=SPI_IDE SVD=IDE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "SPI0",
+      "register": "SPI_IDE",
+      "field": "RXNEIE",
+      "svd_field": "RXNELE",
+      "detail": "位域名不同：H=RXNEIE SVD=RXNELE（bit 1）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "SPI0",
+      "register": "IDE",
+      "field": "TXDMAEN",
+      "detail": "H 文件未见位域 SPI0/IDE/TXDMAEN（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "SPI1",
+      "register": "SPI_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=SPI_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "SPI1",
+      "register": "SPI_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=SPI_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "SPI1",
+      "register": "SPI_STS",
+      "field": "WCOL",
+      "svd_field": "RXNEIF",
+      "detail": "位域名不同：H=WCOL SVD=RXNEIF（bit 1）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "SPI1",
+      "register": "STS",
+      "field": "TXEIF",
+      "detail": "H 文件未见位域 SPI1/STS/TXEIF（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "SPI1",
+      "register": "STS",
+      "field": "RXFIF",
+      "detail": "H 文件未见位域 SPI1/STS/RXFIF（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "SPI1",
+      "register": "STS",
+      "field": "RXHIF",
+      "detail": "H 文件未见位域 SPI1/STS/RXHIF（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "SPI1",
+      "register": "STS",
+      "field": "TXHIF",
+      "detail": "H 文件未见位域 SPI1/STS/TXHIF（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "SPI1",
+      "register": "STS",
+      "field": "WCOL",
+      "detail": "H 文件未见位域 SPI1/STS/WCOL（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "SPI1",
+      "register": "SPI_DATA",
+      "svd_register": "DATA",
+      "detail": "寄存器名不同：H=SPI_DATA SVD=DATA",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "SPI1",
+      "register": "SPI_IDE",
+      "svd_register": "IDE",
+      "detail": "寄存器名不同：H=SPI_IDE SVD=IDE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "SPI1",
+      "register": "IDE",
+      "field": "RXNELE",
+      "detail": "H 文件未见位域 SPI1/IDE/RXNELE（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "SPI1",
+      "register": "IDE",
+      "field": "TBIE",
+      "detail": "H 文件未见位域 SPI1/IDE/TBIE（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "SPI1",
+      "register": "IDE",
+      "field": "RXIE",
+      "detail": "H 文件未见位域 SPI1/IDE/RXIE（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "SPI1",
+      "register": "IDE",
+      "field": "RXHIE",
+      "detail": "H 文件未见位域 SPI1/IDE/RXHIE（仅 SVD 存在）"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "SPI1",
+      "register": "IDE",
+      "field": "TXHIE",
+      "detail": "H 文件未见位域 SPI1/IDE/TXHIE（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TWI0",
+      "register": "TWI_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=TWI_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TWI0",
+      "register": "TWI_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=TWI_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TWI0",
+      "register": "TWI_STS",
+      "field": "TXERXE",
+      "svd_field": "TXnE_RXnE",
+      "detail": "位域名不同：H=TXERXE SVD=TXnE_RXnE（bit 1）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TWI0",
+      "register": "TWI_ADD",
+      "svd_register": "ADD",
+      "detail": "寄存器名不同：H=TWI_ADD SVD=ADD",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TWI0",
+      "register": "TWI_DATA",
+      "svd_register": "DATA",
+      "detail": "寄存器名不同：H=TWI_DATA SVD=DATA",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TWI0",
+      "register": "TWI_IDE",
+      "svd_register": "IDE",
+      "detail": "寄存器名不同：H=TWI_IDE SVD=IDE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TWI1",
+      "register": "TWI_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=TWI_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TWI1",
+      "register": "TWI_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=TWI_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TWI1",
+      "register": "TWI_STS",
+      "field": "TXERXE",
+      "svd_field": "TXnE_RXnE",
+      "detail": "位域名不同：H=TXERXE SVD=TXnE_RXnE（bit 1）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TWI1",
+      "register": "TWI_ADD",
+      "svd_register": "ADD",
+      "detail": "寄存器名不同：H=TWI_ADD SVD=ADD",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TWI1",
+      "register": "TWI_DATA",
+      "svd_register": "DATA",
+      "detail": "寄存器名不同：H=TWI_DATA SVD=DATA",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TWI1",
+      "register": "TWI_IDE",
+      "svd_register": "IDE",
+      "detail": "寄存器名不同：H=TWI_IDE SVD=IDE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM0",
+      "register": "TIM_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=TIM_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM0",
+      "register": "TIM_CON",
+      "field": "TIMCLK",
+      "svd_field": "TIMCK",
+      "detail": "位域名不同：H=TIMCLK SVD=TIMCK（bit 8）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM0",
+      "register": "TIM_CNT",
+      "svd_register": "CNT",
+      "detail": "寄存器名不同：H=TIM_CNT SVD=CNT",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM0",
+      "register": "TIM_RLD",
+      "svd_register": "RLD",
+      "detail": "寄存器名不同：H=TIM_RLD SVD=RLD",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM0",
+      "register": "TIM_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=TIM_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM0",
+      "register": "TIM_PDTA_RCAP",
+      "svd_register": "PDTA_RCAP",
+      "detail": "寄存器名不同：H=TIM_PDTA_RCAP SVD=PDTA_RCAP",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM0",
+      "register": "TIM_PDTB_FCAP",
+      "svd_register": "PDTB_FCAP",
+      "detail": "寄存器名不同：H=TIM_PDTB_FCAP SVD=PDTB_FCAP",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM0",
+      "register": "TIM_IDE",
+      "svd_register": "IDE",
+      "detail": "寄存器名不同：H=TIM_IDE SVD=IDE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM0",
+      "register": "TIM_IDE",
+      "field": "EXIRE",
+      "svd_field": "EXRIE",
+      "detail": "位域名不同：H=EXIRE SVD=EXRIE（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM0",
+      "register": "TIM_IDE",
+      "field": "EXIFE",
+      "svd_field": "EXFIE",
+      "detail": "位域名不同：H=EXIFE SVD=EXFIE（bit 3）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM1",
+      "register": "TIM_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=TIM_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM1",
+      "register": "TIM_CON",
+      "field": "TIMCLK",
+      "svd_field": "TIMCK",
+      "detail": "位域名不同：H=TIMCLK SVD=TIMCK（bit 8）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM1",
+      "register": "TIM_CNT",
+      "svd_register": "CNT",
+      "detail": "寄存器名不同：H=TIM_CNT SVD=CNT",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM1",
+      "register": "TIM_RLD",
+      "svd_register": "RLD",
+      "detail": "寄存器名不同：H=TIM_RLD SVD=RLD",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM1",
+      "register": "TIM_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=TIM_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM1",
+      "register": "TIM_PDTA_RCAP",
+      "svd_register": "PDTA_RCAP",
+      "detail": "寄存器名不同：H=TIM_PDTA_RCAP SVD=PDTA_RCAP",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM1",
+      "register": "TIM_PDTB_FCAP",
+      "svd_register": "PDTB_FCAP",
+      "detail": "寄存器名不同：H=TIM_PDTB_FCAP SVD=PDTB_FCAP",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM1",
+      "register": "TIM_IDE",
+      "svd_register": "IDE",
+      "detail": "寄存器名不同：H=TIM_IDE SVD=IDE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM1",
+      "register": "TIM_IDE",
+      "field": "EXIRE",
+      "svd_field": "EXRIE",
+      "detail": "位域名不同：H=EXIRE SVD=EXRIE（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM1",
+      "register": "TIM_IDE",
+      "field": "EXIFE",
+      "svd_field": "EXFIE",
+      "detail": "位域名不同：H=EXIFE SVD=EXFIE（bit 3）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM2",
+      "register": "TIM_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=TIM_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM2",
+      "register": "TIM_CON",
+      "field": "TIMCLK",
+      "svd_field": "TIMCK",
+      "detail": "位域名不同：H=TIMCLK SVD=TIMCK（bit 8）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM2",
+      "register": "TIM_CNT",
+      "svd_register": "CNT",
+      "detail": "寄存器名不同：H=TIM_CNT SVD=CNT",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM2",
+      "register": "TIM_RLD",
+      "svd_register": "RLD",
+      "detail": "寄存器名不同：H=TIM_RLD SVD=RLD",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM2",
+      "register": "TIM_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=TIM_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM2",
+      "register": "TIM_PDTA_RCAP",
+      "svd_register": "PDTA_RCAP",
+      "detail": "寄存器名不同：H=TIM_PDTA_RCAP SVD=PDTA_RCAP",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM2",
+      "register": "TIM_PDTB_FCAP",
+      "svd_register": "PDTB_FCAP",
+      "detail": "寄存器名不同：H=TIM_PDTB_FCAP SVD=PDTB_FCAP",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM2",
+      "register": "TIM_IDE",
+      "svd_register": "IDE",
+      "detail": "寄存器名不同：H=TIM_IDE SVD=IDE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM2",
+      "register": "TIM_IDE",
+      "field": "EXIRE",
+      "svd_field": "EXRIE",
+      "detail": "位域名不同：H=EXIRE SVD=EXRIE（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM2",
+      "register": "TIM_IDE",
+      "field": "EXIFE",
+      "svd_field": "EXFIE",
+      "detail": "位域名不同：H=EXIFE SVD=EXFIE（bit 3）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM3",
+      "register": "TIM_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=TIM_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM3",
+      "register": "TIM_CON",
+      "field": "TIMCLK",
+      "svd_field": "TIMCK",
+      "detail": "位域名不同：H=TIMCLK SVD=TIMCK（bit 8）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM3",
+      "register": "TIM_CNT",
+      "svd_register": "CNT",
+      "detail": "寄存器名不同：H=TIM_CNT SVD=CNT",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM3",
+      "register": "TIM_RLD",
+      "svd_register": "RLD",
+      "detail": "寄存器名不同：H=TIM_RLD SVD=RLD",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM3",
+      "register": "TIM_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=TIM_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM3",
+      "register": "TIM_PDTA_RCAP",
+      "svd_register": "PDTA_RCAP",
+      "detail": "寄存器名不同：H=TIM_PDTA_RCAP SVD=PDTA_RCAP",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM3",
+      "register": "TIM_PDTB_FCAP",
+      "svd_register": "PDTB_FCAP",
+      "detail": "寄存器名不同：H=TIM_PDTB_FCAP SVD=PDTB_FCAP",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM3",
+      "register": "TIM_IDE",
+      "svd_register": "IDE",
+      "detail": "寄存器名不同：H=TIM_IDE SVD=IDE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM3",
+      "register": "TIM_IDE",
+      "field": "EXIRE",
+      "svd_field": "EXRIE",
+      "detail": "位域名不同：H=EXIRE SVD=EXRIE（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM3",
+      "register": "TIM_IDE",
+      "field": "EXIFE",
+      "svd_field": "EXFIE",
+      "detail": "位域名不同：H=EXIFE SVD=EXFIE（bit 3）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM4",
+      "register": "TIM_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=TIM_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM4",
+      "register": "TIM_CON",
+      "field": "TIMCLK",
+      "svd_field": "TIMCK",
+      "detail": "位域名不同：H=TIMCLK SVD=TIMCK（bit 8）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM4",
+      "register": "TIM_CNT",
+      "svd_register": "CNT",
+      "detail": "寄存器名不同：H=TIM_CNT SVD=CNT",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM4",
+      "register": "TIM_RLD",
+      "svd_register": "RLD",
+      "detail": "寄存器名不同：H=TIM_RLD SVD=RLD",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM4",
+      "register": "TIM_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=TIM_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM4",
+      "register": "TIM_PDTA_RCAP",
+      "svd_register": "PDTA_RCAP",
+      "detail": "寄存器名不同：H=TIM_PDTA_RCAP SVD=PDTA_RCAP",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM4",
+      "register": "TIM_PDTB_FCAP",
+      "svd_register": "PDTB_FCAP",
+      "detail": "寄存器名不同：H=TIM_PDTB_FCAP SVD=PDTB_FCAP",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM4",
+      "register": "TIM_IDE",
+      "svd_register": "IDE",
+      "detail": "寄存器名不同：H=TIM_IDE SVD=IDE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM4",
+      "register": "TIM_IDE",
+      "field": "EXIRE",
+      "svd_field": "EXRIE",
+      "detail": "位域名不同：H=EXIRE SVD=EXRIE（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM4",
+      "register": "TIM_IDE",
+      "field": "EXIFE",
+      "svd_field": "EXFIE",
+      "detail": "位域名不同：H=EXIFE SVD=EXFIE（bit 3）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM5",
+      "register": "TIM_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=TIM_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM5",
+      "register": "TIM_CON",
+      "field": "TIMCLK",
+      "svd_field": "TIMCK",
+      "detail": "位域名不同：H=TIMCLK SVD=TIMCK（bit 8）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM5",
+      "register": "TIM_CNT",
+      "svd_register": "CNT",
+      "detail": "寄存器名不同：H=TIM_CNT SVD=CNT",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM5",
+      "register": "TIM_RLD",
+      "svd_register": "RLD",
+      "detail": "寄存器名不同：H=TIM_RLD SVD=RLD",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM5",
+      "register": "TIM_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=TIM_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM5",
+      "register": "TIM_PDTA_RCAP",
+      "svd_register": "PDTA_RCAP",
+      "detail": "寄存器名不同：H=TIM_PDTA_RCAP SVD=PDTA_RCAP",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM5",
+      "register": "TIM_PDTB_FCAP",
+      "svd_register": "PDTB_FCAP",
+      "detail": "寄存器名不同：H=TIM_PDTB_FCAP SVD=PDTB_FCAP",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM5",
+      "register": "TIM_IDE",
+      "svd_register": "IDE",
+      "detail": "寄存器名不同：H=TIM_IDE SVD=IDE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM5",
+      "register": "TIM_IDE",
+      "field": "EXIRE",
+      "svd_field": "EXRIE",
+      "detail": "位域名不同：H=EXIRE SVD=EXRIE（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM5",
+      "register": "TIM_IDE",
+      "field": "EXIFE",
+      "svd_field": "EXFIE",
+      "detail": "位域名不同：H=EXIFE SVD=EXFIE（bit 3）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM6",
+      "register": "TIM_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=TIM_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM6",
+      "register": "TIM_CON",
+      "field": "TIMCLK",
+      "svd_field": "TIMCK",
+      "detail": "位域名不同：H=TIMCLK SVD=TIMCK（bit 8）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM6",
+      "register": "TIM_CNT",
+      "svd_register": "CNT",
+      "detail": "寄存器名不同：H=TIM_CNT SVD=CNT",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM6",
+      "register": "TIM_RLD",
+      "svd_register": "RLD",
+      "detail": "寄存器名不同：H=TIM_RLD SVD=RLD",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM6",
+      "register": "TIM_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=TIM_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM6",
+      "register": "TIM_PDTA_RCAP",
+      "svd_register": "PDTA_RCAP",
+      "detail": "寄存器名不同：H=TIM_PDTA_RCAP SVD=PDTA_RCAP",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM6",
+      "register": "TIM_PDTB_FCAP",
+      "svd_register": "PDTB_FCAP",
+      "detail": "寄存器名不同：H=TIM_PDTB_FCAP SVD=PDTB_FCAP",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM6",
+      "register": "TIM_IDE",
+      "svd_register": "IDE",
+      "detail": "寄存器名不同：H=TIM_IDE SVD=IDE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM6",
+      "register": "TIM_IDE",
+      "field": "EXIRE",
+      "svd_field": "EXRIE",
+      "detail": "位域名不同：H=EXIRE SVD=EXRIE（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM6",
+      "register": "TIM_IDE",
+      "field": "EXIFE",
+      "svd_field": "EXFIE",
+      "detail": "位域名不同：H=EXIFE SVD=EXFIE（bit 3）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM7",
+      "register": "TIM_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=TIM_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM7",
+      "register": "TIM_CON",
+      "field": "TIMCLK",
+      "svd_field": "TIMCK",
+      "detail": "位域名不同：H=TIMCLK SVD=TIMCK（bit 8）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM7",
+      "register": "TIM_CNT",
+      "svd_register": "CNT",
+      "detail": "寄存器名不同：H=TIM_CNT SVD=CNT",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM7",
+      "register": "TIM_RLD",
+      "svd_register": "RLD",
+      "detail": "寄存器名不同：H=TIM_RLD SVD=RLD",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM7",
+      "register": "TIM_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=TIM_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM7",
+      "register": "TIM_PDTA_RCAP",
+      "svd_register": "PDTA_RCAP",
+      "detail": "寄存器名不同：H=TIM_PDTA_RCAP SVD=PDTA_RCAP",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM7",
+      "register": "TIM_PDTB_FCAP",
+      "svd_register": "PDTB_FCAP",
+      "detail": "寄存器名不同：H=TIM_PDTB_FCAP SVD=PDTB_FCAP",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "TIM7",
+      "register": "TIM_IDE",
+      "svd_register": "IDE",
+      "detail": "寄存器名不同：H=TIM_IDE SVD=IDE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM7",
+      "register": "TIM_IDE",
+      "field": "EXIRE",
+      "svd_field": "EXRIE",
+      "detail": "位域名不同：H=EXIRE SVD=EXRIE（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "TIM7",
+      "register": "TIM_IDE",
+      "field": "EXIFE",
+      "svd_field": "EXFIE",
+      "detail": "位域名不同：H=EXIFE SVD=EXFIE（bit 3）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "PWM0",
+      "register": "PWM_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=PWM_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "PWM0",
+      "register": "PWM_CON",
+      "field": "PWMCLK",
+      "svd_field": "PWMCK",
+      "detail": "位域名不同：H=PWMCLK SVD=PWMCK（bit 0）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "PWM0",
+      "register": "PWM_CHN",
+      "svd_register": "CHN",
+      "detail": "寄存器名不同：H=PWM_CHN SVD=CHN",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "PWM0",
+      "register": "PWM_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=PWM_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "PWM0",
+      "register": "PWM_STS",
+      "field": "FLTSTA",
+      "svd_field": "FLTTA",
+      "detail": "位域名不同：H=FLTSTA SVD=FLTTA（bit 1）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "PWM0",
+      "register": "PWM_INV",
+      "svd_register": "INV",
+      "detail": "寄存器名不同：H=PWM_INV SVD=INV",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "PWM0",
+      "register": "PWM_DFR",
+      "svd_register": "DFR",
+      "detail": "寄存器名不同：H=PWM_DFR SVD=DFR",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "PWM0",
+      "register": "PWM_FLT",
+      "svd_register": "FLT",
+      "detail": "寄存器名不同：H=PWM_FLT SVD=FLT",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "PWM0",
+      "register": "PWM_FLT",
+      "field": "FLTTV",
+      "svd_field": "FLTLV",
+      "detail": "位域名不同：H=FLTTV SVD=FLTLV（bit 4）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "PWM0",
+      "register": "PWM_CYCLE",
+      "svd_register": "CYCLE",
+      "detail": "寄存器名不同：H=PWM_CYCLE SVD=CYCLE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_missing_in_svd",
+      "peripheral": "PWM0",
+      "register": "PWM_DT",
+      "detail": "SVD 缺少寄存器 PWM0/PWM_DT（H 偏移 0x30）",
+      "header_line": 261,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "DT0",
+      "detail": "H 文件未见寄存器 PWM0/DT0（仅 SVD 存在，offset=0x30）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "DT1",
+      "detail": "H 文件未见寄存器 PWM0/DT1（仅 SVD 存在，offset=0x34）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "DT2",
+      "detail": "H 文件未见寄存器 PWM0/DT2（仅 SVD 存在，offset=0x38）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "DT3",
+      "detail": "H 文件未见寄存器 PWM0/DT3（仅 SVD 存在，offset=0x3C）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "DT4",
+      "detail": "H 文件未见寄存器 PWM0/DT4（仅 SVD 存在，offset=0x40）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "DT5",
+      "detail": "H 文件未见寄存器 PWM0/DT5（仅 SVD 存在，offset=0x44）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "DT6",
+      "detail": "H 文件未见寄存器 PWM0/DT6（仅 SVD 存在，offset=0x48）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "DT7",
+      "detail": "H 文件未见寄存器 PWM0/DT7（仅 SVD 存在，offset=0x4C）"
+    },
+    {
+      "kind": "peripheral_name_diff",
+      "peripheral": "PWM1",
+      "svd_peripheral": "PWM0",
+      "detail": "外设名不同：H=PWM1 SVD=PWM0"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "PWM1",
+      "register": "PWM_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=PWM_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "PWM1",
+      "register": "PWM_CON",
+      "field": "PWMCLK",
+      "svd_field": "PWMCK",
+      "detail": "位域名不同：H=PWMCLK SVD=PWMCK（bit 0）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "CON",
+      "field": "PWMMD1",
+      "detail": "H 文件未见位域 PWM0/CON/PWMMD1（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "PWM1",
+      "register": "PWM_CHN",
+      "svd_register": "CHN",
+      "detail": "寄存器名不同：H=PWM_CHN SVD=CHN",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "PWM1",
+      "register": "PWM_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=PWM_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "STS",
+      "field": "FLTTA",
+      "detail": "H 文件未见位域 PWM0/STS/FLTTA（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "PWM1",
+      "register": "PWM_INV",
+      "svd_register": "INV",
+      "detail": "寄存器名不同：H=PWM_INV SVD=INV",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "PWM1",
+      "register": "PWM_DFR",
+      "svd_register": "DFR",
+      "detail": "寄存器名不同：H=PWM_DFR SVD=DFR",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "PWM1",
+      "register": "PWM_FLT",
+      "svd_register": "FLT",
+      "detail": "寄存器名不同：H=PWM_FLT SVD=FLT",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "PWM1",
+      "register": "PWM_CYCLE",
+      "svd_register": "CYCLE",
+      "detail": "寄存器名不同：H=PWM_CYCLE SVD=CYCLE",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_missing_in_svd",
+      "peripheral": "PWM1",
+      "register": "PWM_DT",
+      "detail": "SVD 缺少寄存器 PWM1/PWM_DT（H 偏移 0x30）",
+      "header_line": 261,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "DT0",
+      "detail": "H 文件未见寄存器 PWM0/DT0（仅 SVD 存在，offset=0x30）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "DT1",
+      "detail": "H 文件未见寄存器 PWM0/DT1（仅 SVD 存在，offset=0x34）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "DT2",
+      "detail": "H 文件未见寄存器 PWM0/DT2（仅 SVD 存在，offset=0x38）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "DT3",
+      "detail": "H 文件未见寄存器 PWM0/DT3（仅 SVD 存在，offset=0x3C）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "DT4",
+      "detail": "H 文件未见寄存器 PWM0/DT4（仅 SVD 存在，offset=0x40）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "DT5",
+      "detail": "H 文件未见寄存器 PWM0/DT5（仅 SVD 存在，offset=0x44）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "DT6",
+      "detail": "H 文件未见寄存器 PWM0/DT6（仅 SVD 存在，offset=0x48）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "PWM0",
+      "register": "DT7",
+      "detail": "H 文件未见寄存器 PWM0/DT7（仅 SVD 存在，offset=0x4C）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "BTM",
+      "register": "BTM_CON",
+      "svd_register": "BTMCON",
+      "detail": "寄存器名不同：H=BTM_CON SVD=BTMCON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "BTM",
+      "register": "BTM_CON",
+      "field": "BTMEN",
+      "svd_field": "ENBTM",
+      "detail": "位域名不同：H=BTMEN SVD=ENBTM（bit 7）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "BTM",
+      "register": "BTM_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=BTM_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "ADC",
+      "register": "ADC_CON",
+      "svd_register": "CON",
+      "detail": "寄存器名不同：H=ADC_CON SVD=CON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "ADC",
+      "register": "ADC_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=ADC_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "ADC",
+      "register": "ADC_STS",
+      "field": "EOC",
+      "svd_field": "ADCIF",
+      "detail": "位域名不同：H=EOC SVD=ADCIF（bit 0）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "register_missing_in_svd",
+      "peripheral": "ADC",
+      "register": "ADC_VALUE",
+      "detail": "SVD 缺少寄存器 ADC/ADC_VALUE（H 偏移 0x8）",
+      "header_line": 280,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "ADC",
+      "register": "ADC_CFG",
+      "svd_register": "CFG",
+      "detail": "寄存器名不同：H=ADC_CFG SVD=CFG",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "ADC",
+      "register": "ADCV",
+      "detail": "H 文件未见寄存器 ADC/ADCV（仅 SVD 存在，offset=0x8）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "CMP",
+      "register": "CMP_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=CMP_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "CMP",
+      "register": "CMP_CFG",
+      "svd_register": "CFG",
+      "detail": "寄存器名不同：H=CMP_CFG SVD=CFG",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "peripheral_missing_in_svd",
+      "peripheral": "FPGA",
+      "detail": "SVD 缺少外设 FPGA（H 基地址 0x40022140）",
+      "header_line": 638
+    },
+    {
+      "kind": "peripheral_missing_in_svd",
+      "peripheral": "TK",
+      "detail": "SVD 缺少外设 TK（H 基地址 0x40022200）",
+      "header_line": 639
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "LCD_LED",
+      "register": "DDR_CON",
+      "field": "VOIRSF",
+      "svd_field": "VOIRSIF",
+      "detail": "位域名不同：H=VOIRSF SVD=VOIRSIF（bit 3）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "LCD_LED",
+      "register": "DDR_CON",
+      "field": "TYPE",
+      "svd_field": "TPYE",
+      "detail": "位域名不同：H=TYPE SVD=TPYE（bit 4）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "LCD_LED",
+      "register": "DDR_CON",
+      "field": "TRICOM",
+      "detail": "SVD 缺少位域 LCD_LED/DDR_CON/TRICOM（H bit[14:14]）",
+      "header_line": 1796,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_missing_in_svd",
+      "peripheral": "LCD_LED",
+      "register": "DDR_CON",
+      "field": "TRIMODE",
+      "detail": "SVD 缺少位域 LCD_LED/DDR_CON/TRIMODE（H bit[15:15]）",
+      "header_line": 1800,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "LCD_LED",
+      "register": "DDR_CFG",
+      "field": "DMOD",
+      "svd_field": "VOIRS",
+      "detail": "位域名不同：H=DMOD SVD=VOIRS（bit 0）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "peripheral_missing_in_svd",
+      "peripheral": "EXTI",
+      "detail": "SVD 缺少外设 EXTI（H 基地址 0x40011300）",
+      "header_line": 641
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "WDT",
+      "register": "WDT_CON",
+      "svd_register": "WDTCON",
+      "detail": "寄存器名不同：H=WDT_CON SVD=WDTCON",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "WDT",
+      "register": "WDT_CFG",
+      "svd_register": "WDTCFG",
+      "detail": "寄存器名不同：H=WDT_CFG SVD=WDTCFG",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "IAP",
+      "register": "IAPKEY",
+      "svd_register": "IAP_KEY",
+      "detail": "寄存器名不同：H=IAPKEY SVD=IAP_KEY",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "CRC",
+      "register": "CRC_DR",
+      "svd_register": "DR",
+      "detail": "寄存器名不同：H=CRC_DR SVD=DR",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_missing_in_svd",
+      "peripheral": "CRC",
+      "register": "CRC_CFG",
+      "detail": "SVD 缺少寄存器 CRC/CRC_CFG（H 偏移 0x4）",
+      "header_line": 419,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "CRC",
+      "register": "CRC_INT",
+      "svd_register": "INT",
+      "detail": "寄存器名不同：H=CRC_INT SVD=INT",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "CRC",
+      "register": "CRC_POL",
+      "svd_register": "POL",
+      "detail": "寄存器名不同：H=CRC_POL SVD=POL",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "CRC",
+      "register": "CON",
+      "detail": "H 文件未见寄存器 CRC/CON（仅 SVD 存在，offset=0x4）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA0",
+      "register": "DMA_SADR",
+      "svd_register": "SADR",
+      "detail": "寄存器名不同：H=DMA_SADR SVD=SADR",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA0",
+      "register": "DMA_DADR",
+      "svd_register": "DADR",
+      "detail": "寄存器名不同：H=DMA_DADR SVD=DADR",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA0",
+      "register": "DMA_CFG",
+      "svd_register": "CFG",
+      "detail": "寄存器名不同：H=DMA_CFG SVD=CFG",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "DMA0",
+      "register": "DMA_CFG",
+      "field": "TXWIDTHE",
+      "svd_field": "TXWIDTH",
+      "detail": "位域名不同：H=TXWIDTHE SVD=TXWIDTH（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "DMA0",
+      "register": "DMA_CFG",
+      "field": "BURSIZE",
+      "svd_field": "BUSIZE",
+      "detail": "位域名不同：H=BURSIZE SVD=BUSIZE（bit 12）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "DMA0",
+      "register": "CFG",
+      "field": "HTIE",
+      "detail": "H 文件未见位域 DMA0/CFG/HTIE（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA0",
+      "register": "DMA_CNT",
+      "svd_register": "CNT",
+      "detail": "寄存器名不同：H=DMA_CNT SVD=CNT",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA0",
+      "register": "DMA_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=DMA_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA1",
+      "register": "DMA_SADR",
+      "svd_register": "SADR",
+      "detail": "寄存器名不同：H=DMA_SADR SVD=SADR",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA1",
+      "register": "DMA_DADR",
+      "svd_register": "DADR",
+      "detail": "寄存器名不同：H=DMA_DADR SVD=DADR",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA1",
+      "register": "DMA_CFG",
+      "svd_register": "CFG",
+      "detail": "寄存器名不同：H=DMA_CFG SVD=CFG",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "DMA1",
+      "register": "DMA_CFG",
+      "field": "TXWIDTHE",
+      "svd_field": "TXWIDTH",
+      "detail": "位域名不同：H=TXWIDTHE SVD=TXWIDTH（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "DMA1",
+      "register": "DMA_CFG",
+      "field": "BURSIZE",
+      "svd_field": "BUSIZE",
+      "detail": "位域名不同：H=BURSIZE SVD=BUSIZE（bit 12）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "DMA1",
+      "register": "CFG",
+      "field": "HTIE",
+      "detail": "H 文件未见位域 DMA1/CFG/HTIE（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA1",
+      "register": "DMA_CNT",
+      "svd_register": "CNT",
+      "detail": "寄存器名不同：H=DMA_CNT SVD=CNT",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA1",
+      "register": "DMA_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=DMA_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA2",
+      "register": "DMA_SADR",
+      "svd_register": "SADR",
+      "detail": "寄存器名不同：H=DMA_SADR SVD=SADR",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA2",
+      "register": "DMA_DADR",
+      "svd_register": "DADR",
+      "detail": "寄存器名不同：H=DMA_DADR SVD=DADR",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA2",
+      "register": "DMA_CFG",
+      "svd_register": "CFG",
+      "detail": "寄存器名不同：H=DMA_CFG SVD=CFG",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "DMA2",
+      "register": "DMA_CFG",
+      "field": "TXWIDTHE",
+      "svd_field": "TXWIDTH",
+      "detail": "位域名不同：H=TXWIDTHE SVD=TXWIDTH（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "DMA2",
+      "register": "DMA_CFG",
+      "field": "BURSIZE",
+      "svd_field": "BUSIZE",
+      "detail": "位域名不同：H=BURSIZE SVD=BUSIZE（bit 12）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "DMA2",
+      "register": "CFG",
+      "field": "HTIE",
+      "detail": "H 文件未见位域 DMA2/CFG/HTIE（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA2",
+      "register": "DMA_CNT",
+      "svd_register": "CNT",
+      "detail": "寄存器名不同：H=DMA_CNT SVD=CNT",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA2",
+      "register": "DMA_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=DMA_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA3",
+      "register": "DMA_SADR",
+      "svd_register": "SADR",
+      "detail": "寄存器名不同：H=DMA_SADR SVD=SADR",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA3",
+      "register": "DMA_DADR",
+      "svd_register": "DADR",
+      "detail": "寄存器名不同：H=DMA_DADR SVD=DADR",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA3",
+      "register": "DMA_CFG",
+      "svd_register": "CFG",
+      "detail": "寄存器名不同：H=DMA_CFG SVD=CFG",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "DMA3",
+      "register": "DMA_CFG",
+      "field": "TXWIDTHE",
+      "svd_field": "TXWIDTH",
+      "detail": "位域名不同：H=TXWIDTHE SVD=TXWIDTH（bit 2）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_name_diff",
+      "peripheral": "DMA3",
+      "register": "DMA_CFG",
+      "field": "BURSIZE",
+      "svd_field": "BUSIZE",
+      "detail": "位域名不同：H=BURSIZE SVD=BUSIZE（bit 12）",
+      "match_reason": "bit_position"
+    },
+    {
+      "kind": "field_missing_in_header",
+      "peripheral": "DMA3",
+      "register": "CFG",
+      "field": "HTIE",
+      "detail": "H 文件未见位域 DMA3/CFG/HTIE（仅 SVD 存在）"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA3",
+      "register": "DMA_CNT",
+      "svd_register": "CNT",
+      "detail": "寄存器名不同：H=DMA_CNT SVD=CNT",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_name_diff",
+      "peripheral": "DMA3",
+      "register": "DMA_STS",
+      "svd_register": "STS",
+      "detail": "寄存器名不同：H=DMA_STS SVD=STS",
+      "match_reason": "peripheral_prefix"
+    },
+    {
+      "kind": "register_missing_in_svd",
+      "peripheral": "GPIOA",
+      "register": "PIN",
+      "detail": "SVD 缺少寄存器 GPIOA/PIN（H 偏移 0x0）",
+      "header_line": 336,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_missing_in_svd",
+      "peripheral": "GPIOA",
+      "register": "PXCON",
+      "detail": "SVD 缺少寄存器 GPIOA/PXCON（H 偏移 0x20）",
+      "header_line": 338,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_missing_in_svd",
+      "peripheral": "GPIOA",
+      "register": "PXPH",
+      "detail": "SVD 缺少寄存器 GPIOA/PXPH（H 偏移 0x40）",
+      "header_line": 340,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_missing_in_svd",
+      "peripheral": "GPIOA",
+      "register": "PXLEV",
+      "detail": "SVD 缺少寄存器 GPIOA/PXLEV（H 偏移 0x60）",
+      "header_line": 342,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "GPIOA",
+      "register": "PA",
+      "detail": "H 文件未见寄存器 GPIOA/PA（仅 SVD 存在，offset=0x0）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "GPIOA",
+      "register": "PACON",
+      "detail": "H 文件未见寄存器 GPIOA/PACON（仅 SVD 存在，offset=0x20）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "GPIOA",
+      "register": "PAPH",
+      "detail": "H 文件未见寄存器 GPIOA/PAPH（仅 SVD 存在，offset=0x40）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "GPIOA",
+      "register": "PALEV",
+      "detail": "H 文件未见寄存器 GPIOA/PALEV（仅 SVD 存在，offset=0x60）"
+    },
+    {
+      "kind": "register_missing_in_svd",
+      "peripheral": "GPIOB",
+      "register": "PIN",
+      "detail": "SVD 缺少寄存器 GPIOB/PIN（H 偏移 0x0）",
+      "header_line": 336,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_missing_in_svd",
+      "peripheral": "GPIOB",
+      "register": "PXCON",
+      "detail": "SVD 缺少寄存器 GPIOB/PXCON（H 偏移 0x20）",
+      "header_line": 338,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_missing_in_svd",
+      "peripheral": "GPIOB",
+      "register": "PXPH",
+      "detail": "SVD 缺少寄存器 GPIOB/PXPH（H 偏移 0x40）",
+      "header_line": 340,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_missing_in_svd",
+      "peripheral": "GPIOB",
+      "register": "PXLEV",
+      "detail": "SVD 缺少寄存器 GPIOB/PXLEV（H 偏移 0x60）",
+      "header_line": 342,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "GPIOB",
+      "register": "PB",
+      "detail": "H 文件未见寄存器 GPIOB/PB（仅 SVD 存在，offset=0x0）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "GPIOB",
+      "register": "PBCON",
+      "detail": "H 文件未见寄存器 GPIOB/PBCON（仅 SVD 存在，offset=0x20）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "GPIOB",
+      "register": "PBPH",
+      "detail": "H 文件未见寄存器 GPIOB/PBPH（仅 SVD 存在，offset=0x40）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "GPIOB",
+      "register": "PBLEV",
+      "detail": "H 文件未见寄存器 GPIOB/PBLEV（仅 SVD 存在，offset=0x60）"
+    },
+    {
+      "kind": "register_missing_in_svd",
+      "peripheral": "GPIOC",
+      "register": "PIN",
+      "detail": "SVD 缺少寄存器 GPIOC/PIN（H 偏移 0x0）",
+      "header_line": 336,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_missing_in_svd",
+      "peripheral": "GPIOC",
+      "register": "PXCON",
+      "detail": "SVD 缺少寄存器 GPIOC/PXCON（H 偏移 0x20）",
+      "header_line": 338,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_missing_in_svd",
+      "peripheral": "GPIOC",
+      "register": "PXPH",
+      "detail": "SVD 缺少寄存器 GPIOC/PXPH（H 偏移 0x40）",
+      "header_line": 340,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_missing_in_svd",
+      "peripheral": "GPIOC",
+      "register": "PXLEV",
+      "detail": "SVD 缺少寄存器 GPIOC/PXLEV（H 偏移 0x60）",
+      "header_line": 342,
+      "match_reason": "unmatched"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "GPIOC",
+      "register": "PC",
+      "detail": "H 文件未见寄存器 GPIOC/PC（仅 SVD 存在，offset=0x0）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "GPIOC",
+      "register": "PCCON",
+      "detail": "H 文件未见寄存器 GPIOC/PCCON（仅 SVD 存在，offset=0x20）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "GPIOC",
+      "register": "PCPH",
+      "detail": "H 文件未见寄存器 GPIOC/PCPH（仅 SVD 存在，offset=0x40）"
+    },
+    {
+      "kind": "register_missing_in_header",
+      "peripheral": "GPIOC",
+      "register": "PCLEV",
+      "detail": "H 文件未见寄存器 GPIOC/PCLEV（仅 SVD 存在，offset=0x60）"
+    },
+    {
+      "kind": "peripheral_missing_in_svd",
+      "peripheral": "GPIOA_BIT",
+      "detail": "SVD 缺少外设 GPIOA_BIT（H 基地址 0x40011000）",
+      "header_line": 652
+    },
+    {
+      "kind": "peripheral_missing_in_svd",
+      "peripheral": "GPIOB_BIT",
+      "detail": "SVD 缺少外设 GPIOB_BIT（H 基地址 0x40011000）",
+      "header_line": 653
+    },
+    {
+      "kind": "peripheral_missing_in_svd",
+      "peripheral": "GPIOC_BIT",
+      "detail": "SVD 缺少外设 GPIOC_BIT（H 基地址 0x40011000）",
+      "header_line": 654
+    },
+    {
+      "kind": "peripheral_missing_in_svd",
+      "peripheral": "OPT",
+      "detail": "SVD 缺少外设 OPT（H 基地址 0x400003F8）",
+      "header_line": 656
+    },
+    {
+      "kind": "peripheral_missing_in_header",
+      "peripheral": "INT",
+      "detail": "H 文件未见外设 INT（仅 SVD 存在）"
+    },
+    {
+      "kind": "peripheral_missing_in_header",
+      "peripheral": "LEDPWM",
+      "detail": "H 文件未见外设 LEDPWM（仅 SVD 存在）"
+    },
+    {
+      "kind": "base_address_mismatch",
+      "peripheral": "RCCAPB1",
+      "detail": "基地址不符：H=0x40021000 SVD=0x40020000"
+    },
+    {
+      "kind": "base_address_mismatch",
+      "peripheral": "RCCAPB2",
+      "detail": "基地址不符：H=0x40022000 SVD=0x40020000"
+    },
+    {
+      "kind": "base_address_mismatch",
+      "peripheral": "PWM1",
+      "detail": "基地址不符：H=0x40022300 SVD=0x40020200"
+    }
+  ],
+  "diff_counts": {
+    "peripheral_missing_in_svd": 8,
+    "peripheral_name_diff": 5,
+    "field_name_diff": 69,
+    "register_missing_in_header": 37,
+    "field_missing_in_svd": 25,
+    "register_name_diff": 145,
+    "field_missing_in_header": 48,
+    "register_missing_in_svd": 16,
+    "peripheral_missing_in_header": 2,
+    "base_address_mismatch": 3
+  }
+}

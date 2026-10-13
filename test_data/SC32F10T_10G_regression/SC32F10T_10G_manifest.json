@@ -1,0 +1,175 @@
+{
+  "schema_version": 2,
+  "kind": "trm_review_manifest",
+  "generated_at": "2026-10-13T03:31:57+00:00",
+  "sources": [
+    {
+      "path": "E:\\Desktop_Projects\\小程序\\CDB整合\\外发资料\\外发资料\\31.ARM+C51合并上官网\\SVD文件\\SC32F10T_10G_Technical_Reference_Manual v0.2cn.docx",
+      "name": "SC32F10T_10G_Technical_Reference_Manual v0.2cn.docx",
+      "sha256": "2e25e99d094f15c65cb3bc7fd96d947fcf226182cd8e33a8462057a1db4c7cd6",
+      "bytes": 3147342
+    }
+  ],
+  "artifacts": {
+    "sidecar": {
+      "path": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G.corrections.json",
+      "name": "SC32F10T_10G.corrections.json",
+      "sha256": "8e724f3d24a8c1c030cf374dad56a0a73ade596102cb6d527fb52cad2275574e",
+      "bytes": 8994149
+    },
+    "event_log": {
+      "path": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G.corrections.json.events.jsonl",
+      "name": "SC32F10T_10G.corrections.json.events.jsonl",
+      "sha256": "ab710a69d19ddec4da20c63266a971e987ad587d063933ff0d4247111f413011",
+      "bytes": 1968
+    },
+    "extracted_snapshot": {
+      "path": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G.corrections.snapshot-ca5f486c2c601d6d.json",
+      "name": "SC32F10T_10G.corrections.snapshot-ca5f486c2c601d6d.json",
+      "sha256": "38c6fabaaf56a0a2bb089d8eb0aec80c3113456b5d600352fb8352a535482a1c",
+      "bytes": 2407630
+    },
+    "resolved_model": {
+      "path": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G.corrections.resolved-model.json",
+      "name": "SC32F10T_10G.corrections.resolved-model.json",
+      "sha256": "e83c3c5b640fcf23560c56c4feb12438970ab6fa287eff0a7597380aaa339604",
+      "bytes": 7196209
+    },
+    "final_svd": {
+      "path": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G_final_reviewed.svd",
+      "name": "SC32F10T_10G_final_reviewed.svd",
+      "sha256": "d0db9dd572c671c98fef24fc878354ca8d4e6ecf33ecf62d77197992de504d14",
+      "bytes": 337504
+    },
+    "correction_report_md": {
+      "path": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G_correction_report.md",
+      "name": "SC32F10T_10G_correction_report.md",
+      "sha256": "bbd54b695c2308e68dfabf54dbb675542c29997d36e3147a81570336e550e704",
+      "bytes": 1622174
+    },
+    "correction_report_json": {
+      "path": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G_correction_report.json",
+      "name": "SC32F10T_10G_correction_report.json",
+      "sha256": "6f369779ae0a2b296345c4b050165a1433d2dfdc43f10bb27a316fd8e17a8a25",
+      "bytes": 8994190
+    },
+    "regression_report": {
+      "path": "E:\\Desktop_Projects\\小程序\\SVDEditor-github\\test_data\\SC32F10T_10G_regression\\SC32F10T_10G_regression_report.json",
+      "name": "SC32F10T_10G_regression_report.json",
+      "sha256": "abe0f3ae4e51a38dbe3685cd58f531ce212ae890cfb95c9867fcfad1594036ef",
+      "bytes": 7961
+    }
+  },
+  "review": {
+    "decision_counts": {
+      "pending": 5106,
+      "confirmed": 0,
+      "rejected": 0,
+      "ignored": 0
+    },
+    "unresolved_risks": [
+      "field_missing_in_svd: ADC/CFG/AINx（x (SVD 缺少位域 AINx（x（源中存在）)",
+      "reset: BTM/BTMCON (复位值不符：SVD=0x600 源=0x0)",
+      "base_address: CMP (基地址不符：SVD=0x40022130 源=0x40022110)",
+      "access: CMP/STS/CMPSTA (访问权限不符：SVD=read-only 源=RW)",
+      "reset: CRC/DR (复位值不符：SVD=0xFFFFFFFF 源=0x0)",
+      "reset: CRC/INT (复位值不符：SVD=0xFFFFFFFF 源=0x0)",
+      "reset: CRC/POL (复位值不符：SVD=0x4C11DB7 源=0x0)",
+      "access: DMA0/STS/STATUS (访问权限不符：SVD=read-only 源=RW)",
+      "access: DMA0/STS/GIF (访问权限不符：SVD=read-only 源=RW)",
+      "access: DMA1/STS/STATUS (访问权限不符：SVD=read-only 源=RW)",
+      "access: DMA1/STS/GIF (访问权限不符：SVD=read-only 源=RW)",
+      "access: DMA2/STS/STATUS (访问权限不符：SVD=read-only 源=RW)",
+      "access: DMA2/STS/GIF (访问权限不符：SVD=read-only 源=RW)",
+      "access: DMA3/STS/STATUS (访问权限不符：SVD=read-only 源=RW)",
+      "access: DMA3/STS/GIF (访问权限不符：SVD=read-only 源=RW)",
+      "missing_in_svd: INTF (SVD 中缺少外设 INTF（源中存在）)",
+      "missing_in_svd: LCD (SVD 中缺少外设 LCD（源中存在）)",
+      "base_address: LEDPWM (基地址不符：SVD=0x40022300 源=0x40022330)",
+      "offset: LEDPWM/DT0 (寄存器偏移不符：SVD=0x30 源=0x0)",
+      "offset: LEDPWM/DT1 (寄存器偏移不符：SVD=0x34 源=0x4)",
+      "offset: LEDPWM/DT2 (寄存器偏移不符：SVD=0x38 源=0x8)",
+      "offset: LEDPWM/DT3 (寄存器偏移不符：SVD=0x3C 源=0xC)",
+      "offset: LEDPWM/DT4 (寄存器偏移不符：SVD=0x40 源=0x10)",
+      "offset: LEDPWM/DT5 (寄存器偏移不符：SVD=0x44 源=0x14)",
+      "offset: LEDPWM/DT6 (寄存器偏移不符：SVD=0x48 源=0x18)",
+      "offset: LEDPWM/DT7 (寄存器偏移不符：SVD=0x4C 源=0x1C)",
+      "offset: LEDPWM/DT8 (寄存器偏移不符：SVD=0x50 源=0x20)",
+      "offset: LEDPWM/DT9 (寄存器偏移不符：SVD=0x54 源=0x24)",
+      "offset: LEDPWM/DT10 (寄存器偏移不符：SVD=0x58 源=0x28)",
+      "offset: LEDPWM/DT11 (寄存器偏移不符：SVD=0x5C 源=0x2C)",
+      "offset: LEDPWM/DT12 (寄存器偏移不符：SVD=0x60 源=0x30)",
+      "offset: LEDPWM/DT13 (寄存器偏移不符：SVD=0x64 源=0x34)",
+      "offset: LEDPWM/DT14 (寄存器偏移不符：SVD=0x68 源=0x38)",
+      "offset: LEDPWM/DT15 (寄存器偏移不符：SVD=0x6C 源=0x3C)",
+      "offset: LEDPWM/DT16 (寄存器偏移不符：SVD=0x70 源=0x40)",
+      "offset: LEDPWM/DT17 (寄存器偏移不符：SVD=0x74 源=0x44)",
+      "offset: LEDPWM/DT18 (寄存器偏移不符：SVD=0x78 源=0x48)",
+      "offset: LEDPWM/DT19 (寄存器偏移不符：SVD=0x7C 源=0x4C)",
+      "offset: LEDPWM/DT20 (寄存器偏移不符：SVD=0x80 源=0x50)",
+      "offset: LEDPWM/DT21 (寄存器偏移不符：SVD=0x84 源=0x54)",
+      "offset: LEDPWM/DT23 (寄存器偏移不符：SVD=0x8C 源=0x58)",
+      "offset: LEDPWM/DT24 (寄存器偏移不符：SVD=0x90 源=0x5C)",
+      "offset: LEDPWM/DT26 (寄存器偏移不符：SVD=0x98 源=0x60)",
+      "offset: LEDPWM/DT27 (寄存器偏移不符：SVD=0x9C 源=0x64)",
+      "offset: LEDPWM/DT29 (寄存器偏移不符：SVD=0x104 源=0x68)",
+      "offset: LEDPWM/DT30 (寄存器偏移不符：SVD=0x108 源=0x6C)",
+      "offset: LEDPWM/DT31 (寄存器偏移不符：SVD=0x10C 源=0x70)",
+      "reg_missing_in_svd: LEDPWM/LEDPWM_DT29 (SVD 缺少寄存器 LEDPWM_DT29（源中存在）)",
+      "reg_missing_in_svd: LEDPWM/LEDPWM_DT30 (SVD 缺少寄存器 LEDPWM_DT30（源中存在）)",
+      "reg_missing_in_svd: LEDPWM/LEDPWM_DT31 (SVD 缺少寄存器 LEDPWM_DT31（源中存在）)",
+      "missing_in_svd: PA (SVD 中缺少外设 PA（源中存在）)",
+      "missing_in_svd: PB (SVD 中缺少外设 PB（源中存在）)",
+      "missing_in_svd: PC (SVD 中缺少外设 PC（源中存在）)",
+      "width: PWM0/CON/PWMCK (位宽不符：SVD=3 源=2)",
+      "field_missing_in_svd: PWM0/CHN/ENPWMx(x (SVD 缺少位域 ENPWMx(x（源中存在）)",
+      "missing_in_svd: PWM0_DTx (SVD 中缺少外设 PWM0_DTx（源中存在）)",
+      "missing_in_svd: RCC (SVD 中缺少外设 RCC（源中存在）)",
+      "missing_in_svd: SEGR (SVD 中缺少外设 SEGR（源中存在）)",
+      "reg_missing_in_svd: TIM0/TIM0_PDTB (SVD 缺少寄存器 TIM0_PDTB（源中存在）)",
+      "reg_missing_in_svd: TIM1/TIM1_PDTA (SVD 缺少寄存器 TIM1_PDTA（源中存在）)",
+      "reg_missing_in_svd: TIM1/TIM1_FCAP (SVD 缺少寄存器 TIM1_FCAP（源中存在）)",
+      "reg_missing_in_svd: TIM2/TIM2_PDTA (SVD 缺少寄存器 TIM2_PDTA（源中存在）)",
+      "reg_missing_in_svd: TIM2/TIM2_FCAP (SVD 缺少寄存器 TIM2_FCAP（源中存在）)",
+      "reg_missing_in_svd: TIM3/TIM3_PDTA (SVD 缺少寄存器 TIM3_PDTA（源中存在）)",
+      "reg_missing_in_svd: TIM3/TIM3_FCAP (SVD 缺少寄存器 TIM3_FCAP（源中存在）)",
+      "reg_missing_in_svd: TIM4/TIM4_PDTA (SVD 缺少寄存器 TIM4_PDTA（源中存在）)",
+      "reg_missing_in_svd: TIM4/TIM4_FCAP (SVD 缺少寄存器 TIM4_FCAP（源中存在）)",
+      "reg_missing_in_svd: TIM5/TIM5_PDTA (SVD 缺少寄存器 TIM5_PDTA（源中存在）)",
+      "reg_missing_in_svd: TIM5/TIM5_FCAP (SVD 缺少寄存器 TIM5_FCAP（源中存在）)",
+      "reg_missing_in_svd: TIM6/TIM6_PDTA (SVD 缺少寄存器 TIM6_PDTA（源中存在）)",
+      "reg_missing_in_svd: TIM6/TIM6_FCAP (SVD 缺少寄存器 TIM6_FCAP（源中存在）)",
+      "reg_missing_in_svd: TIM7/TIM7_PDTA (SVD 缺少寄存器 TIM7_PDTA（源中存在）)",
+      "reg_missing_in_svd: TIM7/TIM7_FCAP (SVD 缺少寄存器 TIM7_FCAP（源中存在）)",
+      "field_missing_in_svd: UART0/CON/SM (SVD 缺少位域 SM（源中存在）)",
+      "field_missing_in_svd: UART1/CON/SM (SVD 缺少位域 SM（源中存在）)",
+      "field_missing_in_svd: UART2/CON/SM (SVD 缺少位域 SM（源中存在）)",
+      "field_missing_in_svd: UART3/CON/SM (SVD 缺少位域 SM（源中存在）)",
+      "width: WDT/WDTCFG/WDTCKS (位宽不符：SVD=3 源=4)"
+    ]
+  },
+  "tool": {
+    "name": "SVDEditor TRM Review Workflow",
+    "version": "2.0"
+  },
+  "extra": {
+    "source_stats": [
+      38,
+      249,
+      678
+    ],
+    "verify_kind_counts": {
+      "field_missing_in_svd": 6,
+      "field_missing_in_source": 48,
+      "reset": 4,
+      "base_address": 2,
+      "access": 9,
+      "missing_in_source": 9,
+      "missing_in_svd": 8,
+      "offset": 29,
+      "reg_missing_in_svd": 18,
+      "reg_missing_in_source": 29,
+      "width": 2
+    }
+  }
+}

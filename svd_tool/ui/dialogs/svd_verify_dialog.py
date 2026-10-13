@@ -10,6 +10,7 @@ SVD 核对面板 — 当前 SVD vs 数据手册解析结果的结构化差异复
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Optional
 
 from PyQt6.QtWidgets import (
@@ -25,6 +26,7 @@ from ...i18n.i18n import t
 from ...config.styles import get_style_scheme
 from ..managers.datasource_manager import DatasourceManager
 from ...core.datasource.svd_verifier import VerifyItem, VerifyKind, VerifySeverity
+from ..components.correction_review_widget import locate_source_reference
 
 _CONF_COLORS = {
     "high": QColor("#2E7D32"),
@@ -152,16 +154,29 @@ class SVDVerifyDialog(QDialog):
                    t("datasource.col_type", default="类型"),
                    t("datasource.col_detail", default="详情"),
                    t("datasource.col_severity", default="严重度"),
-                   t("datasource.col_conf", default="置信度"),
+                   t("datasource.col_conf", default="机器置信度"),
+                   t("datasource.col_source_authority", default="来源权威度"),
+                   t("datasource.col_parse_completeness", default="解析完整度"),
+                   t("datasource.col_manual_status", default="人工状态"),
+                   t("datasource.col_multisource", default="多源一致度"),
+                   t("datasource.col_match_reason", default="匹配理由"),
                    t("datasource.col_svd_val", default="SVD值"),
-                   t("datasource.col_src_val", default="源值")]
+                   t("datasource.col_src_val", default="源值"),
+                   t("datasource.col_suggestion", default="建议值"),
+                   t("datasource.col_manual_value", default="人工值"),
+                   t("datasource.col_source", default="来源定位")]
         self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(headers)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
+            | QAbstractItemView.EditTrigger.SelectedClicked)
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(16, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(17, QHeaderView.ResizeMode.Stretch)
         self.table.cellDoubleClicked.connect(self._on_double_click)
         right_layout.addWidget(self.table, 1)
         splitter.addWidget(right)
@@ -174,6 +189,10 @@ class SVDVerifyDialog(QDialog):
         btn_row = QHBoxLayout()
         self.accept_btn = QPushButton(t("datasource.accept_selected", default="接受选中"))
         self.accept_btn.clicked.connect(self._accept_selected)
+        self.reject_btn = QPushButton(t("datasource.reject_selected", default="拒绝选中"))
+        self.reject_btn.clicked.connect(self._reject_selected)
+        self.ignore_btn = QPushButton(t("datasource.batch_ignore", default="批量忽略"))
+        self.ignore_btn.clicked.connect(self._ignore_selected)
         self.accept_all_btn = QPushButton(t("datasource.accept_all_errors", default="全部接受(错误)"))
         self.accept_all_btn.clicked.connect(self._accept_all_errors)
         self.export_btn = QPushButton(t("datasource.export_report", default="导出报告(Markdown)"))
@@ -182,7 +201,7 @@ class SVDVerifyDialog(QDialog):
         reverify_btn.clicked.connect(self.refresh)
         close_btn = QPushButton(t("button.close", default="关闭"))
         close_btn.clicked.connect(self.close)
-        for b in (self.accept_btn, self.accept_all_btn):
+        for b in (self.accept_btn, self.reject_btn, self.ignore_btn, self.accept_all_btn):
             btn_row.addWidget(b)
         btn_row.addStretch()
         for b in (self.export_btn, reverify_btn, close_btn):
@@ -292,9 +311,31 @@ class SVDVerifyDialog(QDialog):
             conf_item = QTableWidgetItem(_CONF_LABELS.get(it.confidence, it.confidence))
             conf_item.setForeground(_CONF_COLORS.get(it.confidence, QColor("gray")))
             self.table.setItem(row, 8, conf_item)
+            self.table.setItem(row, 9, QTableWidgetItem(it.source_authority or "-"))
+            self.table.setItem(row, 10, QTableWidgetItem(it.parse_completeness or "-"))
+            manual_status = it.manual_confirmation or "pending"
+            status_item = QTableWidgetItem({
+                "pending": "待核实", "confirmed": "人工确认",
+                "rejected": "人工拒绝", "ignored": "已忽略",
+            }.get(manual_status, manual_status))
+            self.table.setItem(row, 11, status_item)
+            self.table.setItem(row, 12, QTableWidgetItem(it.multi_source_agreement or "single_source"))
+            self.table.setItem(
+                row, 13,
+                QTableWidgetItem(f"{it.match_reason or 'unmatched'} ({it.match_score:.2f})"))
 
-            self.table.setItem(row, 9, QTableWidgetItem(it.svd_value))
-            self.table.setItem(row, 10, QTableWidgetItem(it.source_value))
+            self.table.setItem(row, 14, QTableWidgetItem(it.svd_value))
+            self.table.setItem(row, 15, QTableWidgetItem(it.source_value))
+            suggested = ", ".join(f"{k}={v}" for k, v in it.suggested.items()) if it.suggested else ""
+            self.table.setItem(row, 16, QTableWidgetItem(suggested))
+            manual_item = QTableWidgetItem(it.manual_value or "")
+            manual_item.setFlags(manual_item.flags() | Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(row, 17, manual_item)
+            ref = it.source_ref or {}
+            source_item = QTableWidgetItem(
+                f"{ref.get('source_file', '')} T{ref.get('table_index', '-')}/R{ref.get('row_number', '-')}")
+            source_item.setData(Qt.ItemDataRole.UserRole, it)
+            self.table.setItem(row, 18, source_item)
 
             # 行级 tooltip = 建议值
             if it.suggested:
@@ -322,15 +363,52 @@ class SVDVerifyDialog(QDialog):
                 result.append(it)
         return result
 
+    def _checked_rows(self) -> list[tuple[int, VerifyItem]]:
+        result = []
+        items = self._filtered_items()
+        peripheral = None
+        node = self.tree.currentItem()
+        if node is not None:
+            peripheral = node.data(0, Qt.ItemDataRole.UserRole)
+        if peripheral is not None:
+            items = [it for it in items if it.peripheral == peripheral]
+        for row, it in enumerate(items):
+            check = self.table.item(row, 0)
+            if check and check.checkState() == Qt.CheckState.Checked:
+                result.append((row, it))
+        return result
+
     def _accept_selected(self):
-        selected = self._get_checked_items()
+        checked = self._checked_rows()
+        selected = [it for _, it in checked]
         if not selected:
             QMessageBox.information(self, t("message.info"),
                 t("datasource.no_selection", default="未勾选任何差异项"))
             return
-        n = self.mgr.accept_items(selected)
+        overrides = {}
+        for row, it in checked:
+            manual = self.table.item(row, 17)
+            if manual and manual.text().strip():
+                overrides[id(it)] = {next(iter(it.suggested), ""): manual.text().strip()} if it.suggested else {}
+                it.manual_value = manual.text().strip()
+        n = self.mgr.accept_items(selected, overrides)
         QMessageBox.information(self, t("datasource.accept_done", default="已接受"),
             t("datasource.accepted_n", n=n, default=f"已接受 {n} 项核对建议。可按 Ctrl+Z 撤销。"))
+        self.mgr.decide_verify_items(selected, "human_confirmed")
+        self.refresh()
+
+    def _reject_selected(self):
+        selected = self._get_checked_items()
+        if not selected:
+            return
+        self.mgr.decide_verify_items(selected, "human_rejected")
+        self.refresh()
+
+    def _ignore_selected(self):
+        selected = self._get_checked_items()
+        if not selected:
+            return
+        self.mgr.decide_verify_items(selected, "ignored")
         self.refresh()
 
     def _accept_all_errors(self):
@@ -383,8 +461,10 @@ class SVDVerifyDialog(QDialog):
                  f"- 警告：{counts['warning']}",
                  f"- 提示：{counts['info']}",
                  "",
-                 "| 层级 | 外设 | 寄存器 | 位域 | 类型 | 严重度 | 置信度 | SVD值 | 源值 | 详情 | 建议 |",
-                 "|---|---|---|---|---|---|---|---|---|---|---|"]
+                 "来源权威度、解析完整度、人工状态是独立语义，不代表准确率。",
+                 "",
+                 "| 层级 | 外设 | 寄存器 | 位域 | 类型 | 严重度 | 机器置信度 | 来源权威度 | 解析完整度 | 多源一致度 | 匹配理由 | 人工状态 | SVD值 | 源值 | 人工值 | 详情 | 建议 |",
+                 "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for it in self._items:
             suggest = ", ".join(f"{k}={v}" for k, v in it.suggested.items()) if it.suggested else ""
             lines.append("| " + " | ".join([
@@ -399,6 +479,19 @@ class SVDVerifyDialog(QDialog):
     # ---------- 跳转 ----------
 
     def _on_double_click(self, row: int, col: int):
+        """双击来源列定位 TRM；其他列跳转到对应对象。"""
+        if col == 18:
+            item = self.table.item(row, col)
+            it = item.data(Qt.ItemDataRole.UserRole) if item else None
+            if it is not None:
+                ref = it.source_ref or {}
+                record = SimpleNamespace(
+                    source_ref=ref,
+                    source_file=ref.get("source_file", ""),
+                    extracted_value=it.source_value,
+                )
+                locate_source_reference(self, record)
+                return
         """双击差异行 → 跳转到对应外设/寄存器高亮（若主窗口支持）。"""
         items = self._filtered_items()
         peripheral = None

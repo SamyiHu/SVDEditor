@@ -1116,8 +1116,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_create = subparsers.add_parser(
         "create",
         help="从 JSON 数据创建新的 SVD 文件",
-        description="读取 JSON 数据文件（DeviceInfo 格式），生成 CMSIS-SVD XML 文件。"
-                    "可从 AIfull_link 等工具导出的寄存器数据直接生成 SVD。",
+        description="读取 JSON 数据文件（DeviceInfo 格式），生成 CMSIS-SVD XML 文件。",
     )
     p_create.add_argument(
         "-d", "--data",

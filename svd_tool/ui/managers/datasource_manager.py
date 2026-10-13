@@ -27,6 +27,9 @@ from ...core.datasource.parser_bridge import (
 )
 from ...core.datasource.chip_to_svd_converter import ChipToSvdConverter
 from ...core.datasource.svd_verifier import SVDVerifier, VerifyItem
+from ...core.datasource.correction_store import (
+    CONFIRMED, IGNORED, REJECTED, CorrectionRecord,
+)
 from ...core.data_model import DeviceInfo, Peripheral, Register, Field
 from ...core.command_history import Command
 
@@ -81,6 +84,8 @@ class DatasourceManager(QObject):
     verify_ready = pyqtSignal(list)            # list[VerifyItem]
     verify_failed = pyqtSignal(str)
     items_accepted = pyqtSignal(int)           # 本次接受的项数
+    review_changed = pyqtSignal(dict)          # sidecar summary
+    review_undone = pyqtSignal(int)            # 撤销的字段数
 
     def __init__(self, coordinator, main_window=None):
         super().__init__()
@@ -93,6 +98,8 @@ class DatasourceManager(QObject):
         # 最近一次解析结果缓存（核对面板 / AI 核对工具共用）
         self.last_result: Optional[ParseResult] = None
         self.last_chip_data: Any = None
+        self.last_verify_items: list[VerifyItem] = []
+        self.last_outputs: dict = {}
 
         # 解析线程句柄（持有引用避免 GC）
         self._thread: Optional[QThread] = None
@@ -138,6 +145,200 @@ class DatasourceManager(QObject):
     @pyqtSlot(str)
     def _on_parse_failed(self, message: str):
         self.parse_failed.emit(message)
+
+    # ════════════════════════════════════════════════════
+    # 人工纠错 sidecar
+    # ════════════════════════════════════════════════════
+
+    @property
+    def correction_store(self):
+        return getattr(self.last_result, "correction_store", None)
+
+    @property
+    def correction_records(self) -> list[CorrectionRecord]:
+        return list(getattr(self.last_result, "correction_candidates", []) or [])
+
+    def update_correction_value(self, key: str, manual_value: str, note: str = "") -> bool:
+        """记录人工输入值但不决定接受/拒绝，允许草稿态持续编辑。"""
+        store = self.correction_store
+        if store is None or key not in store.records:
+            return False
+        store.apply_actions([{
+            "key": key,
+            "status": store.records[key].status,
+            "manual_value": manual_value,
+            "note": note,
+        }])
+        self._sync_correction_candidates()
+        self.review_changed.emit(store.summary())
+        return True
+
+    def decide_corrections(self, keys: list[str], status: str, manual_values: Optional[dict] = None) -> int:
+        store = self.correction_store
+        if store is None:
+            return 0
+        actions = []
+        for key in keys:
+            if key not in store.records:
+                continue
+            action = {"key": key, "status": status}
+            if manual_values and key in manual_values:
+                action["manual_value"] = manual_values[key]
+            actions.append(action)
+        touched = store.apply_actions(actions)
+        if touched:
+            self._sync_correction_candidates()
+            self.review_changed.emit(store.summary())
+        return len(touched)
+
+    def accept_corrections(self, keys: list[str], manual_values: Optional[dict] = None) -> int:
+        return self.decide_corrections(keys, CONFIRMED, manual_values)
+
+    def reject_corrections(self, keys: list[str]) -> int:
+        return self.decide_corrections(keys, REJECTED)
+
+    def ignore_corrections(self, keys: list[str]) -> int:
+        return self.decide_corrections(keys, IGNORED)
+
+    def _overlay_verify_review_status(self, items: list[VerifyItem]) -> None:
+        prop_by_kind = {
+            "base_address": "base_address", "offset": "address_offset",
+            "reset": "reset_value", "access": "access", "width": "bit_width",
+            "missing_in_svd": "name", "reg_missing_in_svd": "name",
+            "field_missing_in_svd": "name",
+        }
+        for item in items:
+            prop = prop_by_kind.get(item.kind, "")
+            for record in self.correction_records:
+                if (
+                    record.level == item.level
+                    and record.peripheral == item.peripheral
+                    and record.register == item.register
+                    and record.field == item.field
+                    and record.property_name == prop
+                ):
+                    item.manual_confirmation = record.manual_confirmation
+                    item.manual_value = record.manual_value
+                    item.object_id = record.object_id
+                    item.semantic_path = record.semantic_path
+                    item.multi_source_agreement = record.multi_source_agreement
+                    item.aliases = list(record.aliases)
+                    break
+
+    def decide_verify_items(self, items: list[VerifyItem], status: str) -> int:
+        """把核对建议的接受/拒绝/忽略状态持久化到对应字段级 sidecar。"""
+        prop_by_kind = {
+            "base_address": "base_address",
+            "offset": "address_offset",
+            "reset": "reset_value",
+            "access": "access",
+            "width": "bit_width",
+            "missing_in_svd": "name",
+            "reg_missing_in_svd": "name",
+            "field_missing_in_svd": "name",
+        }
+        keys = []
+        for item in items:
+            prop = prop_by_kind.get(item.kind, "")
+            for record in self.correction_records:
+                if (
+                    record.level == item.level
+                    and record.peripheral == item.peripheral
+                    and record.register == item.register
+                    and record.field == item.field
+                    and record.property_name == prop
+                ):
+                    keys.append(record.key)
+                    break
+        return self.decide_corrections(keys, status)
+
+    def undo_last_correction(self) -> int:
+        store = self.correction_store
+        if store is None:
+            return 0
+        n = store.undo_last()
+        if n:
+            self._sync_correction_candidates()
+            self.review_undone.emit(n)
+            self.review_changed.emit(store.summary())
+        return n
+
+    def _sync_correction_candidates(self) -> None:
+        store = self.correction_store
+        if store is not None and self.last_result is not None:
+            self.last_result.correction_candidates = list(store.records.values())
+
+    def export_final_svd(self, path: str, chip_data: Any = None) -> str:
+        from pathlib import Path
+        from ...core.svd_generator import SVDGenerator
+        cd = chip_data or self.last_chip_data
+        if cd is None:
+            raise RuntimeError("没有可导出的解析结果")
+        store = self.correction_store
+        if store is not None:
+            store.apply_to_chip_data(cd, self.correction_records)
+        device, _ = self._converter.convert(cd)
+        xml = SVDGenerator(device, skip_derived_registers=False).generate()
+        out = Path(path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(xml, encoding="utf-8")
+        self.last_outputs["final_svd"] = str(out)
+        return str(out)
+
+    def export_manifest(self, path: str, artifacts: Optional[dict] = None,
+                        extra: Optional[dict] = None) -> str:
+        from ...core.datasource.review_workflow import build_header_manifest_extra
+        store = self.correction_store
+        if store is None:
+            raise RuntimeError("没有纠错 sidecar")
+        risks = []
+        for item in self.last_verify_items:
+            if item.severity in ("error", "warning"):
+                target = "/".join(x for x in (
+                    item.peripheral, item.register, item.field) if x)
+                risks.append(f"{item.kind}: {target} ({item.detail})")
+        merged = {
+            "event_log": getattr(self.last_result, "event_log_path", ""),
+            "extracted_snapshot": (getattr(self.last_result, "extracted_snapshot", {}) or {}).get("path", ""),
+            "resolved_model": getattr(self.last_result, "resolved_model_path", ""),
+        }
+        merged.update(self.last_outputs)
+        merged.update(artifacts or {})
+        header_extra = build_header_manifest_extra(
+            self.last_result, self._current_device_info())
+        if header_extra:
+            merged_extra = dict(extra or {})
+            merged_extra["header"] = header_extra
+            extra = merged_extra
+        out = store.export_manifest(path, merged, risks[:500], extra)
+        return str(out)
+
+    def _current_device_info(self):
+        """当前活跃文档的 DeviceInfo（覆盖率对照 SVD 侧用），不可用时返回 None。"""
+        try:
+            state_manager = self.coordinator.get_component("state_manager")
+            return getattr(state_manager, "device_info", None)
+        except Exception:
+            return None
+
+    @property
+    def header_coverage(self) -> dict:
+        """最近一次解析的 H 链路覆盖率（H↔TRM 融合；未启用时为空）。"""
+        result = self.last_result
+        if result is None:
+            return {}
+        return dict(getattr(result, "header_coverage", {}) or {})
+
+    def export_correction_report(self, path: str, markdown: bool = True) -> str:
+        store = self.correction_store
+        if store is None:
+            raise RuntimeError("没有纠错 sidecar")
+        if markdown:
+            out = store.export_markdown_report(path)
+        else:
+            out = store.export_json_report(path)
+        self.last_outputs["correction_report"] = str(out)
+        return str(out)
 
     def parse_sync(self, request: ParseRequest) -> ParseResult:
         """同步解析（AI 工具 / 测试用，阻塞当前线程）。"""
@@ -328,6 +529,8 @@ class DatasourceManager(QObject):
             return []
 
         items = self._verifier.verify(state_manager.device_info, cd)
+        self._overlay_verify_review_status(items)
+        self.last_verify_items = items
         self.verify_ready.emit(items)
         return items
 
@@ -335,16 +538,16 @@ class DatasourceManager(QObject):
         """接受单个核对差异项（undoable）。返回是否成功。"""
         return self._apply_suggested([item]) == 1
 
-    def accept_items(self, items: list[VerifyItem]) -> int:
+    def accept_items(self, items: list[VerifyItem], overrides: Optional[dict] = None) -> int:
         """批量接受差异项（单条撤销记录，silent 风格刷新）。返回成功数。"""
         if not items:
             return 0
-        n = self._apply_suggested(items)
+        n = self._apply_suggested(items, overrides)
         if n > 0:
             self.items_accepted.emit(n)
         return n
 
-    def _apply_suggested(self, items: list[VerifyItem]) -> int:
+    def _apply_suggested(self, items: list[VerifyItem], overrides: Optional[dict] = None) -> int:
         """把差异项的 suggested 应用到当前 device_info（撤销栈 + 刷新）。"""
         state_manager = self.coordinator.get_component("state_manager")
         if not state_manager or not state_manager.device_info:
@@ -357,7 +560,11 @@ class DatasourceManager(QObject):
         for item in items:
             if not item.suggested:
                 continue
-            undo = self._apply_one(device, item)
+            values = dict(item.suggested)
+            if overrides:
+                item_override = overrides.get(id(item)) or overrides.get(item.to_dict_key()) or {}
+                values.update(item_override)
+            undo = self._apply_one(device, item, values)
             if undo is not None:
                 applied.append(undo)
                 count += 1
@@ -379,7 +586,7 @@ class DatasourceManager(QObject):
         self._mark_modified()
         return count
 
-    def _apply_one(self, device: DeviceInfo, item: VerifyItem):
+    def _apply_one(self, device: DeviceInfo, item: VerifyItem, values: Optional[dict] = None):
         """对单个差异项应用 suggested，返回 undo 闭包（None 表示无法应用）。
 
         缺失项（missing_in_svd）→ 新增外设/寄存器/位域（undo=删除）
@@ -388,10 +595,11 @@ class DatasourceManager(QObject):
         """
         periphs = device.peripherals
         pname = item.peripheral
+        values = values or item.suggested
 
         # 外设级缺失 → 新增整个外设
         if item.kind == "missing_in_svd":
-            s = item.suggested
+            s = values
             if pname in periphs:
                 return None
             new_p = Peripheral(
@@ -412,7 +620,7 @@ class DatasourceManager(QObject):
         # 外设级 base_address 不符
         if item.level == "peripheral" and item.kind == "base_address":
             old = periph.base_address
-            new = item.suggested.get("base_address", old)
+            new = values.get("base_address", old)
             if old == new:
                 return None
             def _undo():
@@ -428,7 +636,7 @@ class DatasourceManager(QObject):
         if item.kind == "reg_missing_in_svd":
             if reg_name in periph.registers:
                 return None
-            s = item.suggested
+            s = values
             new_r = Register(
                 name=s.get("name", reg_name),
                 offset=s.get("offset", "0x0"),
@@ -451,7 +659,7 @@ class DatasourceManager(QObject):
             if attr is None:
                 return None
             old = getattr(reg, attr)
-            new = item.suggested.get(attr, old)
+            new = values.get(attr, old)
             if old == new:
                 return None
             def _undo():
@@ -464,7 +672,7 @@ class DatasourceManager(QObject):
         if item.kind == "field_missing_in_svd":
             if field_name in reg.fields:
                 return None
-            s = item.suggested
+            s = values
             new_f = Field(
                 name=s.get("name", field_name),
                 bit_offset=int(s.get("bit_offset", 0)),
@@ -487,7 +695,7 @@ class DatasourceManager(QObject):
             return None
         old = getattr(fld, attr)
         try:
-            new = int(item.suggested.get(attr, old)) if attr == "bit_width" else item.suggested.get(attr, old)
+            new = int(values.get(attr, old)) if attr == "bit_width" else values.get(attr, old)
         except (TypeError, ValueError):
             return None
         if old == new:

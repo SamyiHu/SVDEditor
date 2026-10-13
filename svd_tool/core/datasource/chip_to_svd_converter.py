@@ -130,12 +130,6 @@ class ChipToSvdConverter:
             device.name = (chip_data.chip_name or device.name or "UNKNOWN_DEVICE").strip()
             self._apply_core(device, getattr(chip_data, "core", "") or "")
 
-        # 中断（Parser 当前通常不填，有空则导入）
-        for irq_def in getattr(chip_data, "interrupts", []) or []:
-            if irq_def.irq_number is None:
-                continue
-            self._add_interrupt(device, irq_def, report)
-
         # 外设
         existing_periphs = set(device.peripherals.keys())
         for pblk in getattr(chip_data, "peripherals", []) or []:
@@ -159,6 +153,10 @@ class ChipToSvdConverter:
             report.peripherals_added += 1
             report.registers_added += len(peripheral.registers)
             report.fields_added += sum(len(r.fields) for r in peripheral.registers.values())
+
+        # 中断在外设之后添加，便于推断 UART0_2 等共享中断的外设归属。
+        for irq_def in getattr(chip_data, "interrupts", []) or []:
+            self._add_interrupt(device, irq_def, report)
 
         # 自动检测继承关系：结构相同的外设设 derivedFrom
         self._infer_derived_from(device, report)
@@ -402,18 +400,59 @@ class ChipToSvdConverter:
         name = (getattr(irq_def, "name", "") or "").strip()
         if not name:
             return
-        if name in device.interrupts:
-            return
         try:
             value = int(getattr(irq_def, "irq_number", -1))
         except (TypeError, ValueError):
             return
+        # CMSIS-SVD 的 interrupt 只表达 NVIC IRQ；系统异常（irq < 0）
+        # 保留在 ChipData/审计层，不写入设备外设中断表。
+        if value < 0 or name in device.interrupts:
+            return
+        aliases = list(getattr(irq_def, "aliases", []) or [])
+        if not hasattr(device, "_interrupt_aliases"):
+            device._interrupt_aliases = {}
+        device._interrupt_aliases[name] = aliases
+        peripherals = self._infer_interrupt_peripherals(name, device)
         device.interrupts[name] = Interrupt(
             name=name,
             value=value,
             description=getattr(irq_def, "description", "") or "",
+            peripheral=peripherals[0] if peripherals else "",
+            peripherals=peripherals,
         )
         report.interrupts_added += 1
+
+    @staticmethod
+    def _infer_interrupt_peripherals(name: str, device: DeviceInfo) -> list[str]:
+        """推断共享中断关联的外设：UART0_2 -> UART0/UART2。"""
+        target = (name or "").upper()
+        candidates = set()
+        aliases = [str(x).upper() for x in (getattr(device, "_interrupt_aliases", {}).get(name, []) or [])]
+        # 优先使用解析器提供的原始中断源：UART0_2 是 UART0/UART2，
+        # 而 INT1_7 这种带连字符的范围才展开为 INT1..INT7。
+        alias_exact = []
+        alias_range = []
+        for alias in aliases:
+            alias = alias.replace("-", "_")
+            if re.fullmatch(r"[A-Z]+\d+", alias):
+                alias_exact.append(alias)
+            elif re.fullmatch(r"[A-Z]+\d+_\d+", alias):
+                alias_range.append(alias)
+        if alias_exact:
+            candidates.update(alias_exact)
+        else:
+            range_match = re.fullmatch(r"([A-Z]+)(\d+)_(\d+)", target)
+            if range_match:
+                prefix, start, end = range_match.groups()
+                for number in range(int(start), int(end) + 1):
+                    candidates.add(f"{prefix}{number}")
+        candidates.add(target)
+        if target.startswith("INT") and target not in {"INT", "INTF"}:
+            candidates.update({"INT", "INTF"})
+        return [
+            pname for pname in device.peripherals.keys()
+            if pname.upper() in candidates
+        ]
 
     # ---------- 数值/格式归一化 ----------
 

@@ -93,7 +93,7 @@
 | `header` | 从 SVD 生成 C 语言头文件 |
 | `conflicts` | 检测地址重叠、寄存器偏移重复、位域冲突 |
 | `extract` | 从 SVD 中提取指定外设到新文件 |
-| `create` | **从 JSON 数据创建新的 SVD 文件**（如 AIfull_link 导出的寄存器数据） |
+| `create` | **从 JSON 数据创建新的 SVD 文件**（`DeviceInfo.to_dict()` 格式） |
 | `add-peripheral` | 从 JSON 向已有 SVD 添加外设 |
 | `update-peripheral` | 更新外设属性（基地址、描述等） |
 | `remove-peripheral` | 按名称从 SVD 中移除外设 |
@@ -110,25 +110,6 @@
 - **文档导出**：CSV、Markdown、HTML 寄存器文档
 - **C 头文件生成**：寄存器地址宏和位域掩码 `#define`
 - **差异报告**：文本或 JSON 格式的差异对比报告
-
----
-
-## AIfull_link 联动
-
-支持直接从 [AIfull_link](https://github.com/SamyiHu/AIfull_link) 解析的寄存器数据创建 SVD 文件：
-
-```bash
-# 1. 在 AIfull_link 中导出寄存器数据为 JSON
-#    （使用 Agent Shell 的 export_svd 工具）
-
-# 2. 用 create 命令生成 SVD
-python run.py create --data scf10t_svd_data.json -o SCF10T.svd --validate
-
-# 3. 在 GUI 中可视化编辑
-python run.py --gui --file SCF10T.svd
-```
-
-JSON 格式与 `DeviceInfo.to_dict()` 输出完全兼容，详见 `data_model.py`。
 
 ---
 
@@ -326,7 +307,7 @@ python run.py extract chip.svd --peripherals GPIOA,GPIOB,GPIOC -o gpio.svd
 <summary><b>高级命令</b></summary>
 
 ```bash
-# 从 JSON 创建 SVD（如 AIfull_link 导出的寄存器数据）
+# 从 JSON 创建 SVD（DeviceInfo.to_dict() 格式）
 python run.py create --data device_data.json -o chip.svd [--validate] [--open]
 
 # 从 JSON 添加外设

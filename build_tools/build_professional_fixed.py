@@ -139,6 +139,11 @@ class ProfessionalBuilder:
         # 项目根目录（父目录，因为run.py在build_tools的上一级）
         project_root_parent = get_ascii_path(self.project_root.parent)
 
+        # 外部 Parser 包根目录（仓库同级 ../Parser）。
+        # 必须用 ASCII junction 路径：直接用中文路径会导致 PyInstaller
+        # 在打包阶段报 "Unable to find ..."（并且不输出正常提示）。
+        parser_root_ascii = get_ascii_path(self.project_root.parent.parent / 'Parser')
+
         # run.py的绝对路径
         run_py_path = get_ascii_path(self.project_root.parent / 'run.py')
 
@@ -155,9 +160,11 @@ sys.setrecursionlimit(5000)
 
 # 项目根目录（父目录）
 project_root = r'{project_root_parent}'
-
-# Parser 包根目录（仓库同级 ../Parser），供打包时发现 `parser` 包
-parser_root = os.path.join(os.path.dirname(project_root), 'Parser')
+parser_root = r'{parser_root_ascii}'
+reg_core_src = os.path.join(parser_root, 'reg_core')
+reg_core_exists = os.path.isdir(reg_core_src)
+if not reg_core_exists:
+    print('WARNING: 未发现外部包 reg_core（预期在 %s），数据手册导入功能将不可用。' % reg_core_src)
 
 block_cipher = None
 
@@ -183,10 +190,10 @@ a = Analysis(
 
         # 树状图 chevron 箭头 SVG（QSS image 引用，必须打包否则打包版无箭头）
         (r'{project_root_parent}/svd_tool/resources/icons', 'svd_tool/resources/icons'),
-
-        # Parser 包源码（仓库同级 ../Parser/parser），数据手册导入功能依赖。
-        # 用 glob 把整个 parser/ 目录打包到顶层 parser/，运行时 sys.path 兜底即可 import。
-        (parser_root + '/parser', 'parser'),
+        # 外部 Parser 包源码（仓库同级 ../Parser/reg_core），数据手册导入功能依赖。
+        # 整个目录打包到顶层 reg_core/，运行时 sys.path 兜底即可 import。
+        # 不存在时使用 None（PyInstaller 会忽略此条）。
+        (reg_core_src, 'reg_core') if reg_core_exists else None,
     ],
     hiddenimports=[
         # PyQt6模块
@@ -225,11 +232,11 @@ a = Analysis(
         'tqdm', 'jiter',
 
         # 数据手册导入依赖（datasource/parser_bridge.py 懒加载 import）：
-        # Parser 包本身 + 其重依赖（Excel/Word/PDF 解析），打包后必须显式收集。
-        'parser',
-        'parser.models', 'parser.source_fusion', 'parser.quality_report',
-        'parser.parsers', 'parser.extractors', 'parser.generators', 'parser.transforms',
-        'parser.enhanced_parser', 'parser.excel_parser',
+        'reg_core',
+        'reg_core.models', 'reg_core.source_fusion', 'reg_core.quality_report',
+        'reg_core.parsers', 'reg_core.extractors', 'reg_core.generators', 'reg_core.transforms',
+        'reg_core.enhanced_parser', 'reg_core.excel_parser',
+        'reg_core.parsers.trm_word_parser',
         'openpyxl',
         'docx',
         'pdfplumber',
