@@ -942,6 +942,11 @@ class CommandExecutor:
             "reset_mask": getattr(reg, "reset_mask", ""),
             "description": reg.description,
             "derived_from": getattr(reg, "derived_from", "") or "",
+            "alternate_group": getattr(reg, "alternate_group", "") or "",
+            "alternate_register": getattr(reg, "alternate_register", "") or "",
+            "data_type": getattr(reg, "data_type", None),
+            "modified_write_values": getattr(reg, "modified_write_values", None),
+            "read_action": getattr(reg, "read_action", None),
             "from_cluster": cluster_source,
             "field_count": len(field_list),
             "fields": field_list,
@@ -984,6 +989,8 @@ class CommandExecutor:
             "reset_value": fld.reset_value,
             "description": fld.description,
             "display_name": getattr(fld, "display_name", ""),
+            "modified_write_values": getattr(fld, "modified_write_values", None),
+            "read_action": getattr(fld, "read_action", None),
             "enumerated_values": getattr(fld, "enumerated_values", []),
         }
         return {"success": True, "message": t("ai.get_field_done", name=field_name), "data": data}
@@ -1602,7 +1609,24 @@ class CommandExecutor:
 
         # 其它可改属性（改名已单独处理，这里不动 name）
         old_values = {}
-        updatable_fields = ["description", "offset", "size", "access", "reset_value", "display_name", "derived_from"]
+        updatable_fields = ["description", "offset", "size", "access", "reset_value",
+                            "display_name", "derived_from",
+                            "alternate_group", "alternate_register", "data_type",
+                            "modified_write_values", "read_action"]
+
+        # alternateRegister 校验：备选寄存器必须存在于同外设，且不能自引用
+        if "alternate_register" in updates:
+            ar = str(updates["alternate_register"]).strip()
+            cur_name = new_name if rename_done else reg_name
+            if ar == cur_name:
+                return {"success": False,
+                        "message": t("ai.altreg_self", name=cur_name,
+                                     default="寄存器的 alternateRegister 不能指向自己"),
+                        "data": None}
+            if ar and ar not in periph.registers:
+                return {"success": False, "message": t("ai.reg_not_found", name=ar), "data": None}
+            updates = dict(updates)
+            updates["alternate_register"] = ar
 
         # derivedFrom 校验：派生目标必须是同外设下已存在的寄存器，且不能自引用
         if "derived_from" in updates:
@@ -1779,7 +1803,7 @@ class CommandExecutor:
 
         # 其它可改属性（改名已单独处理，这里不动 name）
         old_values = {}
-        updatable_fields = ["description", "bit_offset", "bit_width", "access", "reset_value", "display_name", "derived_from"]
+        updatable_fields = ["description", "bit_offset", "bit_width", "access", "reset_value", "display_name", "derived_from", "modified_write_values", "read_action"]
 
         # derivedFrom 校验：派生目标必须是同寄存器下已存在的位域，且不能自引用
         if "derived_from" in updates:

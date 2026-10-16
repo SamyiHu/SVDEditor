@@ -1,4 +1,5 @@
 # svd_tool/core/svd_parser.py
+import re
 from copy import deepcopy
 from typing import Dict, Any, Optional, List, Tuple
 from xml.dom import minidom
@@ -8,6 +9,29 @@ import warnings
 from .data_model import DeviceInfo, Peripheral, Register, Field, Cluster
 from .validators import Validator, ValidationError
 from .base_svd_parser import BaseSVDParser
+
+# 各级已消费的子元素名单（名单外元素走 extra_xml 透传，防往返丢失）
+_PERIPHERAL_KNOWN = {
+    "name", "version", "displayName", "description", "alternatePeripheral",
+    "groupName", "prependToName", "appendToName", "headerStructName",
+    "disableCondition", "baseAddress", "addressBlock", "interrupt", "registers",
+}
+_REGISTER_KNOWN = {
+    "name", "displayName", "description", "alternateGroup", "alternateRegister",
+    "addressOffset", "size", "access", "resetValue", "resetMask", "dataType",
+    "modifiedWriteValues", "readAction", "fields", "dim", "dimIncrement", "dimIndex",
+}
+_FIELD_KNOWN = {
+    "name", "displayName", "description", "bitOffset", "bitWidth", "lsb", "msb",
+    "bitRange", "access", "modifiedWriteValues", "readAction", "enumeratedValues",
+}
+_CLUSTER_KNOWN = {
+    "name", "displayName", "description", "addressOffset", "size", "access",
+    "resetValue", "resetMask", "register", "cluster",
+    "dim", "dimIncrement", "dimIndex",
+}
+# bitRange 元素格式："[msb:lsb]"
+_BITRANGE_RE = re.compile(r'^\[\s*(\d+)\s*:\s*(\d+)\s*\]$')
 
 
 class SVDParser(BaseSVDParser):
@@ -197,7 +221,20 @@ class SVDParser(BaseSVDParser):
             peripheral.derived_from = periph_node.getAttribute("derivedFrom")
         else:
             peripheral.derived_from = ""  # 确保设置为空字符串
-        
+
+        # CMSIS-SVD 外设级可选元素（头文件生成 / 命名前后缀 / 复用禁用条件）
+        for tag, attr in (("version", "version"),
+                          ("prependToName", "prepend_to_name"),
+                          ("appendToName", "append_to_name"),
+                          ("headerStructName", "header_struct_name"),
+                          ("disableCondition", "disable_condition")):
+            node = self._get_direct_child(periph_node, tag)
+            if node is not None and node.firstChild:
+                setattr(peripheral, attr, node.firstChild.data.strip())
+
+        # 未消费元素透传（外设级 dim 系列 / dimName 等）
+        peripheral.extra_xml = self._collect_extra_xml(periph_node, _PERIPHERAL_KNOWN)
+
         # 地址块
         addr_block_nodes = periph_node.getElementsByTagName("addressBlock")
         if addr_block_nodes:
@@ -318,6 +355,9 @@ class SVDParser(BaseSVDParser):
         rm_nodes = cl_node.getElementsByTagName("resetMask")
         if rm_nodes and rm_nodes[0].firstChild:
             cluster.reset_mask = rm_nodes[0].firstChild.data.strip()
+
+        # 未消费元素透传（dimName / headerStructName / alternateCluster 等）
+        cluster.extra_xml = self._collect_extra_xml(cl_node, _CLUSTER_KNOWN)
 
         # dim 信息
         dim_nodes = cl_node.getElementsByTagName("dim")
@@ -493,9 +533,22 @@ class SVDParser(BaseSVDParser):
             else:
                 register.dim_index = idx_text.split(",")
 
+        # CMSIS-SVD 可选元素（备选寄存器组/备选寄存器/数据类型/写读行为语义）
+        for tag, attr in (("alternateGroup", "alternate_group"),
+                          ("alternateRegister", "alternate_register"),
+                          ("dataType", "data_type"),
+                          ("modifiedWriteValues", "modified_write_values"),
+                          ("readAction", "read_action")):
+            node = self._get_direct_child(reg_node, tag)
+            if node is not None and node.firstChild:
+                setattr(register, attr, node.firstChild.data.strip())
+
+        # 未消费元素透传（writeConstraint / protection / dimName 等）
+        register.extra_xml = self._collect_extra_xml(reg_node, _REGISTER_KNOWN)
+
         # 解析位域
         self._parse_fields_for_register(reg_node, register)
-        
+
         return register
     
     def _parse_fields_for_register(self, reg_node, register: Register):
@@ -531,12 +584,39 @@ class SVDParser(BaseSVDParser):
         # 创建位域对象
         field = Field(name=name)
 
-        # 位偏移和位宽
+        # 位偏移和位宽 —— CMSIS-SVD 允许三种等价写法，统一换算为 bitOffset+bitWidth：
+        # 1) <bitOffset>+<bitWidth>（本工具的规范输出风格）
+        # 2) <lsb>+<msb>（ST 等厂商常用）
+        # 3) <bitRange>[msb:lsb]</bitRange>
         bit_offset_nodes = field_node.getElementsByTagName("bitOffset")
-        field.bit_offset = int(bit_offset_nodes[0].firstChild.data.strip()) if (bit_offset_nodes and bit_offset_nodes[0].firstChild) else 0
-
-        bit_width_nodes = field_node.getElementsByTagName("bitWidth")
-        field.bit_width = int(bit_width_nodes[0].firstChild.data.strip()) if (bit_width_nodes and bit_width_nodes[0].firstChild) else 1
+        if bit_offset_nodes and bit_offset_nodes[0].firstChild:
+            field.bit_offset = int(bit_offset_nodes[0].firstChild.data.strip(), 0)
+            bit_width_nodes = field_node.getElementsByTagName("bitWidth")
+            field.bit_width = int(bit_width_nodes[0].firstChild.data.strip(), 0) \
+                if (bit_width_nodes and bit_width_nodes[0].firstChild) else 1
+        else:
+            lsb_nodes = field_node.getElementsByTagName("lsb")
+            msb_nodes = field_node.getElementsByTagName("msb")
+            if lsb_nodes and lsb_nodes[0].firstChild and msb_nodes and msb_nodes[0].firstChild:
+                lsb = int(lsb_nodes[0].firstChild.data.strip(), 0)
+                msb = int(msb_nodes[0].firstChild.data.strip(), 0)
+                field.bit_offset = lsb
+                if msb < lsb:
+                    self.warnings.append(f"位域 {name} 的 msb({msb}) < lsb({lsb})，按宽度 1 处理")
+                    field.bit_width = 1
+                else:
+                    field.bit_width = msb - lsb + 1
+            else:
+                range_nodes = field_node.getElementsByTagName("bitRange")
+                if range_nodes and range_nodes[0].firstChild:
+                    m = _BITRANGE_RE.match(range_nodes[0].firstChild.data.strip())
+                    if m:
+                        msb, lsb = int(m.group(1)), int(m.group(2))
+                        field.bit_offset = lsb
+                        field.bit_width = max(1, msb - lsb + 1)
+                    else:
+                        self.warnings.append(
+                            f"位域 {name} 的 bitRange 无法解析: {range_nodes[0].firstChild.data.strip()}")
         
         # 显示名称
         display_name_nodes = field_node.getElementsByTagName("displayName")
@@ -569,7 +649,17 @@ class SVDParser(BaseSVDParser):
         enum_nodes = field_node.getElementsByTagName("enumeratedValues")
         if enum_nodes:
             field.enumerated_values = self._parse_enumerated_values(enum_nodes[0])
-        
+
+        # CMSIS-SVD 行为语义（写修改方式 / 读取副作用）
+        for tag, attr in (("modifiedWriteValues", "modified_write_values"),
+                          ("readAction", "read_action")):
+            node = self._get_direct_child(field_node, tag)
+            if node is not None and node.firstChild:
+                setattr(field, attr, node.firstChild.data.strip())
+
+        # 未消费元素透传（writeConstraint / 位域级 protection 等）
+        field.extra_xml = self._collect_extra_xml(field_node, _FIELD_KNOWN)
+
         return field
     
     def _parse_enumerated_values(self, enum_values_node) -> List[Dict[str, str]]:

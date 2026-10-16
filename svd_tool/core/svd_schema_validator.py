@@ -17,6 +17,7 @@ CMSIS-SVD Schema 完整验证器
 11. 十六进制格式验证
 """
 import logging
+import re
 from typing import List, Dict, Any, Tuple, Optional
 from enum import Enum
 
@@ -25,6 +26,9 @@ from .validation_utils import parse_hex, parse_int, get_peripheral_address_range
 from ..i18n.i18n import t
 
 logger = logging.getLogger("SVDSchemaValidator")
+
+# C 标识符合法格式（对齐 svdconv 命名检查；%s 为 dim 数组占位符，检查时替换）
+_C_IDENTIFIER_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
 
 class Severity(Enum):
@@ -257,6 +261,10 @@ class SVDSchemaValidator:
             self._add_error(t("val.cat.periph_info"), t("val.periph_name_empty", name=name),
                            f"peripheral.{name}.name")
 
+        # C 标识符合规
+        self._check_c_identifier(name, f"peripheral.{name}.name",
+                                 t("val.cat.periph_info"))
+
         if not periph.base_address or not str(periph.base_address).strip():
             self._add_error(t("val.cat.periph_info"), t("val.periph_base_empty", name=name),
                            f"peripheral.{name}.baseAddress")
@@ -393,17 +401,73 @@ class SVDSchemaValidator:
                                        t("val.reg_reset_overflow", periph=periph_name, reg=reg_name, reset=reset_val, size=reg_size_val, max=max_val),
                                        f"peripheral.{periph_name}.register.{reg_name}.resetValue")
 
+            # C 标识符合规（对齐 svdconv；dim 数组名的 %s 占位符豁免）
+            self._check_c_identifier(reg.name, f"peripheral.{periph_name}.register.{reg_name}.name",
+                                     t("val.cat.reg_info", default="寄存器信息"))
+
+            # dim 数组一致性（对齐 svdconv M207/M215/M308/M214）
+            if reg.dim is not None:
+                if "%s" not in reg.name:
+                    self._add_error(t("val.cat.dim", default="dim 数组"),
+                                   t("val.dim_no_placeholder", periph=periph_name, reg=reg_name,
+                                     default=f"寄存器 '{reg_name}' 定义了 dim 但名称缺少 %s 占位符"),
+                                   f"peripheral.{periph_name}.register.{reg_name}.dim")
+                dim_inc = parse_hex(reg.dim_increment) if reg.dim_increment else None
+                if dim_inc is None or dim_inc == 0:
+                    self._add_error(t("val.cat.dim", default="dim 数组"),
+                                   t("val.dim_increment_invalid", periph=periph_name, reg=reg_name,
+                                     default=f"寄存器 '{reg_name}' 的 dimIncrement 缺失或为 0"),
+                                   f"peripheral.{periph_name}.register.{reg_name}.dimIncrement")
+                if reg.dim_index and len(reg.dim_index) != reg.dim:
+                    self._add_error(t("val.cat.dim", default="dim 数组"),
+                                   t("val.dim_index_mismatch", periph=periph_name, reg=reg_name,
+                                     count=len(reg.dim_index), dim=reg.dim,
+                                     default=f"寄存器 '{reg_name}' 的 dimIndex 数量({len(reg.dim_index)})与 dim({reg.dim})不符"),
+                                   f"peripheral.{periph_name}.register.{reg_name}.dimIndex")
+                if reg.dim == 1:
+                    self._add_warning(t("val.cat.dim", default="dim 数组"),
+                                     t("val.dim_single", periph=periph_name, reg=reg_name,
+                                       default=f"寄存器 '{reg_name}' 的 dim=1，建议改用普通寄存器（svdconv M214）"),
+                                     f"peripheral.{periph_name}.register.{reg_name}.dim")
+
+            # alternateRegister 引用检查（备选寄存器必须存在于同一外设，且不能自引用）
+            ar = (getattr(reg, "alternate_register", "") or "").strip()
+            if ar:
+                if ar == reg_name:
+                    self._add_error(t("val.cat.derived_ref", default="引用"),
+                                   t("val.altreg_self", periph=periph_name, reg=reg_name,
+                                     default=f"寄存器 '{reg_name}' 的 alternateRegister 不能指向自己"),
+                                   f"peripheral.{periph_name}.register.{reg_name}.alternateRegister")
+                elif ar not in periph.registers:
+                    self._add_error(t("val.cat.derived_ref", default="引用"),
+                                   t("val.altreg_not_exist", periph=periph_name, reg=reg_name, alt=ar,
+                                     default=f"寄存器 '{reg_name}' 的 alternateRegister='{ar}' 在外设内不存在"),
+                                   f"peripheral.{periph_name}.register.{reg_name}.alternateRegister")
+
             # 验证位域
             if reg.fields:
                 self._validate_fields(periph_name, reg_name, reg)
 
-        # 报告偏移地址重复
+        # 报告偏移地址重复（alternateRegister 备选对合法共用偏移，整组全为备选对才跳过）
+        alt_reg_of = {rn: (getattr(r, "alternate_register", "") or "").strip()
+                      for rn, r in periph.registers.items()}
         for offset_key, reg_names in offset_map.items():
             if len(reg_names) > 1:
-                self._add_error(t("val.cat.addr_overlap"),
-                               t("val.reg_offset_duplicate", periph=periph_name, regs=', '.join(reg_names), offset=offset_key),
-                               f"peripheral.{periph_name}.register.{'+'.join(reg_names)}",
-                               t("val.reg_offset_unique"))
+                has_bad_pair = False
+                for bi in range(len(reg_names)):
+                    for bj in range(bi + 1, len(reg_names)):
+                        n_i, n_j = reg_names[bi], reg_names[bj]
+                        if alt_reg_of.get(n_i) == n_j or alt_reg_of.get(n_j) == n_i:
+                            continue
+                        has_bad_pair = True
+                        break
+                    if has_bad_pair:
+                        break
+                if has_bad_pair:
+                    self._add_error(t("val.cat.addr_overlap"),
+                                   t("val.reg_offset_duplicate", periph=periph_name, regs=', '.join(reg_names), offset=offset_key),
+                                   f"peripheral.{periph_name}.register.{'+'.join(reg_names)}",
+                                   t("val.reg_offset_unique"))
 
     # ==================== 位域级验证 ====================
 
@@ -481,6 +545,44 @@ class SVDSchemaValidator:
                                    t("val.field_reset_overflow", periph=periph_name, reg=reg_name, field=field_name, reset=reset_val, width=bit_width, max=max_val),
                                    location)
 
+            # C 标识符合规
+            self._check_c_identifier(field_name, f"{location}.name",
+                                     t("val.cat.field_info", default="位域信息"))
+
+            # 枚举值检查（对齐 svdconv：缺失 value / 值无法解析 / 值重复 / 超出位宽）
+            seen_enum_values: Dict[int, str] = {}
+            for ev in (fld.enumerated_values or []):
+                ev_name = ev.get("name", "")
+                if "value" not in ev:
+                    self._add_warning(t("val.cat.enum_value", default="枚举值"),
+                                      t("val.enum_no_value", periph=periph_name, reg=reg_name,
+                                        field=field_name, name=ev_name,
+                                        default=f"枚举值 '{ev_name}' 缺少 value"),
+                                      location)
+                    continue
+                ev_val = parse_hex(str(ev.get("value", "")))
+                if ev_val is None:
+                    self._add_error(t("val.cat.enum_value", default="枚举值"),
+                                   t("val.enum_value_invalid", periph=periph_name, reg=reg_name,
+                                     field=field_name, name=ev_name, value=ev.get("value"),
+                                     default=f"枚举值 '{ev_name}' 的 value 无法解析: {ev.get('value')}"),
+                                   location)
+                    continue
+                if bit_width > 0 and ev_val > (1 << bit_width) - 1:
+                    self._add_error(t("val.cat.enum_value", default="枚举值"),
+                                   t("val.enum_value_overflow", periph=periph_name, reg=reg_name,
+                                     field=field_name, name=ev_name, value=ev_val, width=bit_width,
+                                     default=f"枚举值 '{ev_name}' 的 value {ev_val} 超出位域宽度 {bit_width} 位"),
+                                   location)
+                if ev_val in seen_enum_values:
+                    self._add_error(t("val.cat.enum_value", default="枚举值"),
+                                   t("val.enum_value_duplicate", periph=periph_name, reg=reg_name,
+                                     field=field_name, value=ev_val, name1=seen_enum_values[ev_val], name2=ev_name,
+                                     default=f"枚举值 '{ev_name}' 与 '{seen_enum_values[ev_val]}' 的 value 重复（{ev_val}）"),
+                                   location)
+                else:
+                    seen_enum_values[ev_val] = ev_name
+
         # 检查位域间隙（可选，作为信息提示）
         if reg.fields and reg_size <= 64:  # 只对合理大小的寄存器检查
             covered_bits = set()
@@ -498,6 +600,20 @@ class SVDSchemaValidator:
                                   f"peripheral.{periph_name}.register.{reg_name}")
 
     # ==================== 中断验证 ====================
+
+    def _check_c_identifier(self, name, location, category):
+        """检查名称是否为合法 C 标识符（对齐 svdconv 命名合规检查）。
+
+        dim 数组名中的占位符视为合法特例：`BUF[%s]` → `BUF`，`BUF%s` → `BUFFX`。
+        """
+        if not name:
+            return
+        candidate = name.replace("[%s]", "").replace("%s", "X")
+        if not _C_IDENTIFIER_RE.match(candidate):
+            self._add_error(category,
+                            t("val.name_not_identifier", name=name,
+                              default=f"名称 '{name}' 不是合法的 C 标识符（仅允许字母/数字/下划线，且不能以数字开头）"),
+                            location)
 
     def validate_interrupts(self, device: DeviceInfo):
         """验证所有中断"""
@@ -522,6 +638,13 @@ class SVDSchemaValidator:
             if irq_val < 0:
                 self._add_error(t("val.cat.irq_number"),
                                t("val.irq_number_negative", name=irq.name, value=irq_val),
+                               f"interrupt.{irq.name}.value")
+
+            # 外部中断号上限（Cortex-M NVIC 最多 240 个外部中断，0-239）
+            if irq_val > 239:
+                self._add_error(t("val.cat.irq_number"),
+                               t("val.irq_number_too_large", name=irq.name, value=irq_val,
+                                 default=f"中断 '{irq.name}' 的 IRQ 号 {irq_val} 超过外部中断上限 239"),
                                f"interrupt.{irq.name}.value")
 
             if irq_val not in irq_value_map:

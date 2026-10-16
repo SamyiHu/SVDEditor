@@ -830,6 +830,10 @@ def cmd_update_register(args):
         reg.access = args.access; changed.append("access")
     if args.reset_value is not None:
         reg.reset_value = args.reset_value; changed.append("reset_value")
+    if args.alternate_group is not None:
+        reg.alternate_group = args.alternate_group.strip(); changed.append("alternate_group")
+    if args.alternate_register is not None:
+        reg.alternate_register = args.alternate_register.strip(); changed.append("alternate_register")
 
     if not changed:
         print("提示: 未指定任何要修改的字段", file=sys.stderr); return
@@ -1214,6 +1218,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_ur.add_argument("--size", help="大小")
     p_ur.add_argument("--access", help="访问权限")
     p_ur.add_argument("--reset-value", help="复位值")
+    p_ur.add_argument("--alternate-group", help="备选寄存器组（alternateGroup，置空可清除）")
+    p_ur.add_argument("--alternate-register", help="备选寄存器名（alternateRegister，同一外设内，置空可清除）")
     p_ur.add_argument("-o", "--output", help="输出 SVD 文件路径（默认: <input>_updated.svd）")
 
     # ---------- remove-register ----------

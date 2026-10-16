@@ -335,6 +335,11 @@ class HeadlessWorkspace:
                  "reset_value": reg.reset_value, "reset_mask": getattr(reg, "reset_mask", ""),
                  "description": reg.description,
                  "derived_from": getattr(reg, "derived_from", "") or "",
+                 "alternate_group": getattr(reg, "alternate_group", "") or "",
+                 "alternate_register": getattr(reg, "alternate_register", "") or "",
+                 "data_type": getattr(reg, "data_type", None),
+                 "modified_write_values": getattr(reg, "modified_write_values", None),
+                 "read_action": getattr(reg, "read_action", None),
                  "dim": reg.dim, "from_cluster": cluster_source,
                  "field_count": len(field_list), "fields": field_list},
             )
@@ -369,6 +374,8 @@ class HeadlessWorkspace:
                  "bit_offset": fld.bit_offset, "bit_width": fld.bit_width,
                  "access": fld.access or "", "reset_value": fld.reset_value,
                  "description": fld.description, "display_name": fld.display_name,
+                 "modified_write_values": getattr(fld, "modified_write_values", None),
+                 "read_action": getattr(fld, "read_action", None),
                  "enumerated_values": fld.enumerated_values},
             )
 
@@ -558,9 +565,19 @@ class HeadlessWorkspace:
                 if df and df not in periph.registers:
                     return _fail(f"派生目标寄存器 '{df}' 不存在")
 
+            # alternateRegister 校验：备选寄存器必须存在于同一外设，且不能自引用
+            if "alternate_register" in updates:
+                ar = str(updates["alternate_register"]).strip()
+                if ar == cur_name:
+                    return _fail("寄存器的 alternateRegister 不能指向自己")
+                if ar and ar not in periph.registers:
+                    return _fail(f"备选寄存器 '{ar}' 不存在（需在同一外设内）")
+
             for key in ("description", "offset", "size", "access", "reset_value",
                         "display_name", "derived_from", "reset_mask", "dim",
-                        "dim_increment", "dim_index"):
+                        "dim_increment", "dim_index",
+                        "alternate_group", "alternate_register", "data_type",
+                        "modified_write_values", "read_action"):
                 if key in updates:
                     setattr(reg, key, updates[key])
             entry.modified = True
@@ -655,7 +672,8 @@ class HeadlessWorkspace:
             cur_name = new_name if renamed else field_name
 
             for key in ("description", "bit_offset", "bit_width", "access",
-                        "reset_value", "display_name", "enumerated_values"):
+                        "reset_value", "display_name", "enumerated_values",
+                        "modified_write_values", "read_action"):
                 if key in updates:
                     value = updates[key]
                     if key in ("bit_offset", "bit_width"):

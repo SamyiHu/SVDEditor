@@ -9,6 +9,21 @@ from .constants import SVD_VERSIONS
 from ..utils.logger import Logger
 
 
+def _append_extra_xml(parent: ET.Element, extras) -> None:
+    """把解析器透传保存的未知元素原文回写到输出树（防往返丢失）。
+
+    extras 是 minidom toxml() 的元素片段列表；包一层根节点解析后逐个挂载。
+    单个片段解析失败时跳过（来源即合法 XML，正常不会发生）。
+    """
+    for frag in extras or []:
+        try:
+            wrapper = ET.fromstring(f"<root>{frag}</root>")
+            for child in wrapper:
+                parent.append(child)
+        except ET.ParseError:
+            continue
+
+
 class SVDGenerator:
     """SVD文件生成器"""
     
@@ -41,6 +56,9 @@ class SVDGenerator:
 
         # 添加外设
         self._add_peripherals(root)
+
+        # 透传的设备级未知元素（vendorExtensions 等，规范位置在 peripherals 之后）
+        _append_extra_xml(root, getattr(self.device_info, "extra_xml", None))
 
         # 转换为XML字符串
         xml_str = ET.tostring(root, encoding="utf-8", method="xml")
@@ -103,19 +121,28 @@ class SVDGenerator:
         return root
     
     def _add_device_info(self, root: ET.Element):
-        """添加设备信息"""
+        """添加设备信息（按 CMSIS-SVD 规范顺序：vendor, vendorID, name, series,
+        version, description, licenseText, cpu, headerSystemFilename, ...）"""
+        if self.device_info.vendor:
+            ET.SubElement(root, "vendor").text = self.device_info.vendor
+        if self.device_info.vendor_id:
+            ET.SubElement(root, "vendorID").text = self.device_info.vendor_id
+
         ET.SubElement(root, "name").text = self.device_info.name
+
+        if self.device_info.series:
+            ET.SubElement(root, "series").text = self.device_info.series
+
         ET.SubElement(root, "version").text = self.device_info.version
-        
+
         # 如果有描述则添加，否则使用设备名
         if self.device_info.description:
             ET.SubElement(root, "description").text = self.device_info.description
         else:
             ET.SubElement(root, "description").text = self.device_info.name
-        
-        # 添加厂商信息（如果存在）
-        if self.device_info.vendor:
-            ET.SubElement(root, "vendor").text = self.device_info.vendor
+
+        if self.device_info.license_text:
+            ET.SubElement(root, "licenseText").text = self.device_info.license_text
     
     def _add_cpu_info(self, root: ET.Element):
         """添加CPU信息"""
@@ -129,9 +156,16 @@ class SVDGenerator:
         ET.SubElement(cpu_elem, "fpuPresent").text = "true" if cpu.fpu_present else "false"
         ET.SubElement(cpu_elem, "nvicPrioBits").text = str(cpu.nvic_prio_bits)
         ET.SubElement(cpu_elem, "vendorSystickConfig").text = "true" if cpu.vendor_systick_config else "false"
-    
+        # 透传的 CPU 扩展标志（fpuDP/dspPresent/icachePresent 等）
+        _append_extra_xml(cpu_elem, getattr(cpu, "extra_xml", None))
+
     def _add_standard_fields(self, root: ET.Element):
         """添加标准字段"""
+        # 规范顺序：cpu 之后、addressUnitBits 之前
+        if self.device_info.header_system_filename:
+            ET.SubElement(root, "headerSystemFilename").text = self.device_info.header_system_filename
+        if self.device_info.header_definitions_prefix:
+            ET.SubElement(root, "headerDefinitionsPrefix").text = self.device_info.header_definitions_prefix
         ET.SubElement(root, "addressUnitBits").text = str(self.device_info.address_unit_bits)
         ET.SubElement(root, "width").text = str(self.device_info.width)
         ET.SubElement(root, "size").text = self.device_info.size
@@ -156,19 +190,34 @@ class SVDGenerator:
         
         periph_elem = ET.Element("peripheral", attrs)
         
-        # 添加基本信息
+        # 添加基本信息（规范顺序：name, version, description, displayName,
+        # alternatePeripheral, groupName, prependToName, appendToName,
+        # headerStructName, disableCondition, baseAddress, ...）
         ET.SubElement(periph_elem, "name").text = peripheral.name
-        
-        
+
+        if getattr(peripheral, "version", ""):
+            ET.SubElement(periph_elem, "version").text = peripheral.version
+
+        ET.SubElement(periph_elem, "description").text = peripheral.description
+
         # 添加显示名称（如果有）
         if peripheral.display_name:
             ET.SubElement(periph_elem, "displayName").text = peripheral.display_name
 
-        ET.SubElement(periph_elem, "description").text = peripheral.description
         # 备选外设（CMSIS-SVD 规范顺序：description 之后、groupName 之前）
         if peripheral.alternate_peripheral:
             ET.SubElement(periph_elem, "alternatePeripheral").text = peripheral.alternate_peripheral
         ET.SubElement(periph_elem, "groupName").text = peripheral.group_name
+
+        if getattr(peripheral, "prepend_to_name", ""):
+            ET.SubElement(periph_elem, "prependToName").text = peripheral.prepend_to_name
+        if getattr(peripheral, "append_to_name", ""):
+            ET.SubElement(periph_elem, "appendToName").text = peripheral.append_to_name
+        if getattr(peripheral, "header_struct_name", ""):
+            ET.SubElement(periph_elem, "headerStructName").text = peripheral.header_struct_name
+        if getattr(peripheral, "disable_condition", ""):
+            ET.SubElement(periph_elem, "disableCondition").text = peripheral.disable_condition
+
         ET.SubElement(periph_elem, "baseAddress").text = peripheral.base_address
         
         # 添加地址块
@@ -202,7 +251,10 @@ class SVDGenerator:
                 cl_elem = self._create_cluster_element(cluster)
                 if cl_elem:
                     registers_elem.append(cl_elem)
-        
+
+        # 透传的外设级未知元素（外设级 dim 系列等，放在末尾保住数据）
+        _append_extra_xml(periph_elem, getattr(peripheral, "extra_xml", None))
+
         return periph_elem
     
     def _add_interrupt_to_peripheral(self, periph_elem: ET.Element, interrupt: dict):
@@ -242,31 +294,48 @@ class SVDGenerator:
         # 使用寄存器名作为描述，如果没有描述的话
         description = register.description or register.name
         ET.SubElement(reg_elem, "description").text = description
-        
+
+        # CMSIS-SVD 可选元素（规范顺序：description 之后、addressOffset 之前）
+        if getattr(register, "alternate_group", ""):
+            ET.SubElement(reg_elem, "alternateGroup").text = register.alternate_group
+        if getattr(register, "alternate_register", ""):
+            ET.SubElement(reg_elem, "alternateRegister").text = register.alternate_register
+
         ET.SubElement(reg_elem, "addressOffset").text = register.offset
-        
+
         # 设置默认大小为32位
         ET.SubElement(reg_elem, "size").text = register.size or "0x20"
-        
+
         # 仅当access有值时才添加标签
         if register.access :
             ET.SubElement(reg_elem, "access").text = register.access
-        
+
         ET.SubElement(reg_elem, "resetValue").text = register.reset_value or "0x00000000"
-        
+
         # 复位掩码
         if register.reset_mask and register.reset_mask != "0xFFFFFFFF":
             ET.SubElement(reg_elem, "resetMask").text = register.reset_mask
-        
+
+        # 数据类型 / 写读行为语义（规范顺序在 resetMask 之后、fields 之前）
+        if getattr(register, "data_type", None):
+            ET.SubElement(reg_elem, "dataType").text = register.data_type
+        if getattr(register, "modified_write_values", None):
+            ET.SubElement(reg_elem, "modifiedWriteValues").text = register.modified_write_values
+        if getattr(register, "read_action", None):
+            ET.SubElement(reg_elem, "readAction").text = register.read_action
+
         # 添加位域
         if register.fields:
             fields_elem = ET.SubElement(reg_elem, "fields")
-            
+
             for field_name, field in register.fields.items():
                 field_elem = self._create_field_element(field)
                 if field_elem:
                     fields_elem.append(field_elem)
-        
+
+        # 透传的寄存器级未知元素（writeConstraint / protection / dimName 等）
+        _append_extra_xml(reg_elem, getattr(register, "extra_xml", None))
+
         return reg_elem
     
     def _create_cluster_element(self, cluster: Cluster) -> Optional[ET.Element]:
@@ -318,6 +387,9 @@ class SVDGenerator:
             if sub_elem:
                 cl_elem.append(sub_elem)
 
+        # 透传的簇级未知元素（dimName / alternateCluster 等）
+        _append_extra_xml(cl_elem, getattr(cluster, "extra_xml", None))
+
         return cl_elem
 
     def _create_field_element(self, field) -> Optional[ET.Element]:
@@ -340,11 +412,17 @@ class SVDGenerator:
         # 仅当access有值时才添加标签
         if field.access:
             ET.SubElement(field_elem, "access").text = field.access
-        
+
+        # 写读行为语义（规范顺序在 access 之后、enumeratedValues 之前）
+        if getattr(field, "modified_write_values", None):
+            ET.SubElement(field_elem, "modifiedWriteValues").text = field.modified_write_values
+        if getattr(field, "read_action", None):
+            ET.SubElement(field_elem, "readAction").text = field.read_action
+
         # 添加复位值
         if field.reset_value and field.reset_value != "0x0":
             ET.SubElement(field_elem, "resetValue").text = field.reset_value
-        
+
         # 添加枚举值
         if hasattr(field, 'enumerated_values') and field.enumerated_values:
             enum_elem = ET.SubElement(field_elem, "enumeratedValues")
@@ -356,7 +434,10 @@ class SVDGenerator:
                     ET.SubElement(ev_elem, "description").text = enum_val["description"]
                 if "value" in enum_val:
                     ET.SubElement(ev_elem, "value").text = enum_val["value"]
-        
+
+        # 透传的位域级未知元素（writeConstraint 等）
+        _append_extra_xml(field_elem, getattr(field, "extra_xml", None))
+
         return field_elem
     
     def _build_header(self) -> str:

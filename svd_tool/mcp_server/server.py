@@ -185,7 +185,8 @@ def svd_add_register(peripheral: str, name: str, offset: str = "0x00",
 def svd_update_register(peripheral: str, name: str, updates: Dict[str, Any],
                         doc_id: str = "") -> dict:
     """更新寄存器属性。updates 支持 name/offset/size/access/reset_value/reset_mask/description/
-    display_name/derived_from/dim/dim_increment/dim_index（dim 数组三件套）。"""
+    display_name/derived_from/alternate_group/alternate_register（同外设内的备选寄存器）/
+    data_type/modified_write_values/read_action/dim/dim_increment/dim_index。"""
     return ws.update_register(peripheral, name, updates, doc_id=doc_id or None)
 
 
@@ -210,7 +211,7 @@ def svd_add_field(peripheral: str, register: str, name: str, bit_offset: int = 0
 def svd_update_field(peripheral: str, register: str, name: str,
                      updates: Dict[str, Any], doc_id: str = "") -> dict:
     """更新位域属性。updates 支持 name/bit_offset/bit_width/access/reset_value/description/
-    display_name/enumerated_values。"""
+    display_name/enumerated_values/modified_write_values/read_action。"""
     return ws.update_field(peripheral, register, name, updates, doc_id=doc_id or None)
 
 

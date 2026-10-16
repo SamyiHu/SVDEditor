@@ -225,7 +225,8 @@ class SVDDiffer:
         # 比较寄存器属性
         reg_prop_diffs = self._diff_properties(path, r_a, r_b,
             ['address_offset', 'size', 'access', 'reset_value', 'reset_mask',
-             'description', 'display_name'])
+             'description', 'display_name', 'alternate_group', 'alternate_register',
+             'data_type', 'modified_write_values', 'read_action'])
         children.extend(reg_prop_diffs)
         
         # 比较位域
@@ -266,7 +267,8 @@ class SVDDiffer:
     def _diff_field(self, path, f_a, f_b):
         """比较两个位域"""
         children = self._diff_properties(path, f_a, f_b,
-            ['bit_offset', 'bit_width', 'access', 'description', 'display_name'])
+            ['bit_offset', 'bit_width', 'access', 'description', 'display_name',
+             'modified_write_values', 'read_action'])
         
         if not children:
             return None

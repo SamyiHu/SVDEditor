@@ -12,6 +12,19 @@ from xml.dom import minidom
 from .data_model import DeviceInfo, Interrupt
 from ..utils.logger import Logger
 
+# 设备级已消费的子元素（不在名单内的元素走 extra_xml 透传，防静默丢失）
+_DEVICE_KNOWN = {
+    "vendor", "vendorID", "name", "series", "version", "description",
+    "licenseText", "cpu", "headerSystemFilename", "headerDefinitionsPrefix",
+    "addressUnitBits", "width", "size", "resetValue", "resetMask", "peripherals",
+}
+# CPU 已消费的子元素（fpuDP/dspPresent/icachePresent/dcachePresent/itcmPresent/
+# dtcmPresent/vtorPresent 等扩展标志走透传）
+_CPU_KNOWN = {
+    "name", "revision", "endian", "mpuPresent", "fpuPresent",
+    "nvicPrioBits", "vendorSystickConfig",
+}
+
 
 class BaseSVDParser:
     """SVD 解析器基类 - 提供共享的解析基础设施"""
@@ -23,6 +36,23 @@ class BaseSVDParser:
             if child.nodeType == child.ELEMENT_NODE and child.tagName == tag_name:
                 return child
         return None
+
+    @staticmethod
+    def _collect_extra_xml(parent_node, known_tags) -> List[str]:
+        """收集未消费的子元素原文（XML 片段），供生成器原样回写。
+
+        CMSIS-SVD 规范元素众多且持续演进，解析白名单外的元素（如 writeConstraint、
+        protection、vendorExtensions、CPU 扩展标志等）在这里原文保留，
+        打开→保存往返不再静默丢失。
+        """
+        extras: List[str] = []
+        for child in parent_node.childNodes:
+            if child.nodeType == child.ELEMENT_NODE and child.tagName not in known_tags:
+                try:
+                    extras.append(child.toxml())
+                except Exception:  # noqa: BLE001 - 片段序列化失败不应中断解析
+                    continue
+        return extras
 
     def __init__(self, logger_name: str = "svd_parser"):
         self.device_info = DeviceInfo()
@@ -79,6 +109,19 @@ class BaseSVDParser:
         if vendor_node and vendor_node.firstChild:
             self.device_info.vendor = vendor_node.firstChild.data.strip()
 
+        # CMSIS-SVD 可选设备级元素
+        for tag, attr in (("vendorID", "vendor_id"),
+                          ("series", "series"),
+                          ("licenseText", "license_text"),
+                          ("headerSystemFilename", "header_system_filename"),
+                          ("headerDefinitionsPrefix", "header_definitions_prefix")):
+            node = self._get_direct_child(device_node, tag)
+            if node is not None and node.firstChild:
+                setattr(self.device_info, attr, node.firstChild.data.strip())
+
+        # 未消费元素透传（vendorExtensions / 设备级 access、protection 等）
+        self.device_info.extra_xml = self._collect_extra_xml(device_node, _DEVICE_KNOWN)
+
         self.logger.debug(f"设备信息: {self.device_info.name} v{self.device_info.version}")
 
     def _parse_cpu_info(self, device_node):
@@ -121,6 +164,9 @@ class BaseSVDParser:
         systick_nodes = cpu_node.getElementsByTagName("vendorSystickConfig")
         if systick_nodes and systick_nodes[0].firstChild:
             self.device_info.cpu.vendor_systick_config = systick_nodes[0].firstChild.data.strip().lower() == "true"
+
+        # CPU 扩展标志（fpuDP/dspPresent/icachePresent 等）透传保留
+        self.device_info.cpu.extra_xml = self._collect_extra_xml(cpu_node, _CPU_KNOWN)
 
         self.logger.debug(f"CPU信息: {self.device_info.cpu.name} {self.device_info.cpu.revision}")
 

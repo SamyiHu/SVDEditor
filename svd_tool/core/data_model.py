@@ -26,6 +26,11 @@ class Field:
     xml_start_line: int = 0  # XML起始行号
     xml_end_line: int = 0  # XML结束行号
     enumerated_values: List[Dict[str, str]] = field(default_factory=list)
+    # CMSIS-SVD 行为语义（可选元素）
+    modified_write_values: Optional[str] = None
+    read_action: Optional[str] = None
+    # 未知元素透传：解析时原文保存、生成时原样回写，防止静默丢失（如 writeConstraint）
+    extra_xml: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -47,6 +52,9 @@ class Field:
             xml_start_line=int(data.get("xml_start_line", 0)),
             xml_end_line=int(data.get("xml_end_line", 0)),
             enumerated_values=data.get("enumerated_values", []),
+            modified_write_values=data.get("modified_write_values"),
+            read_action=data.get("read_action"),
+            extra_xml=list(data.get("extra_xml", [])),
         )
 
     def __deepcopy__(self, memo):
@@ -62,6 +70,9 @@ class Field:
             xml_start_line=self.xml_start_line,
             xml_end_line=self.xml_end_line,
             enumerated_values=[dict(ev) for ev in self.enumerated_values],
+            modified_write_values=self.modified_write_values,
+            read_action=self.read_action,
+            extra_xml=list(self.extra_xml),
         )
 
 
@@ -83,6 +94,14 @@ class Register:
     dim: Optional[int] = None
     dim_increment: str = "0x0"
     dim_index: List[str] = field(default_factory=list)
+    # CMSIS-SVD 可选元素（备选寄存器组/备选寄存器/数据类型/写读行为语义）
+    alternate_group: str = ""
+    alternate_register: str = ""
+    data_type: Optional[str] = None
+    modified_write_values: Optional[str] = None
+    read_action: Optional[str] = None
+    # 未知元素透传（如 writeConstraint / protection / dimName）
+    extra_xml: List[str] = field(default_factory=list)
     xml_start_line: int = 0  # XML起始行号
     xml_end_line: int = 0  # XML结束行号
 
@@ -122,6 +141,12 @@ class Register:
             dim=data.get("dim"),
             dim_increment=data.get("dim_increment", "0x0"),
             dim_index=data.get("dim_index", []),
+            alternate_group=data.get("alternate_group", ""),
+            alternate_register=data.get("alternate_register", ""),
+            data_type=data.get("data_type"),
+            modified_write_values=data.get("modified_write_values"),
+            read_action=data.get("read_action"),
+            extra_xml=list(data.get("extra_xml", [])),
         )
 
     def __deepcopy__(self, memo):
@@ -140,6 +165,12 @@ class Register:
             dim=self.dim,
             dim_increment=self.dim_increment,
             dim_index=list(self.dim_index),
+            alternate_group=self.alternate_group,
+            alternate_register=self.alternate_register,
+            data_type=self.data_type,
+            modified_write_values=self.modified_write_values,
+            read_action=self.read_action,
+            extra_xml=list(self.extra_xml),
             xml_start_line=self.xml_start_line,
             xml_end_line=self.xml_end_line,
         )
@@ -163,6 +194,8 @@ class Cluster:
     dim_increment: str = "0x0"
     dim_index: List[str] = field(default_factory=list)
     derived_from: str = ""
+    # 未知元素透传（如 dimName / headerStructName）
+    extra_xml: List[str] = field(default_factory=list)
     xml_start_line: int = 0
     xml_end_line: int = 0
 
@@ -203,6 +236,7 @@ class Cluster:
             dim_increment=data.get("dim_increment", "0x0"),
             dim_index=data.get("dim_index", []),
             derived_from=data.get("derived_from", ""),
+            extra_xml=list(data.get("extra_xml", [])),
         )
 
     def __deepcopy__(self, memo):
@@ -222,6 +256,7 @@ class Cluster:
             dim_increment=self.dim_increment,
             dim_index=list(self.dim_index),
             derived_from=self.derived_from,
+            extra_xml=list(self.extra_xml),
             xml_start_line=self.xml_start_line,
             xml_end_line=self.xml_end_line,
         )
@@ -254,6 +289,14 @@ class Peripheral:
     # 备选外设（CMSIS-SVD alternatePeripheral）：同一地址块的另一份外设描述，
     # 如 USB_OTG_FS/USB_OTG_HS 等功能复用场景。指向另一个外设名。
     alternate_peripheral: str = ""
+    # CMSIS-SVD 外设级可选元素（头文件生成 / 命名前缀后缀 / 复用禁用条件）
+    version: str = ""
+    prepend_to_name: str = ""
+    append_to_name: str = ""
+    header_struct_name: str = ""
+    disable_condition: str = ""
+    # 未知元素透传（如 dimName / 外设级 dim 系列）
+    extra_xml: List[str] = field(default_factory=list)
     xml_start_line: int = 0  # XML起始行号
     xml_end_line: int = 0  # XML结束行号
     
@@ -299,6 +342,12 @@ class Peripheral:
             clusters=clusters,
             interrupts=data.get("interrupts", []),
             alternate_peripheral=data.get("alternate_peripheral", ""),
+            version=data.get("version", ""),
+            prepend_to_name=data.get("prepend_to_name", ""),
+            append_to_name=data.get("append_to_name", ""),
+            header_struct_name=data.get("header_struct_name", ""),
+            disable_condition=data.get("disable_condition", ""),
+            extra_xml=list(data.get("extra_xml", [])),
         )
 
     def __deepcopy__(self, memo):
@@ -316,6 +365,12 @@ class Peripheral:
             clusters={k: copy.deepcopy(v, memo) for k, v in self.clusters.items()},
             interrupts=[dict(irq) for irq in self.interrupts],
             alternate_peripheral=self.alternate_peripheral,
+            version=self.version,
+            prepend_to_name=self.prepend_to_name,
+            append_to_name=self.append_to_name,
+            header_struct_name=self.header_struct_name,
+            disable_condition=self.disable_condition,
+            extra_xml=list(self.extra_xml),
             xml_start_line=self.xml_start_line,
             xml_end_line=self.xml_end_line,
         )
@@ -375,6 +430,9 @@ class CPUInfo:
     fpu_present: bool = False
     nvic_prio_bits: int = 4
     vendor_systick_config: bool = False
+    # 未知元素透传（如 fpuDP/dspPresent/icachePresent/dcachePresent/itcmPresent/
+    # dtcmPresent/vtorPresent 等扩展标志，解析时原文保留、生成时原样回写）
+    extra_xml: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -391,6 +449,7 @@ class CPUInfo:
             fpu_present=bool(data.get("fpu_present", False)),
             nvic_prio_bits=int(data.get("nvic_prio_bits", 4)),
             vendor_systick_config=bool(data.get("vendor_systick_config", False)),
+            extra_xml=list(data.get("extra_xml", [])),
         )
 
     def __deepcopy__(self, memo):
@@ -413,9 +472,14 @@ class DeviceInfo:
     version: str = "1.0"
     description: str = ""
     vendor: str = ""  # 厂商字段，从SVD文件或用户新建向导中填充
+    vendor_id: str = ""  # CMSIS-SVD vendorID（如 "ST"）
+    series: str = ""  # CMSIS-SVD series（设备系列名）
+    license_text: str = ""  # CMSIS-SVD licenseText 元素（与注释里的 license 是两回事）
+    header_system_filename: str = ""  # CMSIS-SVD headerSystemFilename
+    header_definitions_prefix: str = ""  # CMSIS-SVD headerDefinitionsPrefix
     copyright: str = ""  # 版权字段
     author: str = ""  # 作者字段
-    license: str = ""  # 许可证字段
+    license: str = ""  # 许可证字段（来自 XML 注释）
     cpu: CPUInfo = field(default_factory=CPUInfo)
     address_unit_bits: int = 8
     width: int = 32
@@ -425,6 +489,8 @@ class DeviceInfo:
     peripherals: Dict[str, Peripheral] = field(default_factory=dict)
     interrupts: Dict[str, Interrupt] = field(default_factory=dict)
     svd_version: str = "1.3"
+    # 未知元素透传（如 vendorExtensions / 设备级 protection）
+    extra_xml: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为完整字典"""
@@ -467,6 +533,11 @@ class DeviceInfo:
             version=data.get("version", "1.0"),
             description=data.get("description", ""),
             vendor=data.get("vendor", ""),
+            vendor_id=data.get("vendor_id", ""),
+            series=data.get("series", ""),
+            license_text=data.get("license_text", ""),
+            header_system_filename=data.get("header_system_filename", ""),
+            header_definitions_prefix=data.get("header_definitions_prefix", ""),
             copyright=data.get("copyright", ""),
             author=data.get("author", ""),
             license=data.get("license", ""),
@@ -479,4 +550,5 @@ class DeviceInfo:
             peripherals=peripherals,
             interrupts=interrupts,
             svd_version=data.get("svd_version", "1.3"),
+            extra_xml=list(data.get("extra_xml", [])),
         )
