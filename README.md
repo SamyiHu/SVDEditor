@@ -48,6 +48,7 @@
 | **Real-time Preview** | Live XML preview with syntax highlighting |
 | **Dark/Light Theme** | Built-in theme switching with modern flat UI |
 | **dim Register Arrays** | Full support for register & cluster level `dim`/`dimIncrement`/`dimIndex` (configurable via edit dialog) |
+| **Alternate Peripheral/Register** | Edit `alternatePeripheral` / `alternateRegister` / `alternateGroup` in dialogs; address sharing between alternate pairs is conflict-exempt |
 
 ### AI Integration (MCP)
 
@@ -58,7 +59,7 @@ The built-in AI panel has been removed in favor of a standard **MCP Server**: co
 | Capability | Description |
 |------------|-------------|
 | **Query & Search** | Device summary, layered peripheral/register/field getters, unified search with pagination |
-| **CRUD** | Full add/update/remove for peripherals, registers, bitfields, and interrupts (incl. rename, derivedFrom) |
+| **CRUD** | Full add/update/remove for peripherals, registers, bitfields, and interrupts (incl. rename, derivedFrom, the alternate family, dataType, and behavioral semantics elements) |
 | **Validation** | CMSIS-SVD schema validation, address conflict detection |
 | **Multi-document** | Open / switch / diff multiple SVD files |
 | **Export** | CSV / Markdown / HTML docs, C header generation (plain & CMSIS style) |
@@ -217,9 +218,43 @@ Full support for the CMSIS-SVD spec `dim`/`dimIncrement`/`dimIndex` trio:
 |-------|---------|
 | **Register** | ✅ Data model + parsing + generation + **configurable via edit dialog** |
 | **Cluster** | ✅ Full support |
-| **Field** | Data model supported, UI not exposed (rarely used per spec) |
+| **Field** | Not modeled; preserved verbatim via unknown-element passthrough (rarely used per spec) |
 
 The register edit dialog's "Register Array (dim)" group lets you toggle it on, configure count/increment/index (supports both `0-7` range and `0,1,2` comma syntax), with live preview of the generated dim tags.
+
+---
+
+## CMSIS-SVD Spec Coverage
+
+Aligned with ARM's official SVDConv capabilities; open→save roundtrips lose no data:
+
+### Three Equivalent Bit-Position Styles
+
+The spec allows `bitOffset+bitWidth` / `lsb+msb` / `bitRange[msb:lsb]` (ST and other vendors commonly use lsb+msb). All three parse correctly and are normalized to standard `bitOffset+bitWidth` on output.
+
+### The alternate Family
+
+| Element | Level | Support |
+|---------|-------|---------|
+| `alternatePeripheral` | Peripheral | Modeled + edit-dialog dropdown + validation (reference checks, address-overlap exemption) |
+| `alternateRegister` / `alternateGroup` | Register | Modeled + edit dialog + validation (same-peripheral reference checks, offset-duplicate exemption) |
+
+Address sharing between alternate pairs is legal reuse: the edit dialog's live conflict check **verifies the alternate relationship before flagging**, and the "Validate" report lists alternate relations in a **dedicated info section** (separate from errors).
+
+### High-Frequency Semantic Elements (Modeled & Editable)
+
+- **Register**: `dataType`, `modifiedWriteValues`, `readAction`
+- **Field**: `modifiedWriteValues`, `readAction`; enumerated-values container `name`/`headerFileName`/`usage` and per-entry `isDefault` (extra containers preserved via passthrough)
+- **Peripheral**: `version`, `prependToName`, `appendToName`, `headerStructName`, `disableCondition`
+- **Device**: `vendorID`, `series`, `licenseText`, `headerSystemFilename`, `headerDefinitionsPrefix`
+
+### Unknown-Element Passthrough (Lossless Roundtrips)
+
+Spec elements outside the parsing whitelist (`writeConstraint`, `protection`, `dimName`, `vendorExtensions`, CPU extension flags like `fpuDP`/`dspPresent`, peripheral-level dim, etc.) are **kept verbatim and written back on save** — future spec evolution cannot cause silent data loss.
+
+### Validation (Aligned with SVDConv)
+
+Interrupt number range (0–239), enumerated values (missing/duplicate/overflow), dim consistency (`%s` placeholder / dimIncrement / dimIndex count / dim=1 warning), C-identifier compliance (`[%s]` array placeholder exempt), alternate-pair address-sharing exemption.
 
 ---
 
@@ -242,7 +277,7 @@ python run.py info file.svd  # CLI mode
 
 ### Datasheet Import Setup (Optional)
 
-The datasheet import feature depends on the external [Parser](../Parser) package and its parsing libraries (missing these does not affect the editor itself; the import wizard will prompt to install):
+The datasheet import feature depends on the external [Parser](../Parser) package (package name `reg_core`; the bridge auto-probes: pip install / repo sibling `../Parser` / env var `SVDEDITOR_PARSER_PATH` pointing to a directory containing `reg_core/`) and its parsing libraries (missing these does not affect the editor itself; the import wizard will prompt to install):
 
 ```bash
 # Parser package (editable install recommended)
@@ -323,6 +358,9 @@ python run.py remove-peripheral chip.svd --name GPIOC,GPIOD -o updated.svd
 # Update peripheral properties
 python run.py update-peripheral chip.svd -n GPIOA --base-address 0x48010000 -o updated.svd
 
+# Set alternate peripheral (legal address-block reuse, exempt from conflict checks)
+python run.py update-peripheral chip.svd -n GPIOA --alternate-peripheral GPIOB -o updated.svd
+
 # Add register (from CLI args)
 python run.py add-register chip.svd -p GPIOA --name IDR --offset 0x10 --desc "Input data" -o updated.svd
 
@@ -331,6 +369,9 @@ python run.py add-register chip.svd -p GPIOA --data registers.json -o updated.sv
 
 # Update register properties
 python run.py update-register chip.svd -p GPIOA -n MODER --offset 0x08 --size 0x20 -o updated.svd
+
+# Set alternate register / group (same peripheral; alternate pairs sharing an offset are conflict-exempt)
+python run.py update-register chip.svd -p GPIOA -n CRL --alternate-register CRH --alternate-group CFG -o updated.svd
 
 # Remove registers
 python run.py remove-register chip.svd -p GPIOA --names OTYPER,OSPEEDR -o updated.svd
@@ -397,11 +438,16 @@ SVDEditor/
 │   │   ├── document_manager.py     # Multi-document manager
 │   │   ├── command_history.py      # Undo/Redo
 │   │   └── datasource/             # Datasheet integration core layer
-│   │       ├── parser_bridge.py        # Parser package bridge (threaded)
+│   │       ├── parser_bridge.py        # Parser (reg_core) package bridge (threaded)
 │   │       ├── trm_parser.py           # Word TRM three-stage parser
 │   │       ├── chip_to_svd_converter.py # ChipData → DeviceInfo
 │   │       ├── svd_verifier.py         # SVD verification engine
-│   │       └── pinout_parser.py        # Datasheet pinout → package trim manifest
+│   │       ├── pinout_parser.py        # Datasheet pinout → package trim manifest
+│   │       ├── header_parser.py        # C header parsing (H-driven pipeline)
+│   │       ├── header_coverage.py      # H/TRM/SVD coverage statistics
+│   │       ├── header_trm_fusion.py    # H × TRM fusion
+│   │       ├── correction_store.py     # Correction data store
+│   │       └── review_workflow.py      # Correction review workflow
 │   ├── mcp_server/                 # MCP Server (AI client access, no PyQt dependency)
 │   │   ├── server.py                   # 30 MCP tool definitions + stdio entry
 │   │   └── headless_workspace.py       # Headless multi-doc workspace (edit → explicit save)

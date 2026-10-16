@@ -47,6 +47,7 @@
 | **实时预览** | 实时 XML 预览，支持语法高亮 |
 | **深色/浅色主题** | 内置主题切换，现代化扁平 UI |
 | **dim 寄存器数组** | 支持寄存器级和簇级 `dim`/`dimIncrement`/`dimIndex`（编辑对话框可视化配置）|
+| **备选外设/寄存器** | `alternatePeripheral` / `alternateRegister` / `alternateGroup` 可视化编辑；互为备选的地址复用不计冲突 |
 
 ### AI 集成（MCP）
 
@@ -57,7 +58,7 @@
 | 能力 | 示例 |
 |------|------|
 | **查询与搜索** | 设备摘要、外设/寄存器/位域分层获取、统一搜索（分页） |
-| **增删改查** | 外设/寄存器/位域/中断的完整 CRUD（支持改名、derivedFrom） |
+| **增删改查** | 外设/寄存器/位域/中断的完整 CRUD（支持改名、derivedFrom、alternate 系列、dataType、行为语义等规范元素） |
 | **验证检查** | CMSIS-SVD 规范校验、地址冲突检测 |
 | **多文档** | 打开/切换/对比多个 SVD 文件 |
 | **输出导出** | CSV/Markdown/HTML 文档、C 头文件（普通/CMSIS 风格） |
@@ -216,9 +217,43 @@ for spec in result.packages:
 |------|------|
 | **Register（寄存器）** | ✅ 数据模型 + 解析 + 生成 + **编辑对话框可视化配置** |
 | **Cluster（寄存器簇）** | ✅ 完整支持 |
-| **Field（位域）** | 数据模型支持，UI 暂不暴露（规范极少用）|
+| **Field（位域）** | 未单独建模；解析时随未知元素透传原文保留（规范极少用）|
 
 寄存器编辑对话框的「寄存器数组 (dim)」分组可勾选启用，配置数量/步长/索引（支持 `0-7` 范围和 `0,1,2` 逗号两种写法），实时预览生成的 dim 标签。
+
+---
+
+## CMSIS-SVD 规范覆盖
+
+对齐 ARM 官方 SVDConv 的能力边界，打开→保存往返不丢数据：
+
+### 位域位置三种等价写法
+
+规范允许 `bitOffset+bitWidth` / `lsb+msb` / `bitRange[msb:lsb]` 三种写法（ST 等厂商常用 lsb+msb），读入统一换算为标准 `bitOffset+bitWidth`，输出标准化。
+
+### 备选（alternate）家族
+
+| 元素 | 层级 | 支持 |
+|------|------|------|
+| `alternatePeripheral` | 外设 | 建模 + 编辑对话框下拉 + 校验（引用检查、地址重叠豁免） |
+| `alternateRegister` / `alternateGroup` | 寄存器 | 建模 + 编辑对话框 + 校验（同外设引用检查、偏移重复豁免） |
+
+互为备选的外设/寄存器共用地址是合法复用：对话框的实时冲突检测**先判断备选关系再报错**，「验证数据」结果中备选关系以「备选外设 / 备选寄存器」信息类目**单列展示**，不混入错误。
+
+### 高频语义元素（建模可编辑）
+
+- **寄存器**：`dataType`、`modifiedWriteValues`、`readAction`
+- **位域**：`modifiedWriteValues`、`readAction`；枚举容器 `name`/`headerFileName`/`usage` 与条目 `isDefault`（多枚举容器透传保留）
+- **外设**：`version`、`prependToName`、`appendToName`、`headerStructName`、`disableCondition`
+- **设备**：`vendorID`、`series`、`licenseText`、`headerSystemFilename`、`headerDefinitionsPrefix`
+
+### 未知元素透传（往返不丢）
+
+解析白名单之外的规范元素（`writeConstraint`、`protection`、`dimName`、`vendorExtensions`、CPU 扩展标志 `fpuDP`/`dspPresent` 等、外设级 dim 系列）**原文保留并在保存时原样回写** —— 规范持续演进也不会静默丢数据。
+
+### 校验（对齐 SVDConv）
+
+中断号范围（0–239）、枚举值缺失/重复/超位宽、dim 一致性（`%s` 占位符 / dimIncrement / dimIndex 数量 / dim=1 警告）、C 标识符合规（豁免 `[%s]` 数组占位符）、备选对共用地址豁免。
 
 ---
 
@@ -241,7 +276,7 @@ python run.py info file.svd  # CLI 模式
 
 ### 数据手册导入配置（可选）
 
-数据手册导入功能依赖外部 [Parser](../Parser) 包及其解析库（缺失时不影响编辑器主体，导入向导会提示安装）：
+数据手册导入功能依赖外部 [Parser](../Parser) 包（包名 `reg_core`，桥接自动探测：pip 安装 / 仓库同级 `../Parser` / 环境变量 `SVDEDITOR_PARSER_PATH` 指向含 `reg_core/` 的目录）及其解析库。缺失时不影响编辑器主体，导入向导会提示安装：
 
 ```bash
 # Parser 包（推荐 editable 安装）
@@ -322,6 +357,9 @@ python run.py remove-peripheral chip.svd --name GPIOC,GPIOD -o updated.svd
 # 更新外设属性
 python run.py update-peripheral chip.svd -n GPIOA --base-address 0x48010000 -o updated.svd
 
+# 设置备选外设（共用地址块的合法复用，豁免冲突检查）
+python run.py update-peripheral chip.svd -n GPIOA --alternate-peripheral GPIOB -o updated.svd
+
 # 添加寄存器（命令行参数）
 python run.py add-register chip.svd -p GPIOA --name IDR --offset 0x10 --desc "Input data" -o updated.svd
 
@@ -330,6 +368,9 @@ python run.py add-register chip.svd -p GPIOA --data registers.json -o updated.sv
 
 # 更新寄存器属性
 python run.py update-register chip.svd -p GPIOA -n MODER --offset 0x08 --size 0x20 -o updated.svd
+
+# 设置备选寄存器 / 备选组（同一外设内，互为备选共用偏移不计冲突）
+python run.py update-register chip.svd -p GPIOA -n CRL --alternate-register CRH --alternate-group CFG -o updated.svd
 
 # 移除寄存器
 python run.py remove-register chip.svd -p GPIOA --names OTYPER,OSPEEDR -o updated.svd
@@ -396,11 +437,16 @@ SVDEditor/
 │   │   ├── document_manager.py     # 多文档管理
 │   │   ├── command_history.py      # 撤销/重做
 │   │   └── datasource/             # 数据手册集成核心层
-│   │       ├── parser_bridge.py        # Parser 包桥接（线程封装）
+│   │       ├── parser_bridge.py        # Parser(reg_core) 包桥接（线程封装）
 │   │       ├── trm_parser.py           # Word TRM 三段式解析器
 │   │       ├── chip_to_svd_converter.py # ChipData → DeviceInfo
 │   │       ├── svd_verifier.py         # SVD 核对引擎
-│   │       └── pinout_parser.py        # Datasheet 引脚表 → 封装裁剪清单
+│   │       ├── pinout_parser.py        # Datasheet 引脚表 → 封装裁剪清单
+│   │       ├── header_parser.py        # H 头文件解析（H 主控链路）
+│   │       ├── header_coverage.py      # H/TRM/SVD 覆盖率统计
+│   │       ├── header_trm_fusion.py    # H 与 TRM 融合
+│   │       ├── correction_store.py     # 修正数据存储
+│   │       └── review_workflow.py      # 修正审阅工作流
 │   ├── mcp_server/                 # MCP Server（AI 客户端接入，无 PyQt 依赖）
 │   │   ├── server.py                   # 30 个 MCP 工具定义 + stdio 入口
 │   │   └── headless_workspace.py       # headless 多文档工作区（编辑→显式保存）
