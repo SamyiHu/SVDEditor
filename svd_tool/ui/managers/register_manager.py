@@ -103,7 +103,13 @@ class RegisterManager:
                 size=result["size"],
                 access=result["access"],
                 reset_value=result["reset_value"],
-                description=result["description"]
+                description=result["description"],
+                display_name=result.get("display_name", ""),
+                dim=result.get("dim"),
+                dim_increment=result.get("dim_increment", "0x0"),
+                dim_index=result.get("dim_index", []),
+                alternate_register=result.get("alternate_register", ""),
+                alternate_group=result.get("alternate_group", ""),
             )
             
             # 使用StateManager添加寄存器
@@ -183,7 +189,13 @@ class RegisterManager:
                 size=result["size"],
                 access=result["access"],
                 reset_value=result["reset_value"],
-                description=result["description"]
+                description=result["description"],
+                display_name=result.get("display_name", ""),
+                dim=result.get("dim"),
+                dim_increment=result.get("dim_increment", "0x0"),
+                dim_index=result.get("dim_index", []),
+                alternate_register=result.get("alternate_register", ""),
+                alternate_group=result.get("alternate_group", ""),
             )
             
             # 使用StateManager更新寄存器

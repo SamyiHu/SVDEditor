@@ -215,6 +215,13 @@ class SVDSchemaValidator:
                     f"peripheral.{name}.alternatePeripheral",
                     t("val.alt_confirm", alt=alt,
                       default=f"修正 alternatePeripheral，或先定义 '{alt}'"))
+            else:
+                # 合法备选关系：单列为信息项（与错误/警告区分，不参与豁免以外的判断）
+                self._add_info(
+                    t("val.cat.alternate", default="备选外设"),
+                    t("val.alt_info", name=name, alt=alt,
+                      default=f"'{name}' 是 '{alt}' 的备选外设（共用地址块，已豁免重叠检查）"),
+                    f"peripheral.{name}.alternatePeripheral")
 
         # 收集所有外设地址范围，检查重叠
         periph_ranges: List[Tuple[str, int, int]] = []  # (name, base_addr, end_addr)
@@ -442,6 +449,12 @@ class SVDSchemaValidator:
                     self._add_error(t("val.cat.derived_ref", default="引用"),
                                    t("val.altreg_not_exist", periph=periph_name, reg=reg_name, alt=ar,
                                      default=f"寄存器 '{reg_name}' 的 alternateRegister='{ar}' 在外设内不存在"),
+                                   f"peripheral.{periph_name}.register.{reg_name}.alternateRegister")
+                else:
+                    # 合法备选关系：单列为信息项
+                    self._add_info(t("val.cat.alternate", default="备选寄存器"),
+                                   t("val.altreg_info", periph=periph_name, reg=reg_name, alt=ar,
+                                     default=f"'{reg_name}' 是 '{ar}' 的备选寄存器（共用偏移，已豁免重复检查）"),
                                    f"peripheral.{periph_name}.register.{reg_name}.alternateRegister")
 
             # 验证位域

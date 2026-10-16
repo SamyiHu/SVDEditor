@@ -117,12 +117,15 @@ class PeripheralEditDialog(BaseEditDialog):
         self.base_addr_edit.textChanged.connect(self._check_address_conflict)
         self.offset_edit.textChanged.connect(self._check_address_conflict)
         self.size_edit.textChanged.connect(self._check_address_conflict)
+        self.name_edit.textChanged.connect(self._check_address_conflict)
+        self.alternate_combo.currentTextChanged.connect(self._check_address_conflict)
 
         # 连接预览刷新信号
         for w in [self.name_edit, self.base_addr_edit, self.display_name_edit,
                   self.desc_edit, self.group_edit, self.offset_edit, self.size_edit]:
             self._connect_preview_signal(w)
         self._connect_preview_signal(self.derived_combo)
+        self._connect_preview_signal(self.alternate_combo)
 
         if peripheral:
             self.load_data(peripheral)
@@ -173,6 +176,15 @@ class PeripheralEditDialog(BaseEditDialog):
                 self.derived_combo.addItem(periph)
         
         self.add_form_row(t("label.derived_from") + ":", self.derived_combo)
+
+        # 备选外设（alternatePeripheral：同一地址块的另一份描述，
+        # 互为备选的外设对共用地址合法，不计冲突）
+        self.alternate_combo = QComboBox()
+        self.alternate_combo.addItem(t("value.none"))
+        for periph in self.existing_peripherals:
+            if not self.is_edit or periph != self.original_name:
+                self.alternate_combo.addItem(periph)
+        self.add_form_row(t("label.alternate_peripheral", default="备选外设") + ":", self.alternate_combo)
     
     def load_data(self, peripheral: Peripheral):
         """加载数据"""
@@ -192,6 +204,16 @@ class PeripheralEditDialog(BaseEditDialog):
             index = self.derived_combo.findText(peripheral.derived_from)
             if index >= 0:
                 self.derived_combo.setCurrentIndex(index)
+
+        # 设置备选外设（目标不在下拉里时补进去，避免悬空引用显示丢失）
+        alt_periph = getattr(peripheral, "alternate_peripheral", "") or ""
+        if alt_periph:
+            index = self.alternate_combo.findText(alt_periph)
+            if index < 0:
+                self.alternate_combo.addItem(alt_periph)
+                index = self.alternate_combo.findText(alt_periph)
+            if index >= 0:
+                self.alternate_combo.setCurrentIndex(index)
     
     def _check_address_conflict(self):
         """实时检测外设地址冲突"""
@@ -215,11 +237,49 @@ class PeripheralEditDialog(BaseEditDialog):
         )
 
         if conflict:
+            # 先确认是否为备选关系：与新外设互为 alternatePeripheral 的对共用地址合法
+            if self._is_alternate_overlap(base_addr, addr_block):
+                self._clear_conflict_style(self.base_addr_edit)
+                self.base_addr_edit.setToolTip(t(
+                    "tip.alt_addr_exempt",
+                    default="与备选外设（alternatePeripheral）共用地址块，属合法复用"))
+                self._has_address_conflict = False
+                return
             self._set_conflict_style(self.base_addr_edit, conflict)
             self._has_address_conflict = True
         else:
             self._clear_conflict_style(self.base_addr_edit)
             self._has_address_conflict = False
+
+    def _is_alternate_overlap(self, base_addr: str, addr_block: dict) -> bool:
+        """判断当前地址是否只与互为备选的外设重叠（alternatePeripheral 豁免）。"""
+        try:
+            from ..core.validation_utils import parse_hex, get_peripheral_address_range
+
+            new_base = parse_hex(base_addr)
+            if new_base is None:
+                return False
+            new_off = parse_hex(addr_block.get("offset", "0x0")) or 0
+            new_size = parse_hex(addr_block.get("size", "0x0")) or 0
+            new_start, new_end = new_base + new_off, new_base + new_off + new_size - 1
+
+            alt = self.alternate_combo.currentText()
+            alt = "" if alt == t("value.none") else alt.strip()
+            new_name = self.name_edit.text().strip()
+
+            for pname, p in self.existing_peripherals_data.items():
+                if self.is_edit and pname == self.original_name:
+                    continue
+                s, e = get_peripheral_address_range(p)
+                if s is None or e is None:
+                    continue
+                if new_start <= e and s <= new_end:
+                    p_alt = (getattr(p, "alternate_peripheral", "") or "").strip()
+                    if (alt and pname == alt) or (p_alt and p_alt == new_name):
+                        return True
+        except Exception:  # noqa: BLE001 - 判断失败按有冲突处理
+            return False
+        return False
     
     def validate_input(self):
         """验证输入"""
@@ -248,7 +308,11 @@ class PeripheralEditDialog(BaseEditDialog):
         derived_from = self.derived_combo.currentText()
         if derived_from == t("value.none"):
             derived_from = ""
-        
+
+        alt_periph = self.alternate_combo.currentText()
+        if alt_periph == t("value.none"):
+            alt_periph = ""
+
         self.result_data = {
             "old_name": self.original_name if self.is_edit else "",
             "name": self.name_edit.text().strip(),
@@ -261,7 +325,8 @@ class PeripheralEditDialog(BaseEditDialog):
                 "size": self.size_edit.text().strip(),
                 "usage": "registers"
             },
-            "derived_from": derived_from
+            "derived_from": derived_from,
+            "alternate_peripheral": alt_periph,
         }
 
     def _generate_preview_xml(self) -> str:
@@ -276,6 +341,8 @@ class PeripheralEditDialog(BaseEditDialog):
                 display_name=self.display_name_edit.text().strip(),
                 group_name=self.group_edit.text().strip(),
                 derived_from=self.derived_combo.currentText() if self.derived_combo.currentText() != t("value.none") else "",
+                alternate_peripheral=(self.alternate_combo.currentText()
+                                      if self.alternate_combo.currentText() != t("value.none") else ""),
                 address_block={
                     "offset": self.offset_edit.text().strip() or "0x0",
                     "size": self.size_edit.text().strip() or "0x14",
@@ -309,17 +376,21 @@ class RegisterEditDialog(BaseEditDialog):
         
         # 是否存在偏移冲突标志
         self._has_offset_conflict = False
-        
+
         # 连接实时检测信号
         self.offset_edit.textChanged.connect(self._check_offset_conflict)
+        self.name_edit.textChanged.connect(self._check_offset_conflict)
+        self.alternate_register_combo.currentTextChanged.connect(self._check_offset_conflict)
 
         # 连接预览刷新信号
         for w in [self.name_edit, self.offset_edit, self.display_name_edit,
                   self.desc_edit, self.reset_edit, self.size_edit,
-                  self.dim_edit, self.dim_increment_edit, self.dim_index_edit]:
+                  self.dim_edit, self.dim_increment_edit, self.dim_index_edit,
+                  self.alternate_group_edit]:
             self._connect_preview_signal(w)
         self._connect_preview_signal(self.access_combo)
         self._connect_preview_signal(self.dim_enable_chk)
+        self._connect_preview_signal(self.alternate_register_combo)
 
         if register:
             self.load_data(register)
@@ -360,6 +431,34 @@ class RegisterEditDialog(BaseEditDialog):
         self.size_edit.setText("0x20")
         self.size_edit.setPlaceholderText(t("placeholder.size"))
         self.add_form_row(t("label.size") + ":", self.size_edit)
+
+        # ── 备选寄存器（alternateRegister / alternateGroup）──
+        # CMSIS-SVD：alternateRegister 指向同一外设内共用偏移的备选描述，
+        # 互为备选的寄存器对重复偏移合法（不计冲突）
+        alt_group = QGroupBox(t("label.alt_reg_group", default="备选寄存器 (alternate)"))
+        alt_layout = QVBoxLayout(alt_group)
+        alt_row = QHBoxLayout()
+        alt_row.addWidget(QLabel(t("label.alternate_register", default="备选寄存器")))
+        self.alternate_register_combo = QComboBox()
+        self.alternate_register_combo.addItem(t("value.none"))
+        for reg_name in self.existing_registers:
+            if not self.is_edit or reg_name != self.original_name:
+                self.alternate_register_combo.addItem(reg_name)
+        alt_row.addWidget(self.alternate_register_combo, 1)
+        alt_layout.addLayout(alt_row)
+        grp_row = QHBoxLayout()
+        grp_row.addWidget(QLabel(t("label.alternate_group", default="备选组")))
+        self.alternate_group_edit = QLineEdit()
+        self.alternate_group_edit.setPlaceholderText(t("placeholder.alternate_group",
+            default="如 CFG，同一偏移的寄存器归组；可留空"))
+        grp_row.addWidget(self.alternate_group_edit, 1)
+        alt_layout.addLayout(grp_row)
+        alt_hint = QLabel(t("label.alt_reg_hint",
+            default="💡 选择备选寄存器后，与其共用偏移不再计为冲突"))
+        alt_hint.setWordWrap(True)
+        alt_hint.setStyleSheet("color: gray; font-size: 9pt;")
+        alt_layout.addWidget(alt_hint)
+        self.add_form_row("", alt_group)
 
         # ── 寄存器数组（dim）配置 ──
         # CMSIS-SVD 规范：dim/dimIncrement/dimIndex 描述一组地址连续、结构相同的寄存器。
@@ -436,6 +535,17 @@ class RegisterEditDialog(BaseEditDialog):
             self.dim_increment_edit.setText(register.dim_increment or "0x4")
             self.dim_index_edit.setText(",".join(register.dim_index) if register.dim_index else "")
 
+        # 备选寄存器回填（目标不在下拉里时补进去，避免悬空引用显示丢失）
+        alt_reg = getattr(register, "alternate_register", "") or ""
+        if alt_reg:
+            index = self.alternate_register_combo.findText(alt_reg)
+            if index < 0:
+                self.alternate_register_combo.addItem(alt_reg)
+                index = self.alternate_register_combo.findText(alt_reg)
+            if index >= 0:
+                self.alternate_register_combo.setCurrentIndex(index)
+        self.alternate_group_edit.setText(getattr(register, "alternate_group", "") or "")
+
     def _check_offset_conflict(self):
         """实时检测寄存器偏移冲突"""
         offset = self.offset_edit.text().strip()
@@ -452,11 +562,46 @@ class RegisterEditDialog(BaseEditDialog):
         )
 
         if conflict:
+            # 先确认是否为备选关系：与新寄存器互为 alternateRegister 的对共用偏移合法
+            if self._is_alternate_offset(offset):
+                self._clear_conflict_style(self.offset_edit)
+                self.offset_edit.setToolTip(t(
+                    "tip.alt_offset_exempt",
+                    default="与备选寄存器（alternateRegister）共用偏移，属合法复用"))
+                self._has_offset_conflict = False
+                return
             self._set_conflict_style(self.offset_edit, conflict)
             self._has_offset_conflict = True
         else:
             self._clear_conflict_style(self.offset_edit)
             self._has_offset_conflict = False
+
+    def _is_alternate_offset(self, offset: str) -> bool:
+        """判断当前偏移是否只与互为备选的寄存器重复（alternateRegister 豁免）。"""
+        try:
+            from ..core.validation_utils import parse_hex
+
+            new_off = parse_hex(offset)
+            if new_off is None:
+                return False
+            alt = self.alternate_register_combo.currentText()
+            alt = "" if alt == t("value.none") else alt.strip()
+            new_name = self.name_edit.text().strip()
+
+            for rname, reg in self.existing_registers_data.items():
+                if self.is_edit and rname == self.original_name:
+                    continue
+                reg_off = parse_hex(reg.offset)
+                if reg_off is None or reg_off != new_off:
+                    continue
+                reg_alt = (getattr(reg, "alternate_register", "") or "").strip()
+                # 新寄存器指向它，或它已指向新寄存器（新名或编辑前的原名）
+                if (alt and rname == alt) or (reg_alt and reg_alt in
+                                              (new_name, self.original_name)):
+                    return True
+        except Exception:  # noqa: BLE001 - 判断失败按有冲突处理
+            return False
+        return False
 
     def validate_input(self):
         """验证输入"""
@@ -516,6 +661,10 @@ class RegisterEditDialog(BaseEditDialog):
                 else:
                     dim_index = [s.strip() for s in idx_text.split(",")]
 
+        alt_reg = self.alternate_register_combo.currentText()
+        if alt_reg == t("value.none"):
+            alt_reg = ""
+
         self.result_data = {
             "old_name": self.original_name if self.is_edit else "",
             "name": self.name_edit.text().strip(),
@@ -528,6 +677,8 @@ class RegisterEditDialog(BaseEditDialog):
             "dim": dim_val,
             "dim_increment": dim_increment,
             "dim_index": dim_index,
+            "alternate_register": alt_reg,
+            "alternate_group": self.alternate_group_edit.text().strip(),
         }
 
     def _generate_preview_xml(self) -> str:
@@ -561,6 +712,9 @@ class RegisterEditDialog(BaseEditDialog):
                 dim=dim_val,
                 dim_increment=dim_increment,
                 dim_index=dim_index,
+                alternate_register=(self.alternate_register_combo.currentText()
+                                    if self.alternate_register_combo.currentText() != t("value.none") else ""),
+                alternate_group=self.alternate_group_edit.text().strip(),
             )
             # 只显示寄存器自身配置，不包含位域
             return SVDGenerator.generate_register_xml(r)

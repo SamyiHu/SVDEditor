@@ -261,6 +261,7 @@ class PeripheralManager(QObject):
                 display_name=result["display_name"],
                 group_name=result["group_name"],
                 derived_from=result["derived_from"],
+                alternate_peripheral=result.get("alternate_peripheral", ""),
                 address_block=result["address_block"]
             )
             
@@ -318,6 +319,7 @@ class PeripheralManager(QObject):
                 display_name=result["display_name"],
                 group_name=result["group_name"],
                 derived_from=result["derived_from"],
+                alternate_peripheral=result.get("alternate_peripheral", ""),
                 address_block=result["address_block"],
                 registers=peripheral.registers.copy(),
                 interrupts=peripheral.interrupts.copy()
