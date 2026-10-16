@@ -223,13 +223,9 @@ a = Analysis(
         'json',
         'warnings',
 
-        # AI 助手依赖：ai_assistant/backend.py 用函数内 try/except 懒加载 import，
-        # PyInstaller 静态分析追踪不到，需在此显式声明，否则打包版 AI 功能不可用。
-        'openai', 'anthropic',
-        'httpx', 'httpcore',
-        'anyio', 'sniffio', 'distro',
-        'pydantic', 'pydantic_core',
-        'tqdm', 'jiter',
+        # 注：内嵌 AI 助手已移除（改 MCP 接入，见 docs/MCP_DESIGN.md），
+        # 原 openai/anthropic/httpx 等隐藏导入一并删除；单文件版不含 MCP Server
+        # （MCP 走源码 `python run.py --mcp` 接入，exe 内 --mcp 会给出安装提示）。
 
         # 数据手册导入依赖（datasource/parser_bridge.py 懒加载 import）：
         'reg_core',
@@ -266,6 +262,12 @@ a = Analysis(
         'curses',
         'ensurepip',
         'venv',
+        # MCP Server 不进单文件版（run.py --mcp 分支的 ImportError 有友好提示兜底）：
+        # 排除 mcp SDK 可少带 starlette/uvicorn/click 等一堆 Web 依赖
+        'mcp',
+        'svd_tool.mcp_server',
+        'starlette',
+        'uvicorn',
         # ---- 以下为体积优化新增：SVD 编辑器用不到的 Qt 子模块 ----
         'PyQt6.QtPdf',          # PDF 渲染（约 Qt6Pdf.dll + qpdf.dll）
         'PyQt6.QtPdfWidgets',

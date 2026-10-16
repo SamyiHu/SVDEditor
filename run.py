@@ -37,6 +37,10 @@ if __name__ == "__main__":
             from svd_tool.mcp_server import main as mcp_main
         except ImportError as e:
             print(f"[错误] {e}", file=sys.stderr)
+            if "mcp_server" in str(e):
+                print("[提示] 单文件打包版未内置 MCP Server；"
+                      "AI 客户端接入请使用源码版：python run.py --mcp（先 pip install mcp）",
+                      file=sys.stderr)
             sys.exit(1)
         mcp_main()
     elif is_cli_mode():
