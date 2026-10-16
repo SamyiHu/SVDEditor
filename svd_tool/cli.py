@@ -756,6 +756,8 @@ def cmd_update_peripheral(args):
         periph.display_name = args.display_name; changed.append("display_name")
     if args.group is not None:
         periph.group_name = args.group; changed.append("group_name")
+    if args.alternate_peripheral is not None:
+        periph.alternate_peripheral = args.alternate_peripheral.strip(); changed.append("alternate_peripheral")
     if args.offset is not None:
         periph.address_block["offset"] = args.offset; changed.append("address_block.offset")
     if args.size is not None:
@@ -1175,6 +1177,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_up.add_argument("--description", help="描述")
     p_up.add_argument("--display-name", help="显示名称")
     p_up.add_argument("--group", help="组名")
+    p_up.add_argument("--alternate-peripheral", help="备选外设名（alternatePeripheral，置空字符串可清除）")
     p_up.add_argument("--offset", help="地址块偏移")
     p_up.add_argument("--size", help="地址块大小")
     p_up.add_argument("-o", "--output", help="输出 SVD 文件路径（默认: <input>_updated.svd）")

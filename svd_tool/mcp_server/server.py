@@ -160,7 +160,8 @@ def svd_add_peripheral(name: str, base_address: str = "0x40000000",
 
 @mcp.tool()
 def svd_update_peripheral(name: str, updates: Dict[str, Any], doc_id: str = "") -> dict:
-    """更新外设属性。updates 支持 name（改名）/base_address/description/group_name/display_name/derived_from。"""
+    """更新外设属性。updates 支持 name（改名）/base_address/description/group_name/display_name/
+    derived_from/alternate_peripheral（备选外设，与目标共用地址块，传空字符串清除）。"""
     return ws.update_peripheral(name, updates, doc_id=doc_id or None)
 
 

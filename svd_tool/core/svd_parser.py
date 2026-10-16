@@ -176,7 +176,15 @@ class SVDParser(BaseSVDParser):
                 if child.firstChild:
                     peripheral.display_name = child.firstChild.data.strip()
                 break
-        
+
+        # 备选外设（alternatePeripheral：同地址块的另一份外设描述）- 只查找直接子节点
+        peripheral.alternate_peripheral = ""
+        for child in periph_node.childNodes:
+            if child.nodeType == child.ELEMENT_NODE and child.tagName == "alternatePeripheral":
+                if child.firstChild:
+                    peripheral.alternate_peripheral = child.firstChild.data.strip()
+                break
+
         # 组名
         group_nodes = periph_node.getElementsByTagName("groupName")
         if group_nodes and group_nodes[0].firstChild:

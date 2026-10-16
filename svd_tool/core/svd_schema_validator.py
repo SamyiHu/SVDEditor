@@ -192,6 +192,26 @@ class SVDSchemaValidator:
                     t("val.derived_order_suggestion", derived=src,
                       default=f"将 '{src}' 移到 '{name}' 之前定义"))
 
+        # 检查 alternatePeripheral 引用（同地址块的备选外设描述）
+        for name, periph in device.peripherals.items():
+            alt = (getattr(periph, "alternate_peripheral", "") or "").strip()
+            if not alt:
+                continue
+            if alt == name:
+                self._add_error(
+                    t("val.cat.derived_ref"),
+                    t("val.alt_self", name=name,
+                      default=f"外设 '{name}' 的 alternatePeripheral 不能指向自己"),
+                    f"peripheral.{name}.alternatePeripheral")
+            elif alt not in device.peripherals:
+                self._add_error(
+                    t("val.cat.derived_ref"),
+                    t("val.alt_not_exist", name=name, alt=alt,
+                      default=f"外设 '{name}' 的 alternatePeripheral='{alt}' 引用的外设不存在"),
+                    f"peripheral.{name}.alternatePeripheral",
+                    t("val.alt_confirm", alt=alt,
+                      default=f"修正 alternatePeripheral，或先定义 '{alt}'"))
+
         # 收集所有外设地址范围，检查重叠
         periph_ranges: List[Tuple[str, int, int]] = []  # (name, base_addr, end_addr)
         for name, periph in device.peripherals.items():
@@ -214,10 +234,15 @@ class SVDSchemaValidator:
             self._validate_peripheral(name, periph)
 
         # 检查外设地址重叠
+        alt_of = {name: (getattr(p, "alternate_peripheral", "") or "").strip()
+                  for name, p in device.peripherals.items()}
         for i in range(len(periph_ranges)):
             for j in range(i + 1, len(periph_ranges)):
                 name_i, start_i, end_i = periph_ranges[i]
                 name_j, start_j, end_j = periph_ranges[j]
+                # alternatePeripheral 语义：与备选外设共用地址块是合法的，不计重叠
+                if alt_of.get(name_i) == name_j or alt_of.get(name_j) == name_i:
+                    continue
                 # 重叠条件：start_i <= end_j and start_j <= end_i
                 if start_i <= end_j and start_j <= end_i:
                     self._add_error(t("val.cat.addr_overlap"),

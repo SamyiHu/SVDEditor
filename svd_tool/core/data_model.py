@@ -251,6 +251,9 @@ class Peripheral:
     registers: Dict[str, Register] = field(default_factory=dict)
     clusters: Dict[str, Cluster] = field(default_factory=dict)  # 寄存器簇
     interrupts: List[Dict[str, Any]] = field(default_factory=list)
+    # 备选外设（CMSIS-SVD alternatePeripheral）：同一地址块的另一份外设描述，
+    # 如 USB_OTG_FS/USB_OTG_HS 等功能复用场景。指向另一个外设名。
+    alternate_peripheral: str = ""
     xml_start_line: int = 0  # XML起始行号
     xml_end_line: int = 0  # XML结束行号
     
@@ -295,6 +298,7 @@ class Peripheral:
             registers=registers,
             clusters=clusters,
             interrupts=data.get("interrupts", []),
+            alternate_peripheral=data.get("alternate_peripheral", ""),
         )
 
     def __deepcopy__(self, memo):
@@ -311,6 +315,7 @@ class Peripheral:
             registers={k: copy.deepcopy(v, memo) for k, v in self.registers.items()},
             clusters={k: copy.deepcopy(v, memo) for k, v in self.clusters.items()},
             interrupts=[dict(irq) for irq in self.interrupts],
+            alternate_peripheral=self.alternate_peripheral,
             xml_start_line=self.xml_start_line,
             xml_end_line=self.xml_end_line,
         )

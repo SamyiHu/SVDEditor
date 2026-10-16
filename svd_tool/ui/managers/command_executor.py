@@ -890,6 +890,7 @@ class CommandExecutor:
             "description": periph.description,
             "group_name": periph.group_name,
             "derived_from": periph.derived_from or "",
+            "alternate_peripheral": getattr(periph, "alternate_peripheral", "") or "",
             "register_count": len(reg_list),
             "registers": reg_list,
         }
@@ -1401,7 +1402,8 @@ class CommandExecutor:
 
         # 其它可改属性（改名已单独处理，这里不动 name）
         old_values = {}
-        updatable_fields = ["description", "base_address", "group_name", "display_name", "derived_from"]
+        updatable_fields = ["description", "base_address", "group_name", "display_name",
+                            "derived_from", "alternate_peripheral"]
 
         # derivedFrom 校验：派生目标必须是已存在的外设，且不能形成自引用
         if "derived_from" in updates:
@@ -1416,6 +1418,20 @@ class CommandExecutor:
                         "message": t("ai.periph_not_found", name=df), "data": None}
             updates = dict(updates)  # 避免改到调用方
             updates["derived_from"] = df
+
+        # alternatePeripheral 校验：备选外设必须存在，且不能自引用
+        if "alternate_peripheral" in updates:
+            alt = str(updates["alternate_peripheral"]).strip()
+            if alt == effective_name:
+                return {"success": False,
+                        "message": t("ai.alt_self", name=effective_name,
+                                     default="外设的 alternatePeripheral 不能指向自己"),
+                        "data": None}
+            if alt and alt not in device.peripherals:
+                return {"success": False,
+                        "message": t("ai.periph_not_found", name=alt), "data": None}
+            updates = dict(updates)
+            updates["alternate_peripheral"] = alt
 
         for key in updatable_fields:
             if key in updates:

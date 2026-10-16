@@ -165,6 +165,9 @@ class SVDGenerator:
             ET.SubElement(periph_elem, "displayName").text = peripheral.display_name
 
         ET.SubElement(periph_elem, "description").text = peripheral.description
+        # 备选外设（CMSIS-SVD 规范顺序：description 之后、groupName 之前）
+        if peripheral.alternate_peripheral:
+            ET.SubElement(periph_elem, "alternatePeripheral").text = peripheral.alternate_peripheral
         ET.SubElement(periph_elem, "groupName").text = peripheral.group_name
         ET.SubElement(periph_elem, "baseAddress").text = peripheral.base_address
         

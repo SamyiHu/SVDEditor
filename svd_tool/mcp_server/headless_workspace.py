@@ -295,6 +295,7 @@ class HeadlessWorkspace:
                 {"name": periph.name, "base_address": periph.base_address,
                  "description": periph.description, "group_name": periph.group_name,
                  "derived_from": periph.derived_from or "",
+                 "alternate_peripheral": getattr(periph, "alternate_peripheral", "") or "",
                  "register_count": len(reg_list), "registers": reg_list},
             )
 
@@ -459,9 +460,21 @@ class HeadlessWorkspace:
                 if df and df not in device.peripherals:
                     return _fail(f"派生目标外设 '{df}' 不存在")
 
-            for key in ("description", "base_address", "group_name", "display_name", "derived_from"):
+            # alternatePeripheral 校验：备选外设必须存在，且不能自引用
+            if "alternate_peripheral" in updates:
+                alt = str(updates["alternate_peripheral"]).strip()
+                if alt == effective:
+                    return _fail("外设的 alternatePeripheral 不能指向自己")
+                if alt and alt not in device.peripherals:
+                    return _fail(f"备选外设 '{alt}' 不存在")
+
+            for key in ("description", "base_address", "group_name", "display_name",
+                        "derived_from", "alternate_peripheral"):
                 if key in updates:
-                    setattr(periph, key, updates[key])
+                    value = updates[key]
+                    if key in ("derived_from", "alternate_peripheral"):
+                        value = str(value).strip()
+                    setattr(periph, key, value)
             entry.modified = True
             return _ok(f"已更新外设 '{effective}'",
                        {"name": effective, "renamed": renamed,

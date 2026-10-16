@@ -160,8 +160,9 @@ class SVDDiffer:
         children = []
         
         # 比较外设属性
-        prop_diffs = self._diff_properties(name, p_a, p_b, 
-            ['base_address', 'description', 'display_name', 'version', 'group_name'])
+        prop_diffs = self._diff_properties(name, p_a, p_b,
+            ['base_address', 'description', 'display_name', 'version', 'group_name',
+             'alternate_peripheral'])
         children.extend(prop_diffs)
         
         # 比较寄存器（按 B 的原始顺序排列）

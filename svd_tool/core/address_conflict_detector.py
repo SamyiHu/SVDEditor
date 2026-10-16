@@ -183,10 +183,15 @@ class AddressConflictDetector:
                 periph_ranges.append((name, start, end))
 
         # 检查重叠
+        alt_of = {name: (getattr(p, "alternate_peripheral", "") or "").strip()
+                  for name, p in device.peripherals.items()}
         for i in range(len(periph_ranges)):
             for j in range(i + 1, len(periph_ranges)):
                 name_i, start_i, end_i = periph_ranges[i]
                 name_j, start_j, end_j = periph_ranges[j]
+                # alternatePeripheral 语义：与备选外设共用地址块合法，不计冲突
+                if alt_of.get(name_i) == name_j or alt_of.get(name_j) == name_i:
+                    continue
                 if start_i <= end_j and start_j <= end_i:
                     self.conflicts.append(ConflictItem(
                         conflict_type=ConflictType.PERIPHERAL_ADDRESS_OVERLAP,
@@ -197,7 +202,7 @@ class AddressConflictDetector:
                         detail=f"0x{start_i:08X}-0x{end_i:08X} 与 0x{start_j:08X}-0x{end_j:08X} 重叠",
                     ))
 
-        # 检查基地址完全相同
+        # 检查基地址完全相同（alternatePeripheral 备选外设之间除外）
         base_map: Dict[int, List[str]] = {}
         for name, periph in device.peripherals.items():
             base = parse_hex(periph.base_address)
@@ -208,14 +213,20 @@ class AddressConflictDetector:
 
         for base, names in base_map.items():
             if len(names) > 1:
-                self.conflicts.append(ConflictItem(
-                    conflict_type=ConflictType.PERIPHERAL_BASE_DUPLICATE,
-                    severity=ConflictSeverity.ERROR,
-                    message=f"多个外设使用相同基地址 0x{base:08X}: {', '.join(names)}",
-                    location=f"peripheral.{names[0]}",
-                    peripheral=names[0],
-                    detail=f"涉及外设: {', '.join(names)}",
-                ))
+                # 成对判断：互为 alternatePeripheral 的对合法，其余才算基地址冲突
+                for bi in range(len(names)):
+                    for bj in range(bi + 1, len(names)):
+                        n_i, n_j = names[bi], names[bj]
+                        if alt_of.get(n_i) == n_j or alt_of.get(n_j) == n_i:
+                            continue
+                        self.conflicts.append(ConflictItem(
+                            conflict_type=ConflictType.PERIPHERAL_BASE_DUPLICATE,
+                            severity=ConflictSeverity.ERROR,
+                            message=f"外设 '{n_i}' 与 '{n_j}' 使用相同基地址 0x{base:08X}",
+                            location=f"peripheral.{n_i}",
+                            peripheral=n_i,
+                            detail=f"涉及外设: {n_i}, {n_j}",
+                        ))
 
     def _detect_single_peripheral_address_conflict(self, device: DeviceInfo,
                                                      pname: str, periph: Peripheral):
@@ -224,8 +235,13 @@ class AddressConflictDetector:
         if start_p is None:
             return
 
+        my_alt = (getattr(periph, "alternate_peripheral", "") or "").strip()
         for name, other in device.peripherals.items():
             if name == pname:
+                continue
+            # alternatePeripheral 备选外设共用地址块合法，不计冲突
+            other_alt = (getattr(other, "alternate_peripheral", "") or "").strip()
+            if my_alt == name or other_alt == pname:
                 continue
             start_o, end_o = self._get_periph_range(other)
             if start_o is None or end_o is None:
