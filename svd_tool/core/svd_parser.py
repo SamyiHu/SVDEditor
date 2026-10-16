@@ -645,10 +645,22 @@ class SVDParser(BaseSVDParser):
         if reset_nodes and reset_nodes[0].firstChild:
             field.reset_value = reset_nodes[0].firstChild.data.strip()
         
-        # 枚举值 (如果存在)
+        # 枚举值 (如果存在)：第一个容器建模，其余容器透传保留（规范允许多容器，
+        # 如按 usage=read / usage=write 区分的两组枚举）
         enum_nodes = field_node.getElementsByTagName("enumeratedValues")
         if enum_nodes:
             field.enumerated_values = self._parse_enumerated_values(enum_nodes[0])
+            for tag, attr in (("name", "enumerated_values_name"),
+                              ("headerFileName", "enumerated_values_header"),
+                              ("usage", "enumerated_values_usage")):
+                node = self._get_direct_child(enum_nodes[0], tag)
+                if node is not None and node.firstChild:
+                    setattr(field, attr, node.firstChild.data.strip())
+            for extra_enum in enum_nodes[1:]:
+                try:
+                    field.extra_xml.append(extra_enum.toxml())
+                except Exception:  # noqa: BLE001
+                    pass
 
         # CMSIS-SVD 行为语义（写修改方式 / 读取副作用）
         for tag, attr in (("modifiedWriteValues", "modified_write_values"),
@@ -657,8 +669,9 @@ class SVDParser(BaseSVDParser):
             if node is not None and node.firstChild:
                 setattr(field, attr, node.firstChild.data.strip())
 
-        # 未消费元素透传（writeConstraint / 位域级 protection 等）
-        field.extra_xml = self._collect_extra_xml(field_node, _FIELD_KNOWN)
+        # 未消费元素透传（writeConstraint / 位域级 protection 等）；
+        # 额外的 enumeratedValues 容器已先行 append，这里合并不覆盖
+        field.extra_xml = self._collect_extra_xml(field_node, _FIELD_KNOWN) + field.extra_xml
 
         return field
     
@@ -682,7 +695,12 @@ class SVDParser(BaseSVDParser):
                 value_nodes = ev_node.getElementsByTagName("value")
                 if value_nodes and value_nodes[0].firstChild:
                     enum_entry["value"] = value_nodes[0].firstChild.data.strip()
-                
+
+                # isDefault（标记枚举条目为默认行为）
+                is_default_nodes = ev_node.getElementsByTagName("isDefault")
+                if is_default_nodes and is_default_nodes[0].firstChild:
+                    enum_entry["is_default"] = is_default_nodes[0].firstChild.data.strip()
+
                 result.append(enum_entry)
             except Exception as e:
                 self.warnings.append(f"解析枚举值失败: {str(e)}")

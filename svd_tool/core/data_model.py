@@ -26,6 +26,11 @@ class Field:
     xml_start_line: int = 0  # XML起始行号
     xml_end_line: int = 0  # XML结束行号
     enumerated_values: List[Dict[str, str]] = field(default_factory=list)
+    # 枚举值容器属性（<enumeratedValues> 的 name/headerFileName/usage 子元素；
+    # 条目级的 isDefault 存在 enumerated_values 各字典的 "is_default" 键）
+    enumerated_values_name: str = ""
+    enumerated_values_header: str = ""
+    enumerated_values_usage: str = ""
     # CMSIS-SVD 行为语义（可选元素）
     modified_write_values: Optional[str] = None
     read_action: Optional[str] = None
@@ -52,6 +57,9 @@ class Field:
             xml_start_line=int(data.get("xml_start_line", 0)),
             xml_end_line=int(data.get("xml_end_line", 0)),
             enumerated_values=data.get("enumerated_values", []),
+            enumerated_values_name=data.get("enumerated_values_name", ""),
+            enumerated_values_header=data.get("enumerated_values_header", ""),
+            enumerated_values_usage=data.get("enumerated_values_usage", ""),
             modified_write_values=data.get("modified_write_values"),
             read_action=data.get("read_action"),
             extra_xml=list(data.get("extra_xml", [])),
@@ -70,6 +78,9 @@ class Field:
             xml_start_line=self.xml_start_line,
             xml_end_line=self.xml_end_line,
             enumerated_values=[dict(ev) for ev in self.enumerated_values],
+            enumerated_values_name=self.enumerated_values_name,
+            enumerated_values_header=self.enumerated_values_header,
+            enumerated_values_usage=self.enumerated_values_usage,
             modified_write_values=self.modified_write_values,
             read_action=self.read_action,
             extra_xml=list(self.extra_xml),

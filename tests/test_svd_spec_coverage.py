@@ -341,6 +341,122 @@ class TestValidatorAlignment:
                        or "239" in m or "alternateRegister" in m for m in errs), errs
 
 
+ENUM_SVD = """<?xml version="1.0" encoding="UTF-8"?>
+<device schemaVersion="1.3">
+  <name>TEST_ENUM</name>
+  <version>1.0</version>
+  <description>enum container coverage</description>
+  <addressUnitBits>8</addressUnitBits>
+  <width>32</width>
+  <peripherals>
+    <peripheral>
+      <name>PERI</name>
+      <description>Peripheral</description>
+      <baseAddress>0x40000000</baseAddress>
+      <addressBlock><offset>0x0</offset><size>0x10</size><usage>registers</usage></addressBlock>
+      <registers>
+        <register>
+          <name>CFG</name>
+          <description>Config</description>
+          <addressOffset>0x0</addressOffset>
+          <fields>
+            <field>
+              <name>MODE</name>
+              <description>Mode</description>
+              <bitOffset>0</bitOffset><bitWidth>2</bitWidth>
+              <enumeratedValues>
+                <name>MODE_Enum</name>
+                <usage>read-write</usage>
+                <enumeratedValue>
+                  <name>OFF</name>
+                  <description>Disabled</description>
+                  <value>0</value>
+                  <isDefault>true</isDefault>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>ON</name>
+                  <description>Enabled</description>
+                  <value>1</value>
+                </enumeratedValue>
+              </enumeratedValues>
+              <enumeratedValues>
+                <usage>read</usage>
+                <enumeratedValue>
+                  <name>R_OFF</name>
+                  <value>0</value>
+                </enumeratedValue>
+              </enumeratedValues>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+  </peripherals>
+</device>
+"""
+
+
+class TestEnumeratedValues:
+    """枚举值容器建模 + 多容器透传"""
+
+    @pytest.fixture
+    def enum_device(self):
+        return SVDParser().parse_string(ENUM_SVD)
+
+    def test_container_attrs_and_is_default(self, enum_device):
+        fld = enum_device.peripherals["PERI"].registers["CFG"].fields["MODE"]
+        assert fld.enumerated_values_name == "MODE_Enum"
+        assert fld.enumerated_values_usage == "read-write"
+        assert fld.enumerated_values[0]["name"] == "OFF"
+        assert fld.enumerated_values[0]["is_default"] == "true"
+        assert "is_default" not in fld.enumerated_values[1]
+        # 第二个容器（usage=read）透传保留
+        assert len(fld.extra_xml) == 1 and "<usage>read</usage>" in fld.extra_xml[0]
+
+    def test_roundtrip(self, enum_device):
+        import re as _re
+
+        xml = SVDGenerator(enum_device).generate(pretty_print=True)
+        compact = _re.sub(r">\s+<", "><", xml)
+        for needle in ("<name>MODE_Enum</name>", "<usage>read-write</usage>",
+                       "<isDefault>true</isDefault>"):
+            assert needle in compact, f"缺少: {needle}"
+        assert compact.count("<enumeratedValues>") == 2  # 建模 1 + 透传 1
+
+        reparsed = SVDParser().parse_string(xml)
+        fld = reparsed.peripherals["PERI"].registers["CFG"].fields["MODE"]
+        assert fld.enumerated_values_name == "MODE_Enum"
+        assert fld.enumerated_values[0]["is_default"] == "true"
+        assert len(fld.extra_xml) == 1
+
+        # 二次往返稳定（不膨胀）
+        xml2 = SVDGenerator(reparsed).generate(pretty_print=True)
+        compact2 = _re.sub(r">\s+<", "><", xml2)
+        assert compact2.count("<enumeratedValues>") == 2
+        assert compact2.count("<isDefault>") == 1
+
+    def test_dict_roundtrip(self, enum_device):
+        fld = enum_device.peripherals["PERI"].registers["CFG"].fields["MODE"]
+        d = fld.to_dict()
+        fld2 = Field.from_dict(d)
+        assert fld2.enumerated_values_name == "MODE_Enum"
+        assert fld2.enumerated_values_usage == "read-write"
+        assert fld2.enumerated_values[0]["is_default"] == "true"
+        assert len(fld2.extra_xml) == 1
+
+    def test_mcp_get_field_exposes_enum(self, enum_device, tmp_path):
+        from svd_tool.mcp_server.headless_workspace import HeadlessWorkspace
+
+        svd_file = tmp_path / "enum.svd"
+        svd_file.write_text(SVDGenerator(enum_device).generate(pretty_print=True),
+                            encoding="utf-8")
+        ws = HeadlessWorkspace()
+        assert ws.open_document(str(svd_file))["success"]
+        r = ws.get_field("PERI", "CFG", "MODE")
+        assert r["success"]
+        assert r["data"]["enumerated_values"][0]["is_default"] == "true"
+
+
 class TestMcpSync:
     def test_update_register_and_field(self, device, tmp_path):
         from svd_tool.mcp_server.headless_workspace import HeadlessWorkspace

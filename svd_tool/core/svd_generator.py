@@ -423,9 +423,15 @@ class SVDGenerator:
         if field.reset_value and field.reset_value != "0x0":
             ET.SubElement(field_elem, "resetValue").text = field.reset_value
 
-        # 添加枚举值
+        # 添加枚举值（容器属性按规范顺序：name, headerFileName, usage）
         if hasattr(field, 'enumerated_values') and field.enumerated_values:
             enum_elem = ET.SubElement(field_elem, "enumeratedValues")
+            if getattr(field, "enumerated_values_name", ""):
+                ET.SubElement(enum_elem, "name").text = field.enumerated_values_name
+            if getattr(field, "enumerated_values_header", ""):
+                ET.SubElement(enum_elem, "headerFileName").text = field.enumerated_values_header
+            if getattr(field, "enumerated_values_usage", ""):
+                ET.SubElement(enum_elem, "usage").text = field.enumerated_values_usage
             for enum_val in field.enumerated_values:
                 ev_elem = ET.SubElement(enum_elem, "enumeratedValue")
                 if "name" in enum_val:
@@ -434,6 +440,8 @@ class SVDGenerator:
                     ET.SubElement(ev_elem, "description").text = enum_val["description"]
                 if "value" in enum_val:
                     ET.SubElement(ev_elem, "value").text = enum_val["value"]
+                if enum_val.get("is_default"):
+                    ET.SubElement(ev_elem, "isDefault").text = enum_val["is_default"]
 
         # 透传的位域级未知元素（writeConstraint 等）
         _append_extra_xml(field_elem, getattr(field, "extra_xml", None))
