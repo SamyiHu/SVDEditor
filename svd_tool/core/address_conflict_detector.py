@@ -260,7 +260,7 @@ class AddressConflictDetector:
     # ==================== 寄存器级冲突检测 ====================
 
     def _detect_register_conflicts(self, periph_name: str, periph: Peripheral):
-        """检测外设内寄存器偏移重复"""
+        """检测外设内寄存器偏移重复（alternateRegister 备选对合法共用偏移，不计冲突）"""
         if not periph.registers:
             return
 
@@ -273,17 +273,31 @@ class AddressConflictDetector:
                     offset_map[offset] = []
                 offset_map[offset].append(rname)
 
+        alt_reg_of = {rname: (getattr(reg, "alternate_register", "") or "").strip()
+                      for rname, reg in periph.registers.items()}
         for offset, reg_names in offset_map.items():
             if len(reg_names) > 1:
-                self.conflicts.append(ConflictItem(
-                    conflict_type=ConflictType.REGISTER_OFFSET_DUPLICATE,
-                    severity=ConflictSeverity.ERROR,
-                    message=f"外设 '{periph_name}' 中寄存器 {', '.join(reg_names)} 偏移相同 (0x{offset:04X})",
-                    location=f"peripheral.{periph_name}.register.{reg_names[0]}",
-                    peripheral=periph_name,
-                    register=reg_names[0],
-                    detail=f"偏移 0x{offset:04X} 被以下寄存器共用: {', '.join(reg_names)}",
-                ))
+                # 成对判断：互为 alternateRegister 的对合法，存在非备选对才报冲突
+                has_bad_pair = False
+                for bi in range(len(reg_names)):
+                    for bj in range(bi + 1, len(reg_names)):
+                        n_i, n_j = reg_names[bi], reg_names[bj]
+                        if alt_reg_of.get(n_i) == n_j or alt_reg_of.get(n_j) == n_i:
+                            continue
+                        has_bad_pair = True
+                        break
+                    if has_bad_pair:
+                        break
+                if has_bad_pair:
+                    self.conflicts.append(ConflictItem(
+                        conflict_type=ConflictType.REGISTER_OFFSET_DUPLICATE,
+                        severity=ConflictSeverity.ERROR,
+                        message=f"外设 '{periph_name}' 中寄存器 {', '.join(reg_names)} 偏移相同 (0x{offset:04X})",
+                        location=f"peripheral.{periph_name}.register.{reg_names[0]}",
+                        peripheral=periph_name,
+                        register=reg_names[0],
+                        detail=f"偏移 0x{offset:04X} 被以下寄存器共用: {', '.join(reg_names)}",
+                    ))
 
     # ==================== 位域级冲突检测 ====================
 

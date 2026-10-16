@@ -457,6 +457,37 @@ class TestEnumeratedValues:
         assert r["data"]["enumerated_values"][0]["is_default"] == "true"
 
 
+class TestConflictDetectorSync:
+    """冲突检测器（GUI 树上红标/冲突面板数据源）与 alternateRegister 对齐"""
+
+    def test_no_conflict_for_alternate_register_pair(self, device):
+        """STAT 与 STAT_ALT 同偏移 0x0 且互为 alternateRegister → 不报偏移重复。"""
+        from svd_tool.core.address_conflict_detector import AddressConflictDetector, ConflictType
+
+        d = AddressConflictDetector()
+        types = {c.conflict_type for c in d.detect_all(device)}
+        assert ConflictType.REGISTER_OFFSET_DUPLICATE not in types, \
+            [c for c in d.detect_all(device) if c.conflict_type == ConflictType.REGISTER_OFFSET_DUPLICATE]
+
+    def test_conflict_without_alternate_register(self, device):
+        from svd_tool.core.address_conflict_detector import AddressConflictDetector, ConflictType
+
+        device.peripherals["PERI"].registers["STAT_ALT"].alternate_register = ""
+        d = AddressConflictDetector()
+        types = {c.conflict_type for c in d.detect_all(device)}
+        assert ConflictType.REGISTER_OFFSET_DUPLICATE in types
+
+    def test_third_register_same_offset_still_conflicts(self, device):
+        """与备选对无关的第三方同偏移寄存器仍要报。"""
+        from svd_tool.core.address_conflict_detector import AddressConflictDetector, ConflictType
+
+        device.peripherals["PERI"].registers["INTRUDER"] = Register(name="INTRUDER", offset="0x0")
+        d = AddressConflictDetector()
+        found = d.detect_all(device)
+        assert any(c.conflict_type == ConflictType.REGISTER_OFFSET_DUPLICATE
+                   and c.peripheral == "PERI" for c in found)
+
+
 class TestMcpSync:
     def test_update_register_and_field(self, device, tmp_path):
         from svd_tool.mcp_server.headless_workspace import HeadlessWorkspace
